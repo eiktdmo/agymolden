@@ -734,10 +734,12 @@ class CalculationsMixin:
         if getattr(self, "symmetry_imposed", False):
             self.set_impose_symmetry(True, chosen_res)
         else:
+            # Automatically enable Impose Symmetry when user selects a specific symmetry group
+            self.set_impose_symmetry(True, chosen_res)
             orbits = get_symmetry_orbits(symbols, self.coords, chosen_res)
             self.statusBar().showMessage(
-                f"Selected {sym_name} symmetry (Order {chosen_res.order}, {role_tag}, {len(orbits)} atom orbit(s)).",
-                4500,
+                f"Selected & Imposed {sym_name} symmetry (Order {chosen_res.order}, {role_tag}, {len(orbits)} atom orbit(s)). Edits replicate across equivalent atoms.",
+                5000,
             )
         return chosen_res
 

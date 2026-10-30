@@ -913,15 +913,30 @@ class EditingMixin:
             elem = heavy_atoms[-1] if heavy_atoms else "C"
 
         sym_res = self._get_active_imposed_symmetry()
-        if sym_res is not None and anchor_sym == "H":
-            atom_frag = {"name": elem, "symbols": [elem], "coords": [(0.0, 0.0, 0.0)], "connect_idx": 0}
-            n_sites = self._attach_fragment_to_atom_or_orbit(
-                anchor_idx, atom_frag, conn_idx=0, custom_dir_u=None, relax_iters=80
-            )
-            self.statusBar().showMessage(
-                f"Double-click replaced {n_sites} symmetry-equivalent H atoms with {elem}", 4000
-            )
-            return
+        if sym_res is not None:
+            if anchor_sym == "H":
+                atom_frag = {"name": elem, "symbols": [elem], "coords": [(0.0, 0.0, 0.0)], "connect_idx": 0}
+                n_sites = self._attach_fragment_to_atom_or_orbit(
+                    anchor_idx, atom_frag, conn_idx=0, custom_dir_u=None, relax_iters=80
+                )
+                self.statusBar().showMessage(
+                    f"Double-click replaced {n_sites} symmetry-equivalent H atoms with {elem}", 4000
+                )
+                return
+            else:
+                # Heavy atom mutation under imposed symmetry
+                _, orbit_ops = get_atom_orbit_and_operations(
+                    symbols, coords, anchor_idx, result=sym_res, tolerance=max(0.25, sym_res.tolerance * 1.5)
+                )
+                mutate_indices = sorted({eq_i for eq_i, _ in orbit_ops})
+                for idx in mutate_indices:
+                    self.zatoms[idx].symbol = elem
+                self.table_widget.load_zatoms(self.zatoms)
+                self.update_geometry_live()
+                self.statusBar().showMessage(
+                    f"Double-click replaced {len(mutate_indices)} symmetry-equivalent {anchor_sym} atoms with {elem}", 4000
+                )
+                return
 
         new_syms = list(symbols)
         new_coords = np.copy(coords)
@@ -1451,15 +1466,6 @@ class EditingMixin:
         act_all_frags = menu_sub.addAction("Browse All Fragments...")
         act_all_frags.triggered.connect(self._on_open_fragment_library)
 
-    def _on_open_fragment_library(self):
-        """Switch to the Presets & Fragments inspector tab."""
-        if hasattr(self, "tabs"):
-            idx = self.tabs.indexOf(getattr(self, "tab_builder", None))
-            if idx >= 0:
-                self.tabs.setCurrentIndex(idx)
-            else:
-                self.tabs.setCurrentIndex(2)
-
         menu.addSeparator()
 
         # Invert Chirality
@@ -1498,6 +1504,15 @@ class EditingMixin:
         act_del.triggered.connect(lambda: self._delete_atom_or_orbit(atom_idx, source_label="Deleted"))
 
         menu.exec(global_pos)
+
+    def _on_open_fragment_library(self):
+        """Switch to the Presets & Fragments inspector tab."""
+        if hasattr(self, "tabs"):
+            idx = self.tabs.indexOf(getattr(self, "tab_builder", None))
+            if idx >= 0:
+                self.tabs.setCurrentIndex(idx)
+            else:
+                self.tabs.setCurrentIndex(2)
 
     def _on_viewport_bond_context_menu(self, u: int, v: int, global_pos: QtCore.QPoint):
         """Display context menu when right-clicking a bond."""
@@ -1586,17 +1601,36 @@ class EditingMixin:
         menu.exec(global_pos)
 
     def _mutate_atom_element(self, atom_idx: int, new_element: str):
-        """Mutate an atom's element symbol cleanly."""
+        """Mutate an atom's element symbol cleanly (and across its symmetry orbit if Impose Symmetry is enabled)."""
         if atom_idx < 0 or atom_idx >= len(self.zatoms):
             return
         old_sym = self.zatoms[atom_idx].symbol
         if old_sym == new_element:
             return
         self._push_undo_state()
-        self.zatoms[atom_idx].symbol = new_element
+
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.copy(self.coords)
+        sym_res = self._get_active_imposed_symmetry()
+        if sym_res is not None and len(coords) == len(symbols):
+            _, orbit_ops = get_atom_orbit_and_operations(
+                symbols, coords, atom_idx, result=sym_res, tolerance=max(0.25, sym_res.tolerance * 1.5)
+            )
+            mutate_indices = sorted({eq_i for eq_i, _ in orbit_ops})
+        else:
+            mutate_indices = [atom_idx]
+
+        for idx in mutate_indices:
+            self.zatoms[idx].symbol = new_element
+
         self.table_widget.load_zatoms(self.zatoms)
         self.update_geometry_live()
-        self.statusBar().showMessage(f"Mutated atom #{atom_idx+1}: {old_sym} ➔ {new_element}", 3000)
+        if len(mutate_indices) > 1:
+            self.statusBar().showMessage(
+                f"Mutated {len(mutate_indices)} symmetry-equivalent {old_sym} atoms ➔ {new_element}", 4000
+            )
+        else:
+            self.statusBar().showMessage(f"Mutated atom #{atom_idx+1}: {old_sym} ➔ {new_element}", 3000)
 
     def _prompt_mutate_periodic_table(self, atom_idx: int):
         """Open periodic table dialog to choose a mutation element."""

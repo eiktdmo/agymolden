@@ -3,17 +3,31 @@
 # PyInstaller's built-in PyQt6 hook collects only the Qt modules that are imported.
 import os
 import sys
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
 
 hiddenimports = (
     ['agymolden']
     + collect_submodules('agymolden')
+    + collect_submodules('OpenGL')
+    + collect_submodules('OpenGL.platform')
+    + collect_submodules('pyscf.gto')
+    + collect_submodules('pyscf.tools')
+    + collect_submodules('pyscf.dft')
+    + collect_submodules('pyscf.lib')
     + [
         'PyQt6.QtOpenGLWidgets',
         'scipy.special',
         'scipy.spatial.transform',
         'skimage.measure',
         'cclib',
+        'pyscf',
+        'pyscf.gto',
+        'pyscf.tools.molden',
+        'pyscf.tools.cubegen',
+        'pyscf.dft.numint',
+        'OpenGL.platform.glx',
+        'OpenGL.platform.egl',
+        'OpenGL.platform.posix',
     ]
 )
 
@@ -25,14 +39,25 @@ if os.path.isdir('agymolden/data'):
 if os.path.isdir('examples'):
     datas.append(('examples', 'examples'))
 
-# Exclude heavy optional/unused packages so the standalone binary stays lean (~65-80 MB)
-# External QM engines (PySCF, ORCA, Gaussian, openLOWDIN, xTB) run out-of-process via QProcess.
+try:
+    datas += collect_data_files('pyscf.gto')
+    datas += collect_data_files('pyscf.data')
+except Exception:
+    pass
+
+binaries = []
+try:
+    binaries += collect_dynamic_libs('pyscf')
+except Exception:
+    pass
+
+# Exclude heavy optional/unused packages so the standalone binary stays lean
+# PySCF core GTO & cubegen evaluator is included above for standalone 3D orbital mesh generation
 excludes = [
     'tkinter',
     'pandas',
     'IPython',
     'pytest',
-    'pyscf',
     'rdkit',
     'basis_set_exchange',
     'PyQt6.QtWebEngineCore',
@@ -58,7 +83,7 @@ excludes = [
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -69,15 +94,11 @@ a = Analysis(
     optimize=0,
 )
 
-# Strip unnecessary heavy non-code assets (e.g. ICU data tables, duplicate BLAS libs, test suites)
-# Preserves 100% of calculation code, scientific solvers, and mathematical precision
+# Clean binaries - preserve necessary runtime libraries like libicudata required by Qt6
 filtered_binaries = []
 seen_lib_names = set()
 for b in a.binaries:
     dest_name = os.path.basename(b[0]).lower()
-    # Strip heavy foreign locale database (saves ~31 MB without affecting standard text/formulas)
-    if 'libicudata' in dest_name:
-        continue
     # De-duplicate redundant OpenBLAS shared library copies if both NumPy and SciPy vendor them
     if 'openblas' in dest_name:
         if dest_name in seen_lib_names:
