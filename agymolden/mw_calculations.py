@@ -4,7 +4,7 @@ import os
 import math
 import copy
 import logging
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 import numpy as np
 
 from PyQt6 import QtCore, QtGui, QtWidgets

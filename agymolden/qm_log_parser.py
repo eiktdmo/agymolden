@@ -11,7 +11,7 @@ import os
 import re
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 import numpy as np
 
 log = logging.getLogger(__name__)

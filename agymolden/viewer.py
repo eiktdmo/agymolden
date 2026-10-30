@@ -2,7 +2,7 @@
 
 import ctypes
 import math
-from typing import List, Optional, Tuple, Set, Dict
+from typing import List, Optional, Tuple, Set, Dict, Any
 import numpy as np
 
 from PyQt6 import QtCore, QtGui, QtWidgets
