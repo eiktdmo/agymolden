@@ -1,7 +1,7 @@
 name: Build Standalone Binaries
     
     on:
-      workflow_dispatch: {}
+      workflow_dispatch:
     
     jobs:
       build:
@@ -32,7 +32,7 @@ name: Build Standalone Binaries
             run: |
               sudo apt-get update
               sudo apt-get install -y libgl1-mesa-glx libegl1 libxkbcommon-x11-0 libxcb-cursor0
-
+    
           - name: Install Python Dependencies & PyInstaller
             run: |
               python -m pip install --upgrade pip
@@ -45,7 +45,7 @@ name: Build Standalone Binaries
           - name: Archive Bundle (Windows)
             if: runner.os == 'Windows'
             run: |
-              Compress-Archive -Path dist/agymolden -DestinationPath dist/agymolden-windows-x64.zip
+              Compress-Archive -Path dist/agymolden.exe -DestinationPath dist/agymolden-windows-x64.zip
 
           - name: Archive Bundle (Linux)
             if: runner.os == 'Linux'
