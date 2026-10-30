@@ -8,7 +8,7 @@ can be registered seamlessly with its own options, syntax, and file extensions.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Type
+from typing import List, Dict, Optional, Type, Tuple, Any
 import numpy as np
 
 from .zmatrix import ZAtom, format_zmatrix_numeric, format_zmatrix_variables

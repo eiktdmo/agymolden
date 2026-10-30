@@ -10,7 +10,7 @@ Provides four tabs of advanced quantum chemical analyses:
 
 import os
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 
