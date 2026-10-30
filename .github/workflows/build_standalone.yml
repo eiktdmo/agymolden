@@ -1,9 +1,9 @@
 name: Build Standalone Binaries
     
-    on:
+on:
       workflow_dispatch:
     
-    jobs:
+jobs:
       build:
         name: Build on ${{ matrix.os }}
         runs-on: ${{ matrix.os }}
