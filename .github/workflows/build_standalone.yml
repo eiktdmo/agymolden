@@ -1,9 +1,7 @@
-name: Build Standalone Binaries
+ name: Build Standalone Binaries
     
-    on:
+    'on':
       push:
-        branches:
-          - main
       workflow_dispatch:
     
     jobs:
