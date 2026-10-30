@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agymolden"
+dynamic = ["version"]
+description = "AgyMolden - Molden-inspired 3D Z-Matrix molecular builder"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+    "PyQt6>=6.4",
+    "PyOpenGL>=3.1",
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "matplotlib>=3.5",
+    "scikit-image>=0.19",
+    "cclib>=1.7",
+]
+
+[project.optional-dependencies]
+all = [
+    "rdkit>=2022.03",
+    "basis_set_exchange>=0.9",
+]
+qm = [
+    "pyscf>=2.0; sys_platform != 'win32'",
+    "cclib>=1.7",
+    "basis_set_exchange>=0.9",
+]
+
+[project.scripts]
+agymolden = "agymolden:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agymolden*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agymolden.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

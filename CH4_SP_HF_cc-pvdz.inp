@@ -1,0 +1,17 @@
+! SP_ENERGY HF ELECTRONIC DF Angs
+%jobname CH4_SP_HF_cc-pvdz
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis cc-pvdz
+%molden true
+
+* xyz 0 1
+C       0.000000     0.000000     0.000000
+H       0.000000     0.000000     1.089000
+H       0.000000    -1.026720    -0.362996
+H      -0.889166     0.513360    -0.362996
+H       0.889166     0.513360    -0.362996
+*

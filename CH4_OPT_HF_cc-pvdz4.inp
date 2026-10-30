@@ -1,0 +1,19 @@
+! OPT HF ELECTRONIC DF Angs
+%jobname CH4_OPT_HF_cc-pvdz3
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis cc-pvdz
+%opt_engine geometric
+%opt_max_cycles 50
+%molden true
+
+* xyz 0 1
+C       0.000000     0.000000     0.000000
+H       0.000000     0.000000     1.089000
+H       0.000000    -1.026720    -0.362996
+H      -0.889166     0.513360    -0.362996
+H       0.889166     0.513360    -0.362996
+*

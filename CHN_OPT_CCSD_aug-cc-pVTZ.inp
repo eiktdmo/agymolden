@@ -1,0 +1,17 @@
+! OPT CCSD ELECTRONIC DF Angs
+%jobname CHN_OPT_CCSD_aug-cc-pVTZ
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis aug-cc-pVTZ
+%opt_engine geometric
+%opt_max_cycles 50
+%molden true
+
+* zmat 0 1
+C   
+N       1    1.7136
+H       1    1.0660    2   174.788
+*

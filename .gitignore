@@ -1,0 +1,44 @@
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# Virtual environments & IDEs
+.venv/
+venv/
+ENV/
+env/
+.idea/
+.vscode/
+
+# Testing & Packaging
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Large calculation output files & scratch
+*.cube
+*.out
+*profile.txt
+*summary.txt
+*_checkpoint.xyz
+*.tar.gz
+*.orig
+*~
+*.swp
+
+# Local calculation scratch
+scratch_calculations/
+*.gbw
+*.hess
+*.engrad
+*.molden
+*.molden.input
+*_trj.xyz
+
+# Local scratch outputs (moved from project root)
+scratch/

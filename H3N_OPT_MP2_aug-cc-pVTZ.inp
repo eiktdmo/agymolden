@@ -1,0 +1,18 @@
+! OPT MP2 ELECTRONIC DF Angs
+%jobname H3N_OPT_MP2_aug-cc-pVTZ
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis aug-cc-pVTZ
+%opt_engine geometric
+%opt_max_cycles 50
+%molden true
+
+* xyz 0 1
+N       0.000000     0.000000     0.000000
+H      -0.248479    -0.385502     1.212363
+H       0.000000    -0.969316    -0.290809
+H      -0.887015     0.390869    -0.290809
+*

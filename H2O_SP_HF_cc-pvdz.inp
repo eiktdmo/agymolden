@@ -1,0 +1,15 @@
+! SP_ENERGY HF ELECTRONIC DF Angs
+%jobname H2O_SP_HF_cc-pvdz
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis cc-pvdz
+%molden true
+
+* xyz 0 1
+O       0.000000     0.000000     0.000000
+H       0.000000     0.000000     0.958000
+H       0.000000    -0.927485    -0.239864
+*

@@ -1,0 +1,91 @@
+-------------------------------------------------------------
+----------------------- !PROPERTIES! ------------------------
+-------------------------------------------------------------
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Energy
+   comment:     The SCF energy
+   geom. index: 1
+   prop. index: 1
+        SCF Energy:      -56.4724586791
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Energy
+   comment:     The SCF energy
+   geom. index: 2
+   prop. index: 1
+        SCF Energy:      -56.4728318395
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Energy
+   comment:     The SCF energy
+   geom. index: 3
+   prop. index: 1
+        SCF Energy:      -56.4729026062
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Energy
+   comment:     The SCF energy
+   geom. index: 4
+   prop. index: 1
+        SCF Energy:      -56.4729338833
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Energy
+   comment:     The SCF energy
+   geom. index: 5
+   prop. index: 1
+        SCF Energy:      -56.4729345909
+------------------------ !PROPERTY! -------------------------
+   name:        SCF_Electric_Properties
+   comment:     The SCF Calculated Electric Properties
+   geom. index: 5
+   prop. index: 1
+       Filename                          : /home/andres/Insync/Desktop/newagy/orca_calc.scfp 
+       Do Dipole Moment Calculation      : 1 
+       Do Quadrupole Moment Calculation  : 0 
+       Do Polarizability Calculation     : 0 
+** Dipole moment part of electric properties **
+        Magnitude of dipole moment (Debye) :        1.7690627370
+        Electronic Contribution:
+                   0          1          2    
+      0       0.210440   0.137333  -0.026191
+        Nuclear Contribution:
+                   0          1          2    
+      0      -0.785103  -0.523140   0.099098
+        Total Dipole moment:
+                   0          1          2    
+      0      -0.574663  -0.385808   0.072906
+-------------------------------------------------------------
+----------------------- !GEOMETRIES! ------------------------
+-------------------------------------------------------------
+------------------------ !GEOMETRY! -------------------------
+    Number of atoms:    4        Geometry Index:    1
+    Coordinates:
+            N     -0.051170000000   -0.085748000000    0.128503000000
+            H     -0.246330000000   -0.289439000000    1.097766000000
+            H      0.025642000000   -0.971293000000   -0.350061000000
+            H     -0.863621000000    0.382559000000   -0.245489000000
+------------------------ !GEOMETRY! -------------------------
+    Number of atoms:    4        Geometry Index:    2
+    Coordinates:
+            N     -0.044158750497   -0.081178470314    0.127540984408
+            H     -0.247701043538   -0.290951781108    1.106015308224
+            H      0.026686682161   -0.978664403666   -0.354153588537
+            H     -0.870305888125    0.386873655088   -0.248683704095
+------------------------ !GEOMETRY! -------------------------
+    Number of atoms:    4        Geometry Index:    3
+    Coordinates:
+            N     -0.037722397023   -0.076924969285    0.126666056892
+            H     -0.250241392182   -0.292351600441    1.103439876298
+            H      0.023447366133   -0.978117810596   -0.352316279197
+            H     -0.870962576928    0.383473380322   -0.247070653992
+------------------------ !GEOMETRY! -------------------------
+    Number of atoms:    4        Geometry Index:    4
+    Coordinates:
+            N     -0.028811098175   -0.071029040573    0.125457121628
+            H     -0.253960883552   -0.294290498338    1.098269213594
+            H      0.018294640747   -0.976197355990   -0.348887826279
+            H     -0.871001659020    0.377595894901   -0.244119508943
+------------------------ !GEOMETRY! -------------------------
+    Number of atoms:    4        Geometry Index:    5
+    Coordinates:
+            N     -0.029385556616   -0.071409037341    0.125558172007
+            H     -0.253734232168   -0.294161814799    1.098446029235
+            H      0.018531037001   -0.976168088525   -0.349030664077
+            H     -0.870890248217    0.377817940665   -0.244254537164
