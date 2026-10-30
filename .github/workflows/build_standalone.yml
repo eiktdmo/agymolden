@@ -1,4 +1,4 @@
- name: Build Standalone Binaries
+name: Build Standalone Binaries
     
     on:
       workflow_dispatch: {}
@@ -32,12 +32,12 @@
             run: |
               sudo apt-get update
               sudo apt-get install -y libgl1-mesa-glx libegl1 libxkbcommon-x11-0 libxcb-cursor0
-    
+
           - name: Install Python Dependencies & PyInstaller
             run: |
               python -m pip install --upgrade pip
               pip install -e ".[all]" pyinstaller
-    
+
           - name: Build Standalone Bundle with PyInstaller
             run: |
               pyinstaller agymolden.spec --noconfirm --clean
