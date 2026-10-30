@@ -1,9 +1,5 @@
- name: Build Standalone Binaries
-    
-    'on':
-      push:
-      workflow_dispatch:
-    
+name: Build Standalone Binaries
+    on: workflow_dispatch
     jobs:
       build:
         name: Build on ${{ matrix.os }}
@@ -18,33 +14,27 @@
               - os: ubuntu-22.04
                 artifact_name: agymolden-linux-x64
                 archive_file: dist/agymolden-linux-x64.tar.gz
-    
         steps:
           - name: Checkout Repository
             uses: actions/checkout@v4
-    
           - name: Set up Python 3.11
             uses: actions/setup-python@v5
             with:
               python-version: '3.11'
-    
           - name: Install System Dependencies (Linux)
             if: runner.os == 'Linux'
             run: |
               sudo apt-get update
               sudo apt-get install -y libgl1-mesa-glx libegl1 libxkbcommon-x11-0 libxcb-cursor0
-
           - name: Install Python Dependencies & PyInstaller
             run: |
               python -m pip install --upgrade pip
               pip install -e ".[all]" pyinstaller
-
           - name: Build Standalone Directory Bundle
             env:
               AGYMOLDEN_ONEDIR: "1"
             run: |
               pyinstaller --noconfirm agymolden.spec
-
           - name: Package Release Archive
             shell: bash
             run: |
@@ -53,7 +43,6 @@
               else
                 tar -czvf dist/agymolden-linux-x64.tar.gz -C dist agymolden
               fi
-
           - name: Upload Standalone Archive Artifact
             uses: actions/upload-artifact@v4
             with:
