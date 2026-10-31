@@ -1811,6 +1811,56 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             else:
                 self.clear_surface_rect = None
 
+            # 4. Interactive 3D Measurement Overlay (HUD Distance line / Angle arc directly in 3D viewport)
+            if has_selection and 2 <= len(self.multi_selected) <= 4 and len(render_coords) > 0:
+                n_rc = len(render_coords)
+                sel_sub = [i for i in self.multi_selected if 0 <= i < n_rc]
+                if len(sel_sub) == 2:
+                    i1, i2 = sel_sub
+                    p4_1 = mvp * QtGui.QVector4D(float(render_coords[i1][0]), float(render_coords[i1][1]), float(render_coords[i1][2]), 1.0)
+                    p4_2 = mvp * QtGui.QVector4D(float(render_coords[i2][0]), float(render_coords[i2][1]), float(render_coords[i2][2]), 1.0)
+                    if p4_1.w() > 0.05 and p4_2.w() > 0.05:
+                        ndc1 = p4_1 / p4_1.w()
+                        ndc2 = p4_2 / p4_2.w()
+                        sx1, sy1 = int((ndc1.x() * 0.5 + 0.5) * w), int((-ndc1.y() * 0.5 + 0.5) * h)
+                        sx2, sy2 = int((ndc2.x() * 0.5 + 0.5) * w), int((-ndc2.y() * 0.5 + 0.5) * h)
+                        # Draw measurement line
+                        painter.setPen(QtGui.QPen(QtGui.QColor("#f59e0b"), 2, QtCore.Qt.PenStyle.DashLine))
+                        painter.drawLine(sx1, sy1, sx2, sy2)
+                        # Midpoint distance label
+                        mx, my = (sx1 + sx2) // 2, (sy1 + sy2) // 2
+                        dist = float(np.linalg.norm(render_coords[i1] - render_coords[i2]))
+                        d_str = f"{dist:.3f} Å"
+                        painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                        dfm = painter.fontMetrics()
+                        dtw = dfm.horizontalAdvance(d_str)
+                        drect = QtCore.QRect(mx - dtw // 2 - 6, my - 12, dtw + 12, 22)
+                        painter.setBrush(QtGui.QColor(15, 23, 42, 220))
+                        painter.setPen(QtGui.QPen(QtGui.QColor("#fbbf24"), 1.2))
+                        painter.drawRoundedRect(drect, 4, 4)
+                        painter.setPen(QtGui.QColor("#fef08a"))
+                        painter.drawText(drect, QtCore.Qt.AlignmentFlag.AlignCenter, d_str)
+                elif len(sel_sub) == 3:
+                    i1, i2, i3 = sel_sub
+                    p4_2 = mvp * QtGui.QVector4D(float(render_coords[i2][0]), float(render_coords[i2][1]), float(render_coords[i2][2]), 1.0)
+                    if p4_2.w() > 0.05:
+                        ndc2 = p4_2 / p4_2.w()
+                        sx2, sy2 = int((ndc2.x() * 0.5 + 0.5) * w), int((-ndc2.y() * 0.5 + 0.5) * h)
+                        v1 = render_coords[i1] - render_coords[i2]
+                        v2 = render_coords[i3] - render_coords[i2]
+                        cos_th = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-12)
+                        ang_deg = math.degrees(math.acos(np.clip(cos_th, -1.0, 1.0)))
+                        ang_str = f"∠ {ang_deg:.1f}°"
+                        painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                        dfm = painter.fontMetrics()
+                        dtw = dfm.horizontalAdvance(ang_str)
+                        drect = QtCore.QRect(sx2 - dtw // 2 - 6, sy2 - 32, dtw + 12, 22)
+                        painter.setBrush(QtGui.QColor(15, 23, 42, 220))
+                        painter.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), 1.2))
+                        painter.drawRoundedRect(drect, 4, 4)
+                        painter.setPen(QtGui.QColor("#e0f2fe"))
+                        painter.drawText(drect, QtCore.Qt.AlignmentFlag.AlignCenter, ang_str)
+
             # 5. Render 3D Translation & Manipulation Gizmo (X=Red, Y=Green, Z=Blue) on selection center
             if (
                 getattr(self, "show_manipulator_gizmo", False)

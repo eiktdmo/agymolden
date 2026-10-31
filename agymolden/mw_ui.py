@@ -1221,6 +1221,24 @@ class UIMixin(UIInspectorTabsMixin):
         act_add_h.triggered.connect(self._on_add_hydrogens)
         menu_edit.addAction(act_add_h)
 
+        menu_invert = menu_edit.addMenu("🔄 &Chirality & Mirror Inversion...")
+        act_inv_all = QtGui.QAction("Invert All Coordinates (Enantiomer, -r)", self)
+        act_inv_all.setToolTip("Invert all atomic coordinates through the center of inversion (x,y,z ➔ -x,-y,-z)")
+        act_inv_all.triggered.connect(lambda: self._invert_molecule_coordinates("inversion"))
+        menu_invert.addAction(act_inv_all)
+
+        act_mir_xy = QtGui.QAction("Mirror Across XY Plane (z ➔ -z)", self)
+        act_mir_xy.triggered.connect(lambda: self._invert_molecule_coordinates("xy"))
+        menu_invert.addAction(act_mir_xy)
+
+        act_mir_xz = QtGui.QAction("Mirror Across XZ Plane (y ➔ -y)", self)
+        act_mir_xz.triggered.connect(lambda: self._invert_molecule_coordinates("xz"))
+        menu_invert.addAction(act_mir_xz)
+
+        act_mir_yz = QtGui.QAction("Mirror Across YZ Plane (x ➔ -x)", self)
+        act_mir_yz.triggered.connect(lambda: self._invert_molecule_coordinates("yz"))
+        menu_invert.addAction(act_mir_yz)
+
         act_flush_mem = QtGui.QAction("Flush &Memory Clipboard", self)
         act_flush_mem.setShortcuts([
             QtGui.QKeySequence("Ctrl+K"),

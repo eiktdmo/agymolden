@@ -1671,6 +1671,47 @@ class EditingMixin:
         """Right-click on an atom deletes it directly (Avogadro behavior)."""
         self._delete_atom_or_orbit(atom_idx, source_label="Right-click removed")
 
+    def _invert_molecule_coordinates(self, plane: str = "inversion"):
+        """Invert molecule coordinates: inversion through origin or reflection across XY, XZ, YZ planes."""
+        if len(self.coords) == 0:
+            return
+        self._push_undo_state()
+        new_coords = np.copy(self.coords)
+        if plane == "inversion":
+            new_coords = -new_coords
+            label = "Inverted chirality / point of inversion (x, y, z ➔ -x, -y, -z)"
+        elif plane == "xy":
+            new_coords[:, 2] = -new_coords[:, 2]
+            label = "Mirrored across XY plane (z ➔ -z)"
+        elif plane == "xz":
+            new_coords[:, 1] = -new_coords[:, 1]
+            label = "Mirrored across XZ plane (y ➔ -y)"
+        elif plane == "yz":
+            new_coords[:, 0] = -new_coords[:, 0]
+            label = "Mirrored across YZ plane (x ➔ -x)"
+        else:
+            new_coords = -new_coords
+            label = "Inverted molecule coordinates"
+
+        symbols = [a.symbol for a in self.zatoms]
+        curr_bonds = self._current_explicit_bonds()
+        new_zatoms = cartesian_to_zmatrix(symbols, new_coords, user_bonds=curr_bonds, strict_bonds=True)
+        self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
+        self.statusBar().showMessage(f"Chirality / Symmetry: {label}", 4000)
+
+    def _copy_viewport_image_to_clipboard(self):
+        """Render high-resolution offscreen image of the current viewport and copy directly to the system clipboard."""
+        try:
+            pixmap = self.viewer.grab()
+            if not pixmap.isNull():
+                clipboard = QtWidgets.QApplication.clipboard()
+                clipboard.setPixmap(pixmap)
+                self.statusBar().showMessage("📋 Copied high-res 3D molecular image to clipboard!", 3500)
+            else:
+                self.statusBar().showMessage("Failed to capture viewport image.", 3000)
+        except Exception as e:
+            self.statusBar().showMessage(f"Clipboard copy error: {e}", 3000)
+
     def _toggle_freeze_atom(self, atom_idx: int):
         """Toggle frozen state of an atom for QM input generation and local minimization."""
         if not hasattr(self, "frozen_atoms"):

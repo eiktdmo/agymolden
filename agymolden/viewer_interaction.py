@@ -601,6 +601,23 @@ class ViewerInteractionMixin:
                     return
         super().dropEvent(event)
 
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        # Quick Camera Hotkeys: 1 (Front/XY), 2 (Side/YZ), 3 (Top/XZ), 0 or Space (Reset/Center)
+        key = event.key()
+        if key == QtCore.Qt.Key.Key_1:
+            self.set_camera_plane_view("XY")
+            return
+        elif key == QtCore.Qt.Key.Key_2:
+            self.set_camera_plane_view("YZ")
+            return
+        elif key == QtCore.Qt.Key.Key_3:
+            self.set_camera_plane_view("XZ")
+            return
+        elif key in (QtCore.Qt.Key.Key_0, QtCore.Qt.Key.Key_Space):
+            self.auto_center()
+            return
+        super().keyPressEvent(event)
+
     def _pick_bond(self, pos: QtCore.QPoint, tolerance_px: float = 18.0, oriented: bool = False) -> Optional[Tuple[int, int]]:
         """
         Find the covalent bond whose cylinder segment is closest to the mouse cursor.
