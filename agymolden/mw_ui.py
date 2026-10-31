@@ -1031,6 +1031,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_esp_2d.triggered.connect(self._on_open_esp_2d_dialog)
         menu_file.addAction(act_esp_2d)
 
+        act_nci_plot = QtGui.QAction("📉 Non-Covalent Interactions (NCI / RDG Plot)...", self)
+        act_nci_plot.setToolTip("Plot 2D Reduced Density Gradient s(r) vs sign(λ₂)ρ to reveal H-bonds, dispersion, and steric clash")
+        act_nci_plot.triggered.connect(self._on_open_nci_plot_dialog)
+        menu_file.addAction(act_nci_plot)
+
         act_multiwfn = QtGui.QAction("Multiwfn &Wavefunction Suite (Bonds / Fukui / QTAIM / CM5)...", self)
         act_multiwfn.setToolTip("Run Multiwfn Mayer/Wiberg bond orders, Conceptual DFT Fukui indices, QTAIM critical points, and CM5 charges")
         act_multiwfn.triggered.connect(self._on_open_multiwfn_dialog)
@@ -1248,6 +1253,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_adj_d.setToolTip("Click 4 atoms to redefine bond, angle & dihedral partners of the 1st atom (Alt+D)")
         act_adj_d.triggered.connect(lambda: self._start_partial_reorder("dihedral"))
         menu_edit.addAction(act_adj_d)
+
+        act_dihed_scan = QtGui.QAction("🔄 1D &Dihedral Rotor Scan / PES Drive...", self)
+        act_dihed_scan.setToolTip("Step selected 4-atom dihedral through 360° with real-time forcefield relaxation (conformer search)")
+        act_dihed_scan.triggered.connect(self._on_open_dihedral_scan_dialog)
+        menu_edit.addAction(act_dihed_scan)
 
         menu_edit.addSeparator()
 

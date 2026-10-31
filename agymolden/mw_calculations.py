@@ -1573,6 +1573,31 @@ class CalculationsMixin:
         else:
             self.statusBar().showMessage("No QM calculation log loaded yet. Run a calculation or open an output file.", 3500)
 
+    def _on_open_nci_plot_dialog(self):
+        """Open 2D Reduced Density Gradient (NCI / RDG) scatter plot dialog."""
+        from .dialog_nci_plot import NCIRdgPlotDialog
+        molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path:
+            # Check last QM log companion
+            last_qm = getattr(self, "_last_loaded_qm_log_path", None)
+            if last_qm:
+                base = os.path.splitext(last_qm)[0]
+                for ext in (".molden", ".molden.input", "_electrons.molden"):
+                    if os.path.isfile(base + ext):
+                        molden_path = base + ext
+                        break
+        if not molden_path or not os.path.isfile(molden_path):
+            molden_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Select Molden File for NCI / RDG Analysis", "", "Molden Files (*.molden *.molden.input *.molf);;All Files (*)"
+            )
+        if molden_path and os.path.isfile(molden_path):
+            dlg = NCIRdgPlotDialog(self, molden_path=molden_path)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        else:
+            self.statusBar().showMessage("NCI plot requires an electronic wavefunction (.molden file).", 3500)
+
     # -------------------------------------------------------------------------
     # Quick Molecular Orbital Inspector
     # -------------------------------------------------------------------------

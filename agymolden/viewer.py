@@ -1229,6 +1229,66 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 glUniform1i(loc_hl, 0)
                 glDrawElements(GL_TRIANGLES, self.cone_indices_count, GL_UNSIGNED_INT, None)
 
+        # 3b-1. Render Dynamic 3D IR Transition Dipole Moment Derivative Vector during vibration
+        if getattr(self, "vibrating", False) and getattr(self, "show_vib_dipole", True) and len(render_coords) > 0:
+            if hasattr(self, "vibration_displacements") and self.vibration_displacements is not None:
+                # Transition dipole derivative approx: sum(q_i * dr_i)
+                charges_arr = self._charges_and_dipole()[0] if hasattr(self, "_charges_and_dipole") else None
+                if charges_arr is not None and len(charges_arr) == len(render_coords):
+                    q = charges_arr
+                else:
+                    q = np.array([1.0 if s != "H" else 0.5 for s in self.symbols])
+                disp = self.vibration_displacements
+                # Oscillating displacement factor
+                cos_phase = math.cos(getattr(self, "vibration_phase", 0.0))
+                d_mu = np.sum((q[:, None] * disp), axis=0) * cos_phase
+                d_mag = np.linalg.norm(d_mu)
+                if d_mag >= 0.01:
+                    u_dir = d_mu / d_mag
+                    arrow_len = min(3.8, max(0.8, d_mag * 1.5))
+                    center_p = np.mean(render_coords, axis=0)
+                    base_p = center_p - 0.5 * arrow_len * u_dir
+                    shaft_len = arrow_len * 0.72
+                    head_len = arrow_len * 0.28
+                    shaft_r = 0.05
+                    cone_r = 0.13
+
+                    z_axis = np.array([0.0, 0.0, 1.0])
+                    axis = np.cross(z_axis, u_dir)
+                    axis_len = np.linalg.norm(axis)
+                    angle_deg = 0.0
+                    if axis_len > 1e-6:
+                        axis = axis / axis_len
+                        angle_deg = math.degrees(math.acos(np.clip(np.dot(z_axis, u_dir), -1.0, 1.0)))
+                    elif np.dot(z_axis, u_dir) < 0:
+                        axis = np.array([1.0, 0.0, 0.0])
+                        angle_deg = 180.0
+
+                    glBindVertexArray(self.cyl_vao)
+                    m_shaft = QtGui.QMatrix4x4()
+                    m_shaft.translate(float(base_p[0]), float(base_p[1]), float(base_p[2]))
+                    if angle_deg != 0:
+                        m_shaft.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
+                    m_shaft.scale(shaft_r, shaft_r, float(shaft_len))
+                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m_shaft.data())
+                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m_shaft.normalMatrix().data())
+                    glUniform3f(loc_color, 0.20, 0.85, 0.40)  # Vibrant emerald green
+                    glUniform1i(loc_hl, 0)
+                    glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
+
+                    glBindVertexArray(self.cone_vao)
+                    head_base = base_p + u_dir * shaft_len
+                    m_cone = QtGui.QMatrix4x4()
+                    m_cone.translate(float(head_base[0]), float(head_base[1]), float(head_base[2]))
+                    if angle_deg != 0:
+                        m_cone.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
+                    m_cone.scale(cone_r, cone_r, float(head_len))
+                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m_cone.data())
+                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m_cone.normalMatrix().data())
+                    glUniform3f(loc_color, 0.40, 0.95, 0.55)
+                    glUniform1i(loc_hl, 0)
+                    glDrawElements(GL_TRIANGLES, self.cone_indices_count, GL_UNSIGNED_INT, None)
+
         # 3b-2. Render QTAIM / AIM Critical Points (BCP cyan, RCP yellow, CCP orange)
         if getattr(self, "show_qtaim_cps", False) and getattr(self, "qtaim_critical_points", None):
             glBindVertexArray(self.sphere_vao)
