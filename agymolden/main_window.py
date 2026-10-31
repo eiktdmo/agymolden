@@ -488,6 +488,33 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             m = info.get("mass", info.get("atomic_mass", 0.0))
             mw += cnt * float(m)
 
+        # Aromaticity detection
+        aro_str = ""
+        try:
+            from .aromatic import find_aromatic_rings
+            n_b = len(self.zatoms)
+            bonds_list = []
+            for idx, a in enumerate(self.zatoms):
+                if a.ref1 is not None and a.ref1 < idx:
+                    bonds_list.append((a.ref1, idx))
+            if hasattr(self, "cross_bonds"):
+                for u, v in self.cross_bonds:
+                    if u < n_b and v < n_b:
+                        bonds_list.append((min(u, v), max(u, v)))
+            for i in range(min(n_b, len(self.coords))):
+                for j in range(i + 1, min(n_b, len(self.coords))):
+                    if (i, j) not in bonds_list and (j, i) not in bonds_list:
+                        d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
+                        sum_r = get_cov_radius(self.zatoms[i].symbol) + get_cov_radius(self.zatoms[j].symbol)
+                        if d <= sum_r * 1.25:
+                            bonds_list.append((i, j))
+            aro_rings = find_aromatic_rings([a.symbol for a in self.zatoms], self.coords, bonds_list)
+            if aro_rings:
+                r_cnt = len(aro_rings)
+                aro_str = f"  |  <span style='color: #10b981; font-weight: bold;'>🌿 Aromatic ({r_cnt} ring{'s' if r_cnt > 1 else ''})</span>"
+        except Exception:
+            aro_str = ""
+
         # Steric clash detection (atoms closer than 60% of covalent radii sum or < 0.72 A)
         clashes = []
         n_at = min(len(self.zatoms), len(self.coords))
@@ -518,7 +545,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         else:
             self.lbl_chem_summary.setToolTip(f"{formula} ({len(symbols)} atoms, molecular weight {mw:.3f} g/mol)")
 
-        self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {len(symbols)} atoms{clash_str}")
+        self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {len(symbols)} atoms{aro_str}{clash_str}")
 
     def load_preset_molecule(self, name: str):
         if name in SAMPLE_MOLECULES:
