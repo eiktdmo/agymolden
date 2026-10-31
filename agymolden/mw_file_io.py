@@ -469,6 +469,7 @@ class FileIOMixin:
             self.variables = {}
 
             # Store optimization trajectory
+            self._last_qm_res = res
             self.trajectory_coords = res.trajectory_coords
             self.trajectory_energies = res.trajectory_energies
             self.trajectory_symbols = res.symbols
@@ -508,7 +509,16 @@ class FileIOMixin:
             n_steps = len(res.trajectory_coords)
             if hasattr(self, "grp_trajectory"):
                 if n_steps > 1:
-                    self.grp_trajectory.setTitle("Trajectory Player (Optimization Steps / IRC)")
+                    is_irc = getattr(res, "is_irc", False)
+                    if is_irc:
+                        self.grp_trajectory.setTitle("⚛️ Intrinsic Reaction Coordinate (IRC Pathway Player)")
+                        if hasattr(self, "combo_traj_mode"):
+                            # Bounce mode is the gold standard for inspecting IRC reaction pathways
+                            idx_bounce = self.combo_traj_mode.findData("bounce")
+                            if idx_bounce >= 0:
+                                self.combo_traj_mode.setCurrentIndex(idx_bounce)
+                    else:
+                        self.grp_trajectory.setTitle("Trajectory Player (Optimization Steps / MD)")
                     self.grp_trajectory.setVisible(True)
                     self.slider_trajectory.blockSignals(True)
                     self.slider_trajectory.setRange(0, n_steps - 1)
@@ -771,8 +781,15 @@ class FileIOMixin:
         # Pre-populate with current trajectory energies if available
         if hasattr(self, "trajectory_energies") and self.trajectory_energies:
             e_ha = [e / 27.211386245988 for e in self.trajectory_energies]
-            step_nums = [float(i + 1) for i in range(len(e_ha))]
-            dlg.load_scan_data(step_nums, e_ha, coord_label="Optimization / Scan Step")
+            is_irc = getattr(getattr(self, "_last_qm_res", None), "is_irc", False)
+            irc_pts = getattr(getattr(self, "_last_qm_res", None), "irc_path_points", None)
+            if is_irc and irc_pts and len(irc_pts) == len(e_ha):
+                coords_pts = irc_pts
+                c_lbl = "Reaction Coordinate s (amu½·Bohr)"
+            else:
+                coords_pts = [float(i + 1) for i in range(len(e_ha))]
+                c_lbl = "Reaction / Optimization Step"
+            dlg.load_scan_data(coords_pts, e_ha, coord_label=c_lbl)
             if hasattr(self, "slider_trajectory"):
                 dlg.set_active_step(self.slider_trajectory.value())
 

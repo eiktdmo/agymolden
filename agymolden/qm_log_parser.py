@@ -52,6 +52,8 @@ class QMLogParseResult:
     gibbs_ha: Optional[float] = None
     orbitals: Optional[List[Any]] = None  # List of MoldenMO objects if orbitals were present in the QM log
     homo_idx: Optional[int] = None
+    is_irc: bool = False
+    irc_path_points: Optional[List[float]] = None  # Reaction coordinate values along IRC (e.g. amu^(1/2)*Bohr)
 
 
 def _extract_thermo_and_frontier_from_text(text: str) -> Dict[str, Optional[float]]:
@@ -741,12 +743,33 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
 
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f_txt:
-            raw_extra = _extract_thermo_and_frontier_from_text(f_txt.read())
+            full_text = f_txt.read()
+            raw_extra = _extract_thermo_and_frontier_from_text(full_text)
         for k, v in raw_extra.items():
             if extra.get(k) is None and v is not None:
                 extra[k] = v
     except Exception:
+        full_text = ""
         log.debug("Ignored non-fatal exception", exc_info=True)
+
+    # Detect if this is an Intrinsic Reaction Coordinate (IRC) calculation
+    is_irc = False
+    irc_pts = None
+    if full_text:
+        is_irc = bool(
+            "IRC-Calculation" in full_text
+            or "Intrinsic Reaction Coordinate" in full_text
+            or "Reaction coordinate path" in full_text
+            or re.search(r'\bIRC\b', full_text, re.IGNORECASE)
+        )
+        if is_irc:
+            # Extract IRC points if Gaussian or ORCA prints "Point Number: X ... Path Number: Y" or "Net reaction coordinate"
+            rxn_coords = re.findall(r'(?:Net reaction coordinate|Reaction coordinate|Path coordinate|Total mass-weighted coordinate)\s*[:=]\s*([+-]?\d+\.\d+)', full_text, re.IGNORECASE)
+            if rxn_coords:
+                try:
+                    irc_pts = [float(x) for x in rxn_coords]
+                except ValueError:
+                    irc_pts = None
 
     # Extract Molecular Orbitals if present in cclib data
     parsed_orbitals = None
@@ -784,5 +807,7 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
         nuclear_forces=nuclear_forces,
         orbitals=parsed_orbitals,
         homo_idx=parsed_homo_idx,
+        is_irc=is_irc,
+        irc_path_points=irc_pts,
         **extra,
     )
