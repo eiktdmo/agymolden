@@ -484,7 +484,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Molecular Weight
         mw = 0.0
         for sym, cnt in counts.items():
-            mw += cnt * ELEMENT_DATA.get(sym, {}).get("atomic_mass", 0.0)
+            info = ELEMENT_DATA.get(sym, {})
+            m = info.get("mass", info.get("atomic_mass", 0.0))
+            mw += cnt * float(m)
 
         # Steric clash detection (atoms closer than 60% of covalent radii sum or < 0.72 A)
         clashes = []
