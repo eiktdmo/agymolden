@@ -461,13 +461,14 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             self.zoom = 12.0
             return
 
-        max_dist = np.max(np.linalg.norm(self.coords, axis=1)) if len(self.coords) > 0 else 5.0
+        center = np.mean(self.coords, axis=0)
+        max_dist = np.max(np.linalg.norm(self.coords - center, axis=1)) if len(self.coords) > 0 else 5.0
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.zoom = max(max_dist * 3.5, 6.0)
+        self.zoom = max(max_dist * 3.2, 5.0)
 
     def auto_center(self):
-        """Reset camera pan and zoom to frame the molecule (preserving exact atomic coordinates)."""
+        """Reset camera pan and zoom to perfectly frame and center the molecule in the canvas."""
         self.fit_camera()
         self.update()
 
@@ -704,6 +705,9 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         else:
             mat.rotate(self.rot_x, 1.0, 0.0, 0.0)
             mat.rotate(self.rot_y, 0.0, 1.0, 0.0)
+        if len(self.coords) > 0:
+            c = np.mean(self.coords, axis=0)
+            mat.translate(-float(c[0]), -float(c[1]), -float(c[2]))
         return mat
 
     def _get_camera_axes(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -794,10 +798,21 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         loc_hl = glGetUniformLocation(self.shader_program, "u_is_highlighted")
         loc_use_inst = glGetUniformLocation(self.shader_program, "u_use_instancing")
 
+        c_x, c_y, c_z = 0.0, 0.0, 0.0
+        if len(self.coords) > 0:
+            c = np.mean(self.coords, axis=0)
+            c_x, c_y, c_z = float(c[0]), float(c[1]), float(c[2])
+        if hasattr(self, "rot_quat") and not self.rot_quat.isNull():
+            inv_q = self.rot_quat.inverted()
+            cw = inv_q.rotatedVector(QtGui.QVector3D(0.0, 0.0, float(self.zoom)))
+            cam_world_pos = (cw.x() + c_x, cw.y() + c_y, cw.z() + c_z)
+        else:
+            cam_world_pos = (c_x, c_y, self.zoom + c_z)
+
         glUniformMatrix4fv(loc_proj, 1, GL_FALSE, proj_mat.data())
         glUniformMatrix4fv(loc_view, 1, GL_FALSE, view_mat.data())
-        glUniform3f(loc_light, 20.0, 30.0, 40.0)
-        glUniform3f(loc_view_pos, 0.0, 0.0, self.zoom)
+        glUniform3f(loc_light, cam_world_pos[0] + 15.0, cam_world_pos[1] + 25.0, cam_world_pos[2] + 20.0)
+        glUniform3f(loc_view_pos, cam_world_pos[0], cam_world_pos[1], cam_world_pos[2])
         glUniform1i(loc_use_inst, 0)
 
         # 1. Render Bonds (Cylinders)
@@ -1342,8 +1357,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
             glUniformMatrix4fv(loc_s_proj, 1, GL_FALSE, proj_mat.data())
             glUniformMatrix4fv(loc_s_view, 1, GL_FALSE, view_mat.data())
-            glUniform3f(loc_s_light, 20.0, 30.0, 40.0)
-            glUniform3f(loc_s_view_pos, 0.0, 0.0, self.zoom)
+            glUniform3f(loc_s_light, cam_world_pos[0] + 15.0, cam_world_pos[1] + 25.0, cam_world_pos[2] + 20.0)
+            glUniform3f(loc_s_view_pos, cam_world_pos[0], cam_world_pos[1], cam_world_pos[2])
             opacity = getattr(self, "surface_opacity", 0.82)
             glUniform1f(loc_s_opacity, float(opacity))
 
