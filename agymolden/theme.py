@@ -9,6 +9,7 @@ import os
 RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
 ARROW_DARK_PATH = os.path.join(RESOURCES_DIR, "arrow_dark.svg").replace("\\", "/")
 ARROW_LIGHT_PATH = os.path.join(RESOURCES_DIR, "arrow_light.svg").replace("\\", "/")
+CHECKMARK_PATH = os.path.join(RESOURCES_DIR, "check_white.svg").replace("\\", "/")
 
 DARK_THEME_QSS = """
 QMainWindow, QDialog {
@@ -19,7 +20,32 @@ QLabel {
     color: #e0e0e0;
 }
 QCheckBox, QRadioButton {
-    color: #e0e0e0;
+    color: #f1f5f9;
+    spacing: 6px;
+    font-size: 12px;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #64748b;
+    border-radius: 3px;
+    background-color: #1e1e28;
+}
+QRadioButton::indicator {
+    border-radius: 8px;
+}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #60a5fa;
+    background-color: #282838;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    border-color: #3b82f6;
+    background-color: #2563eb;
+    image: url("__CHECKMARK_PATH__");
+}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    border-color: #475569;
+    background-color: #1e1e24;
 }
 QMenuBar {
     background-color: #18181c;
@@ -250,7 +276,7 @@ QStatusBar {
     border-top: 1px solid #24242c;
     font-size: 12px;
 }
-""".replace("__ARROW_LIGHT_PATH__", ARROW_LIGHT_PATH)
+""".replace("__ARROW_LIGHT_PATH__", ARROW_LIGHT_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH)
 
 LIGHT_THEME_QSS = """
 QMainWindow, QDialog {
@@ -261,7 +287,32 @@ QLabel {
     color: #1e293b;
 }
 QCheckBox, QRadioButton {
-    color: #1e293b;
+    color: #0f172a;
+    spacing: 6px;
+    font-size: 12px;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #94a3b8;
+    border-radius: 3px;
+    background-color: #ffffff;
+}
+QRadioButton::indicator {
+    border-radius: 8px;
+}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #2563eb;
+    background-color: #f1f5f9;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    border-color: #2563eb;
+    background-color: #2563eb;
+    image: url("__CHECKMARK_PATH__");
+}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
 }
 QMenuBar {
     background-color: #f1f5f9;
@@ -494,4 +545,4 @@ QStatusBar {
     border-top: 1px solid #cbd5e1;
     font-size: 12px;
 }
-""".replace("__ARROW_DARK_PATH__", ARROW_DARK_PATH)
+""".replace("__ARROW_DARK_PATH__", ARROW_DARK_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH)

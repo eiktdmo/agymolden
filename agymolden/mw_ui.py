@@ -136,12 +136,14 @@ class UIMixin(UIInspectorTabsMixin):
 
         self.chk_auto_h = QtWidgets.QCheckBox("Adjust H")
         self.chk_auto_h.setChecked(True)
+        self.chk_auto_h.setStyleSheet("font-weight: 600; padding: 2px 4px;")
         self.chk_auto_h.setToolTip("Avogadro style: automatically complete new atom valence and prune hydrogens on anchor atom to maintain correct valency")
         self.chk_auto_h.toggled.connect(lambda: self._update_viewer_drag_label())
         view_ctrls.addWidget(self.chk_auto_h)
 
-        self.chk_impose_symmetry = QtWidgets.QCheckBox("🔒 Symm.")
+        self.chk_impose_symmetry = QtWidgets.QCheckBox("🔒 Impose Symm.")
         self.chk_impose_symmetry.setChecked(False)
+        self.chk_impose_symmetry.setStyleSheet("font-weight: 600; padding: 2px 4px;")
         self.chk_impose_symmetry.setToolTip(
             "GaussView style: Lock/constrain molecular point group symmetry so structural edits\n"
             "(fragment replacement, atom substitution, bond changes) automatically replicate across\n"
