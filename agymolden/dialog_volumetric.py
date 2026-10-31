@@ -652,6 +652,12 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
                 return
 
             self.current_vol_data = esp_vol
+            # Set chemical ESP lobe colors: Blue (+V electrophilic) and Red (-V nucleophilic)
+            self.pos_color = (0.15, 0.50, 0.98) # Vibrant Sky Blue (+V)
+            self.neg_color = (0.95, 0.15, 0.15) # Vibrant Crimson Red (-V)
+            self.btn_pos_col.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold;")
+            self.btn_neg_col.setStyleSheet("background-color: #dc2626; color: #ffffff; font-weight: bold;")
+
             # Auto-scale suggested isovalue based on ESP range
             esp_data = esp_vol.grid_data
             min_v = float(np.min(esp_data))
@@ -680,7 +686,8 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
             self.lbl_info.setText(
                 f"<b>{esp_vol.title}</b>: Evaluated exact ESP grid ({esp_vol.voxels_x}×{esp_vol.voxels_y}×{esp_vol.voxels_z}). "
-                f"Min: {float(np.min(esp_vol.grid_data)):.4f} a.u., Max: {float(np.max(esp_vol.grid_data)):.4f} a.u."
+                f"<span style='color: #2563eb;'>Positive (+V) = Blue</span>, <span style='color: #dc2626;'>Negative (-V) = Red</span>. "
+                f"Min: {min_v:.4f} a.u., Max: {max_v:.4f} a.u."
             )
             self._update_surface()
 
@@ -760,32 +767,82 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(self, "ESP-Mapped Density", "Please load a .molden file first.")
             return
 
-        # Prompt for colormap and range
-        cmap_name, ok = QtWidgets.QInputDialog.getItem(
-            self,
-            "ESP Heatmap Colormap",
-            "Select Colormap Palette:",
-            [
-                "bwr_r (Red = Negative δ−, Blue = Positive δ+, Standard)",
-                "coolwarm_r (Balanced Red δ− to Blue δ+)",
-                "jet_r (Rainbow / Multiwfn Red δ− to Blue δ+)",
-                "Spectral (Red δ− to Blue δ+)",
-                "seismic_r (High-Contrast Red δ− to Blue δ+)",
-            ],
-            0,
-            False,
+        # Prompt for colormap and range options
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("3D ESP-Mapped Electron Density Settings")
+        dlg.resize(460, 260)
+        vbox = QtWidgets.QVBoxLayout(dlg)
+
+        form = QtWidgets.QFormLayout()
+        form.setSpacing(10)
+
+        combo_cmap = QtWidgets.QComboBox()
+        combo_cmap.addItem("bwr_r (Red = Negative δ−, White = Neutral, Blue = Positive δ+)", "bwr_r")
+        combo_cmap.addItem("RdBu (Red = Negative δ−, Light Gray = Neutral, Dark Blue = Positive δ+)", "RdBu")
+        combo_cmap.addItem("coolwarm_r (Balanced Soft Red δ− to Blue δ+)", "coolwarm_r")
+        combo_cmap.addItem("jet_r (Rainbow / Multiwfn Red δ− to Blue δ+)", "jet_r")
+        combo_cmap.addItem("Spectral (Spectral Rainbow Red δ− to Violet δ+)", "Spectral")
+        form.addRow("Colormap Palette:", combo_cmap)
+
+        combo_dens = QtWidgets.QComboBox()
+        combo_dens.addItem("0.001 a.u. (Standard van der Waals / Bader contact surface)", 0.001)
+        combo_dens.addItem("0.002 a.u. (Compact molecular envelope)", 0.002)
+        combo_dens.addItem("0.0005 a.u. (Expanded solvent cavity surface)", 0.0005)
+        form.addRow("Density Isovalue:", combo_dens)
+
+        chk_auto_range = QtWidgets.QCheckBox("Auto-scale symmetric potential range [-V_lim, +V_lim] (Recommended)")
+        chk_auto_range.setChecked(True)
+        form.addRow("Color Scaling:", chk_auto_range)
+
+        spin_manual_range = QtWidgets.QDoubleSpinBox()
+        spin_manual_range.setRange(0.005, 0.500)
+        spin_manual_range.setDecimals(3)
+        spin_manual_range.setSingleStep(0.01)
+        spin_manual_range.setValue(0.050)
+        spin_manual_range.setPrefix("± ")
+        spin_manual_range.setSuffix(" a.u.")
+        spin_manual_range.setEnabled(False)
+        chk_auto_range.toggled.connect(lambda chk: spin_manual_range.setEnabled(not chk))
+        form.addRow("Manual Potential Limit:", spin_manual_range)
+
+        chk_extrema = QtWidgets.QCheckBox("Detect & label surface extrema (V_min nucleophilic, V_max electrophilic)")
+        chk_extrema.setChecked(True)
+        form.addRow("Surface Extrema:", chk_extrema)
+
+        vbox.addLayout(form)
+        vbox.addStretch()
+
+        btns = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
         )
-        if not ok:
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        vbox.addWidget(btns)
+
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
-        cmap_clean = cmap_name.split()[0]
+
+        cmap_clean = combo_cmap.currentData() or "bwr_r"
+        dens_iso = float(combo_dens.currentData() or 0.001)
+        do_extrema = chk_extrema.isChecked()
+        if chk_auto_range.isChecked():
+            esp_lim_min = None
+            esp_lim_max = None
+        else:
+            val_lim = float(spin_manual_range.value())
+            esp_lim_min = -val_lim
+            esp_lim_max = val_lim
+
         n_pts = self._get_grid_pts(40)
 
         def _compute():
             return compute_molden_esp_mapped_density(
                 self.current_molden_path,
-                density_isovalue=0.002,
+                density_isovalue=dens_iso,
                 colormap_name=cmap_clean,
-                find_extrema=True,
+                esp_min=esp_lim_min,
+                esp_max=esp_lim_max,
+                find_extrema=do_extrema,
                 nx=n_pts,
                 ny=n_pts,
                 nz=n_pts,
@@ -800,9 +857,12 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             self.surface_updated.emit([mesh], opacity)
             n_triangles = len(mesh.faces)
             n_ext = len(mesh.extrema_points) if mesh.extrema_points else 0
-            self.lbl_stats.setText(f"Generated ESP-Mapped Density Envelope: {n_triangles:,} triangles, {n_ext} surface extrema.")
+            r_str = f"Range: [{mesh.esp_range[0]:+.3f}, {mesh.esp_range[1]:+.3f}] a.u." if getattr(mesh, "esp_range", None) else ""
+            self.lbl_stats.setText(f"Generated ESP-Mapped Density Envelope: {n_triangles:,} triangles, {n_ext} surface extrema. {r_str}")
             self.lbl_info.setText(
-                f"<b>ESP-Mapped Isodensity Surface ({cmap_clean}):</b> Red = Negative (Nucleophilic), Blue = Positive (Electrophilic). "
+                f"<b>ESP-Mapped Isodensity Surface ({cmap_clean}, ρ={dens_iso}):</b> "
+                f"<span style='color: #ef4444;'>Red = Negative (Nucleophilic δ−)</span>, "
+                f"<span style='color: #38bdf8;'>Blue = Positive (Electrophilic δ+)</span>. {r_str} "
                 f"Found {n_ext} local extrema (V_min / V_max) marked on surface."
             )
 

@@ -79,6 +79,8 @@ class IsosurfaceMesh:
     vertex_colors: Optional[np.ndarray] = None  # shape: (n_verts, 3) or (n_verts, 4) in [0, 1]
     surface_values: Optional[np.ndarray] = None  # Raw scalar property values at vertices (e.g. ESP a.u., ALIE eV)
     extrema_points: Optional[List[Dict[str, Any]]] = None  # Local surface extrema [{"type": "min"|"max", "pos": [x,y,z], "val": float, "label": str}]
+    esp_range: Optional[Tuple[float, float]] = None  # (min_v, max_v) potential mapping range in a.u.
+
 
 
 def parse_cube_file(path: str) -> VolumetricData:
@@ -757,8 +759,8 @@ def compute_molden_esp_mapped_density(
     nx: int = 40,
     ny: int = 40,
     nz: int = 40,
-    esp_min: float = -0.05,
-    esp_max: float = 0.05,
+    esp_min: Optional[float] = None,
+    esp_max: Optional[float] = None,
     colormap_name: str = "bwr_r",
     find_extrema: bool = True,
 ) -> Optional[IsosurfaceMesh]:
@@ -766,7 +768,10 @@ def compute_molden_esp_mapped_density(
     Generate an ESP-mapped Electron Density Isosurface mesh.
     Extracts isodensity surface at `density_isovalue` (e.g. 0.001 a.u. for van der Waals contact envelope),
     evaluates exact ESP potential at each mesh vertex, colors vertices using standard colormaps
-    (e.g. bwr, coolwarm, jet, spectral), and detects Multiwfn-style surface extrema (V_min, V_max).
+    (e.g. bwr_r, RdBu, coolwarm_r, Spectral, jet_r), and detects Multiwfn-style surface extrema (V_min, V_max).
+    When esp_min and esp_max are omitted, a symmetric range [-V_lim, +V_lim] centered on 0.0 is automatically
+    computed from the surface values so that neutral regions are neutral white/gray, nucleophilic (negative)
+    regions display full red hues, and electrophilic (positive) regions display full blue hues.
     """
     import io
     import contextlib
@@ -846,9 +851,23 @@ def compute_molden_esp_mapped_density(
 
     v_esp_verts = v_nuc - v_elec
 
-    # Color map normalization
-    denom = max(1e-6, (esp_max - esp_min))
-    norm_val = np.clip((v_esp_verts - esp_min) / denom, 0.0, 1.0)
+    # Color map normalization:
+    # If range is not specified or at default placeholder, dynamically calculate a symmetric range
+    # [-lim, +lim] around 0.0 using the 98th percentile of absolute ESP values on the envelope.
+    # This guarantees that 0.0 is strictly at the center (norm_val = 0.5) and both positive (+δ)
+    # and negative (-δ) regions use the full dynamic color range without crushing or washing out.
+    if esp_min is None or esp_max is None or (abs(esp_min - (-0.05)) < 1e-6 and abs(esp_max - 0.05) < 1e-6):
+        abs_vals = np.abs(v_esp_verts)
+        max_abs = float(np.percentile(abs_vals, 98.0)) if len(abs_vals) > 0 else 0.05
+        lim = max(0.008, round(max_abs * 1.05, 3))
+        eff_esp_min = -lim
+        eff_esp_max = lim
+    else:
+        eff_esp_min = float(esp_min)
+        eff_esp_max = float(esp_max)
+
+    denom = max(1e-6, (eff_esp_max - eff_esp_min))
+    norm_val = np.clip((v_esp_verts - eff_esp_min) / denom, 0.0, 1.0)
 
     try:
         cmap = mpl.colormaps.get(colormap_name, mpl.colormaps["bwr_r"])
@@ -868,6 +887,7 @@ def compute_molden_esp_mapped_density(
 
     mesh.vertex_colors = colors
     mesh.surface_values = v_esp_verts
+    mesh.esp_range = (eff_esp_min, eff_esp_max)
 
     # Find Multiwfn-style local surface extrema (V_min and V_max)
     if find_extrema and len(mesh.faces) > 0:

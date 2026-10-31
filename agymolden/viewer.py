@@ -1905,6 +1905,40 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.drawRoundedRect(s_rect, 5, 5)
                 painter.setPen(QtGui.QColor("#ffffff") if is_hover_clear else QtGui.QColor("#fecaca"))
                 painter.drawText(s_rect, QtCore.Qt.AlignmentFlag.AlignCenter, surf_txt)
+
+                # If an ESP-mapped surface with a potential range is active, render a colorbar legend
+                esp_mesh = next((m for m in active_surfaces if getattr(m, "esp_range", None) is not None), None)
+                if esp_mesh is not None:
+                    e_min, e_max = esp_mesh.esp_range
+                    cbar_w = 140
+                    cbar_h = 10
+                    cbar_x = w - cbar_w - 28
+                    cbar_y = y_surf + 32
+                    box_rect = QtCore.QRect(cbar_x - 6, cbar_y - 14, cbar_w + 12, cbar_h + 30)
+                    painter.setBrush(QtGui.QColor(15, 23, 42, 225))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.0))
+                    painter.drawRoundedRect(box_rect, 5, 5)
+
+                    # Draw gradient ramp
+                    grad = QtGui.QLinearGradient(cbar_x, cbar_y, cbar_x + cbar_w, cbar_y)
+                    # Sample gradient matching the colormap or standard Red -> White -> Blue
+                    grad.setColorAt(0.0, QtGui.QColor("#ef4444"))   # Negative (Red)
+                    grad.setColorAt(0.5, QtGui.QColor("#f8fafc"))   # Neutral 0.0 (White)
+                    grad.setColorAt(1.0, QtGui.QColor("#3b82f6"))   # Positive (Blue)
+                    painter.setBrush(QtGui.QBrush(grad))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1.0))
+                    painter.drawRect(cbar_x, cbar_y, cbar_w, cbar_h)
+
+                    # Labels: -V_lim, 0, +V_lim
+                    painter.setFont(QtGui.QFont("DejaVu Sans", 7, QtGui.QFont.Weight.Bold))
+                    painter.setPen(QtGui.QColor("#f87171"))
+                    painter.drawText(cbar_x, cbar_y + cbar_h + 12, f"{e_min:+.3f}")
+                    painter.setPen(QtGui.QColor("#cbd5e1"))
+                    painter.drawText(cbar_x + cbar_w // 2 - 4, cbar_y + cbar_h + 12, "0")
+                    painter.setPen(QtGui.QColor("#60a5fa"))
+                    painter.drawText(cbar_x + cbar_w - 38, cbar_y + cbar_h + 12, f"{e_max:+.3f}")
+                    painter.setPen(QtGui.QColor("#94a3b8"))
+                    painter.drawText(cbar_x, cbar_y - 3, "ESP Heatmap (a.u.)")
             else:
                 self.clear_surface_rect = None
 
