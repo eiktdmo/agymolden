@@ -1559,6 +1559,20 @@ class CalculationsMixin:
         except Exception as e:
             log.warning(f"Could not display calculation summary card: {e}", exc_info=True)
 
+    def _on_open_summary_card(self):
+        """Open publication-ready 1-page summary card of current or last-loaded QM calculation results."""
+        from .dialog_summary_card import QMSummaryCardDialog
+        last_qm = getattr(self, "_last_qm_res", None)
+        path = getattr(self, "_last_loaded_qm_log_path", "Current Molecule")
+        if last_qm:
+            pt_grp = getattr(getattr(self, "_current_sym_res", None), "symbol", "C1")
+            dlg = QMSummaryCardDialog(self, last_qm, path, point_group=pt_grp)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        else:
+            self.statusBar().showMessage("No QM calculation log loaded yet. Run a calculation or open an output file.", 3500)
+
     # -------------------------------------------------------------------------
     # Quick Molecular Orbital Inspector
     # -------------------------------------------------------------------------

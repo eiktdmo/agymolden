@@ -356,6 +356,35 @@ class UIMixin(UIInspectorTabsMixin):
         self.grp_qm_summary.setVisible(False)
         left_layout.addWidget(self.grp_qm_summary)
 
+        # Floating Interactive Quick Bond Stretch Bar (GaussView Style)
+        self.grp_bond_tweak = QtWidgets.QGroupBox("📏 Interactive Bond Length Tweaker (GaussView Style)")
+        tweak_layout = QtWidgets.QHBoxLayout(self.grp_bond_tweak)
+        tweak_layout.setContentsMargins(6, 4, 6, 4)
+        tweak_layout.setSpacing(6)
+        self.lbl_tweak_bond = QtWidgets.QLabel("Bond:")
+        self.lbl_tweak_bond.setStyleSheet("font-weight: bold; color: #38bdf8;")
+        tweak_layout.addWidget(self.lbl_tweak_bond)
+
+        self.slider_bond_tweak = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_bond_tweak.setRange(50, 400)  # 0.50 Å to 4.00 Å
+        self.slider_bond_tweak.setValue(154)
+        self.slider_bond_tweak.valueChanged.connect(self._on_bond_tweak_slider_changed)
+        self.slider_bond_tweak.sliderReleased.connect(self._on_bond_tweak_slider_released)
+        tweak_layout.addWidget(self.slider_bond_tweak, stretch=1)
+
+        self.lbl_tweak_val = QtWidgets.QLabel("1.540 Å")
+        self.lbl_tweak_val.setStyleSheet("font-weight: bold; font-family: monospace; min-width: 65px;")
+        tweak_layout.addWidget(self.lbl_tweak_val)
+
+        btn_tweak_close = QtWidgets.QPushButton("✕")
+        btn_tweak_close.setFixedWidth(24)
+        btn_tweak_close.setToolTip("Close Bond Tweaker Bar")
+        btn_tweak_close.clicked.connect(lambda: self.grp_bond_tweak.setVisible(False))
+        tweak_layout.addWidget(btn_tweak_close)
+
+        self.grp_bond_tweak.setVisible(False)
+        left_layout.addWidget(self.grp_bond_tweak)
+
         # Trajectory Player Bar (for QM geometry optimizations & IRC paths)
         self.grp_trajectory = QtWidgets.QGroupBox("Trajectory Player (Optimization Steps / IRC)")
         traj_box_layout = QtWidgets.QVBoxLayout(self.grp_trajectory)
@@ -1085,6 +1114,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_qm_engines.triggered.connect(self._on_configure_qm_engines)
         menu_file.addAction(act_qm_engines)
 
+        act_summary_card = QtGui.QAction("📊 &Calculation Summary Card...", self)
+        act_summary_card.setShortcut("F4")
+        act_summary_card.setToolTip("Open publication-ready 1-page summary card of current QM calculation results (F4)")
+        act_summary_card.triggered.connect(self._on_open_summary_card)
+        menu_file.addAction(act_summary_card)
+
         act_export_png = QtGui.QAction("Export &Image (PNG)...", self)
         act_export_png.setShortcuts([
             QtGui.QKeySequence("Ctrl+E"),
@@ -1220,6 +1255,17 @@ class UIMixin(UIInspectorTabsMixin):
         act_add_h.setShortcut("Ctrl+H")
         act_add_h.triggered.connect(self._on_add_hydrogens)
         menu_edit.addAction(act_add_h)
+
+        menu_origin = menu_edit.addMenu("🎯 &Translate to Origin (0, 0, 0)...")
+        act_orig_com = QtGui.QAction("Center of Mass to Origin", self)
+        act_orig_com.setToolTip("Translate molecule so its center-of-mass is at Cartesian (0, 0, 0)")
+        act_orig_com.triggered.connect(lambda: self._center_molecule_to_origin("com"))
+        menu_origin.addAction(act_orig_com)
+
+        act_orig_anchor = QtGui.QAction("Selected Atom to Origin", self)
+        act_orig_anchor.setToolTip("Translate molecule so the currently selected atom is at (0, 0, 0)")
+        act_orig_anchor.triggered.connect(lambda: self._center_molecule_to_origin("anchor"))
+        menu_origin.addAction(act_orig_anchor)
 
         menu_invert = menu_edit.addMenu("🔄 &Chirality & Mirror Inversion...")
         act_inv_all = QtGui.QAction("Invert All Coordinates (Enantiomer, -r)", self)

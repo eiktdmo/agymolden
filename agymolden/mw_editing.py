@@ -1547,6 +1547,10 @@ class EditingMixin:
         if bo == 3: act_t.setText("✔ Triple Bond (Key: 3)")
         act_t.triggered.connect(lambda: self.set_bond_order(u, v, target_bo=3))
 
+        # Stretch / Tweak Bond Length (GaussView Style)
+        act_stretch = menu.addAction("📏 Stretch Bond Length (Interactive Slider)...")
+        act_stretch.triggered.connect(lambda: self._activate_bond_tweak_bar(u, v))
+
         menu.addSeparator()
 
         # Break / Delete Bond
@@ -1698,6 +1702,107 @@ class EditingMixin:
         new_zatoms = cartesian_to_zmatrix(symbols, new_coords, user_bonds=curr_bonds, strict_bonds=True)
         self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
         self.statusBar().showMessage(f"Chirality / Symmetry: {label}", 4000)
+
+    def _center_molecule_to_origin(self, mode: str = "com"):
+        """Translate molecule so center-of-mass or selected anchor atom is precisely at origin (0, 0, 0)."""
+        if len(self.coords) == 0:
+            return
+        self._push_undo_state()
+        new_coords = np.copy(self.coords)
+        if mode == "anchor" and hasattr(self.viewer, "selected_atom_idx") and self.viewer.selected_atom_idx is not None:
+            anchor = self.viewer.selected_atom_idx
+            shift = -new_coords[anchor]
+            msg = f"Shifted atom #{anchor+1} ({self.zatoms[anchor].symbol}) to Cartesian Origin (0, 0, 0)"
+        else:
+            # Center of Mass
+            masses = []
+            for a in self.zatoms:
+                info = ELEMENT_DATA.get(a.symbol, {})
+                masses.append(info.get("mass", 12.0))
+            mass_arr = np.array(masses)
+            com = np.sum(new_coords * mass_arr[:, None], axis=0) / np.sum(mass_arr)
+            shift = -com
+            msg = f"Shifted molecular Center of Mass to Cartesian Origin (0, 0, 0)"
+
+        new_coords += shift
+        symbols = [a.symbol for a in self.zatoms]
+        curr_bonds = self._current_explicit_bonds()
+        new_zatoms = cartesian_to_zmatrix(symbols, new_coords, user_bonds=curr_bonds, strict_bonds=True)
+        self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
+        self.statusBar().showMessage(msg, 3500)
+
+    def _on_bond_tweak_slider_changed(self, int_val: int):
+        """Live update bond length as user drags the GaussView-style slider."""
+        dist = int_val / 100.0
+        if hasattr(self, "lbl_tweak_val"):
+            self.lbl_tweak_val.setText(f"{dist:.3f} Å")
+
+        if not hasattr(self, "_active_tweak_bond") or not self._active_tweak_bond:
+            return
+        u, v = self._active_tweak_bond
+        if u >= len(self.coords) or v >= len(self.coords):
+            return
+
+        # Move the subtree on atom v along the bond axis
+        adj = build_adj(len(self.coords), self._current_explicit_bonds())
+        # Find all atoms connected to v without crossing edge (u, v)
+        sub_atoms = set()
+        queue = [v]
+        visited = {u, v}
+        while queue:
+            curr = queue.pop(0)
+            sub_atoms.add(curr)
+            for nbr in adj.get(curr, []):
+                if nbr not in visited:
+                    visited.add(nbr)
+                    queue.append(nbr)
+
+        p_u = self.coords[u]
+        p_v = self.coords[v]
+        curr_vec = p_v - p_u
+        curr_len = np.linalg.norm(curr_vec)
+        if curr_len < 1e-4:
+            return
+        unit_vec = curr_vec / curr_len
+        target_vec = unit_vec * dist
+        shift = target_vec - curr_vec
+
+        new_coords = np.copy(self.coords)
+        for idx in sub_atoms:
+            new_coords[idx] += shift
+
+        self.coords = new_coords
+        self.viewer.set_molecule(
+            symbols=[a.symbol for a in self.zatoms],
+            coords=self.coords,
+            user_bonds=self._current_explicit_bonds()
+        )
+        self.viewer.update()
+
+    def _on_bond_tweak_slider_released(self):
+        """Sync Z-matrix table once user finishes dragging the bond tweak slider."""
+        if not hasattr(self, "_active_tweak_bond") or not self._active_tweak_bond:
+            return
+        self._push_undo_state()
+        symbols = [a.symbol for a in self.zatoms]
+        curr_bonds = self._current_explicit_bonds()
+        new_zatoms = cartesian_to_zmatrix(symbols, self.coords, user_bonds=curr_bonds, strict_bonds=True)
+        self.set_molecule_from_zatoms(new_zatoms, exact_coords=self.coords)
+        self.statusBar().showMessage("Updated geometry from interactive bond slider.", 3000)
+
+    def _activate_bond_tweak_bar(self, u: int, v: int):
+        """Show and initialize the GaussView-style interactive bond stretch slider."""
+        if u >= len(self.coords) or v >= len(self.coords):
+            return
+        self._active_tweak_bond = (u, v)
+        curr_d = float(np.linalg.norm(self.coords[u] - self.coords[v]))
+        if hasattr(self, "grp_bond_tweak"):
+            self.grp_bond_tweak.setVisible(True)
+            self.lbl_tweak_bond.setText(f"Stretch Bond: {self.zatoms[u].symbol}{u+1} — {self.zatoms[v].symbol}{v+1}")
+            self.slider_bond_tweak.blockSignals(True)
+            self.slider_bond_tweak.setValue(int(curr_d * 100.0))
+            self.slider_bond_tweak.blockSignals(False)
+            self.lbl_tweak_val.setText(f"{curr_d:.3f} Å")
 
     def _copy_viewport_image_to_clipboard(self):
         """Render high-resolution offscreen image of the current viewport and copy directly to the system clipboard."""
