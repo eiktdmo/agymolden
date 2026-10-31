@@ -1125,6 +1125,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_summary_card.triggered.connect(self._on_open_summary_card)
         menu_file.addAction(act_summary_card)
 
+        act_unit_conv = QtGui.QAction("⚡ Energy &Unit Converter...", self)
+        act_unit_conv.setShortcut("Ctrl+U")
+        act_unit_conv.setToolTip("Instant physical constant conversions: Hartree ↔ eV ↔ kcal/mol ↔ kJ/mol ↔ cm⁻¹ ↔ K (Ctrl+U)")
+        act_unit_conv.triggered.connect(self._open_unit_converter)
+        menu_file.addAction(act_unit_conv)
+
         act_export_png = QtGui.QAction("Export &Image (PNG)...", self)
         act_export_png.setShortcuts([
             QtGui.QKeySequence("Ctrl+E"),
@@ -1265,6 +1271,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_add_h.setShortcut("Ctrl+H")
         act_add_h.triggered.connect(self._on_add_hydrogens)
         menu_edit.addAction(act_add_h)
+
+        act_clash = QtGui.QAction("⚠️ Highlight &Steric Clashes...", self)
+        act_clash.setToolTip("Scan molecular geometry and highlight severe non-bonded steric overlaps (< 70% Σr_vdw)")
+        act_clash.triggered.connect(self._check_and_highlight_steric_clashes)
+        menu_edit.addAction(act_clash)
 
         menu_origin = menu_edit.addMenu("🎯 &Translate to Origin (0, 0, 0)...")
         act_orig_com = QtGui.QAction("Center of Mass to Origin", self)

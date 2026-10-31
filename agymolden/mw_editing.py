@@ -1703,6 +1703,46 @@ class EditingMixin:
         self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
         self.statusBar().showMessage(f"Chirality / Symmetry: {label}", 4000)
 
+    def _check_and_highlight_steric_clashes(self):
+        """Detect and highlight severe non-bonded steric clashes with interatomic distance < 0.70 * (r_vdw1 + r_vdw2)."""
+        if len(self.coords) < 2:
+            return
+        from .elements import get_vdw_radius
+        symbols = [a.symbol for a in self.zatoms]
+        bonds = set(self._current_explicit_bonds())
+        clashes = []
+        n = len(self.coords)
+        for i in range(n):
+            for j in range(i + 1, n):
+                if norm_bond(i, j) in bonds:
+                    continue
+                d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
+                vdw_sum = get_vdw_radius(symbols[i]) + get_vdw_radius(symbols[j])
+                if d < vdw_sum * 0.70:
+                    clashes.append((i, j, d, vdw_sum))
+
+        if clashes:
+            clash_atoms = sorted({idx for c in clashes for idx in (c[0], c[1])})
+            self.viewer.multi_selected = clash_atoms
+            self.viewer.selected_atom_idx = clash_atoms[0]
+            self.viewer.update()
+            c_desc = ", ".join(f"{symbols[u]}{u+1}···{symbols[v]}{v+1} ({d:.2f} Å)" for u, v, d, _ in clashes[:4])
+            self.statusBar().showMessage(f"⚠️ Detected {len(clashes)} severe steric clash(es): {c_desc} (Selected in 3D)", 5000)
+        else:
+            self.statusBar().showMessage("✅ Clean geometry: Zero severe steric clashes detected (all non-bonded distances > 70% Σr_vdw).", 3500)
+
+    def _open_unit_converter(self):
+        """Open physical constant energy unit converter dialog."""
+        from .dialog_unit_converter import UnitConverterDialog
+        last_ha = 1.0
+        last_qm = getattr(self, "_last_qm_res", None)
+        if last_qm and getattr(last_qm, "trajectory_energies", None):
+            last_ha = abs(last_qm.trajectory_energies[-1] / 27.211386245988)
+        dlg = UnitConverterDialog(self, initial_hartree=last_ha)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
     def _center_molecule_to_origin(self, mode: str = "com"):
         """Translate molecule so center-of-mass or selected anchor atom is precisely at origin (0, 0, 0)."""
         if len(self.coords) == 0:

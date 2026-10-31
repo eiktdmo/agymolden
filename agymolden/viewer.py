@@ -1819,6 +1819,28 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     painter.setPen(QtGui.QColor("#f8fafc"))
                     painter.drawText(snap_rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.active_drag_label)
 
+            # Top-left HUD badge: Publication Molecule Watermark / Figure Overlay
+            if getattr(self, "show_watermark", True) and len(self.symbols) > 0:
+                # Formula & symmetry info
+                sym_counts: Dict[str, int] = {}
+                for s in self.symbols:
+                    sym_counts[s] = sym_counts.get(s, 0) + 1
+                # Hill system sorting: C first, then H, then alphabetical
+                sorted_elems = sorted(sym_counts.keys(), key=lambda e: (0, e) if e == "C" else ((1, e) if e == "H" else (2, e)))
+                formula = "".join(f"{e}{sym_counts[e] if sym_counts[e] > 1 else ''}" for e in sorted_elems)
+                pt_grp = getattr(self, "current_point_group_label", "")
+                wm_txt = f"{formula}  [{pt_grp}]" if pt_grp else formula
+
+                painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                wfm = painter.fontMetrics()
+                wtw = wfm.horizontalAdvance(wm_txt)
+                wrect = QtCore.QRect(12, 10, wtw + 14, 22)
+                painter.setBrush(QtGui.QColor(15, 23, 42, 190))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.0))
+                painter.drawRoundedRect(wrect, 4, 4)
+                painter.setPen(QtGui.QColor("#e2e8f0"))
+                painter.drawText(wrect, QtCore.Qt.AlignmentFlag.AlignCenter, wm_txt)
+
             # Bottom-left HUD badge: Selection summary
             if has_selection and len(self.symbols) > 0:
                 n_syms = len(self.symbols)
