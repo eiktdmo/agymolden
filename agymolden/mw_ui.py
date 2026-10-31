@@ -1026,21 +1026,6 @@ class UIMixin(UIInspectorTabsMixin):
         act_orb_gallery.triggered.connect(self._on_open_orbital_snapshot_gallery)
         menu_file.addAction(act_orb_gallery)
 
-        act_esp_2d = QtGui.QAction("2D Electrostatic &Potential (ESP) Slicer...", self)
-        act_esp_2d.setToolTip("Open Molden file and plot 2D ESP slice contour maps on XY, XZ, or YZ planes")
-        act_esp_2d.triggered.connect(self._on_open_esp_2d_dialog)
-        menu_file.addAction(act_esp_2d)
-
-        act_nci_plot = QtGui.QAction("📉 Non-Covalent Interactions (NCI / RDG Plot)...", self)
-        act_nci_plot.setToolTip("Plot 2D Reduced Density Gradient s(r) vs sign(λ₂)ρ to reveal H-bonds, dispersion, and steric clash")
-        act_nci_plot.triggered.connect(self._on_open_nci_plot_dialog)
-        menu_file.addAction(act_nci_plot)
-
-        act_multiwfn = QtGui.QAction("Multiwfn &Wavefunction Suite (Bonds / Fukui / QTAIM / CM5)...", self)
-        act_multiwfn.setToolTip("Run Multiwfn Mayer/Wiberg bond orders, Conceptual DFT Fukui indices, QTAIM critical points, and CM5 charges")
-        act_multiwfn.triggered.connect(self._on_open_multiwfn_dialog)
-        menu_file.addAction(act_multiwfn)
-
         self.menu_recent = menu_file.addMenu("Open &Recent")
         self._update_recent_files_menu()
 
@@ -1057,79 +1042,15 @@ class UIMixin(UIInspectorTabsMixin):
         menu_file.addAction(act_save_num)
 
         act_save_var = QtGui.QAction("Save Z-Matrix with &Variables...", self)
-        act_save_var.setToolTip("Every coordinate written as a variable, with a Variables: block of values "
-                                "(shared/symmetric variables are preserved)")
+        act_save_var.setToolTip("Every coordinate written as a variable, with a Variables: block of values (shared/symmetric variables are preserved)")
         act_save_var.triggered.connect(lambda: self._on_save_zmat_format("variables"))
         menu_file.addAction(act_save_var)
-
-        menu_vars = menubar.addMenu("&Variables")
-        act_sym_bonds = QtGui.QAction("Assign Symmetric &Bond Variables Only (Keep Angles/Dihedrals Fixed)", self)
-        act_sym_bonds.setToolTip("Equivalent bond distances (e.g. C-C and C-H in benzene) share variables (R1, R2) "
-                                 "while angles and dihedrals remain fixed constants")
-        act_sym_bonds.triggered.connect(self._on_assign_symmetric_bond_variables)
-        menu_vars.addAction(act_sym_bonds)
-
-        act_sym_vars = QtGui.QAction("Assign &Symmetric Variables (All: Bonds, Angles, Dihedrals)", self)
-        act_sym_vars.setToolTip("Equivalent coordinates (e.g. all C-C and all C-H bonds in benzene) share one "
-                                "variable, reducing the number of optimization parameters")
-        act_sym_vars.triggered.connect(self._on_assign_symmetric_variables)
-        menu_vars.addAction(act_sym_vars)
-        act_all_vars = QtGui.QAction("Assign &Individual Variables", self)
-        act_all_vars.triggered.connect(self._on_assign_individual_variables)
-        menu_vars.addAction(act_all_vars)
-        act_clear_vars = QtGui.QAction("&Clear Variables (use numbers)", self)
-        act_clear_vars.triggered.connect(self._on_clear_variables)
-        menu_vars.addAction(act_clear_vars)
 
         act_save_xyz = QtGui.QAction("Export Coordinates (&XYZ)...", self)
         act_save_xyz.triggered.connect(self._on_export_xyz)
         menu_file.addAction(act_save_xyz)
 
-        act_quick_orca = QtGui.QAction("🚀 Quick Run &ORCA Calculation...", self)
-        act_quick_orca.setShortcut("Ctrl+R")
-        act_quick_orca.setToolTip("Quick 1-Click setup and execution of ORCA calculations for coursework")
-        act_quick_orca.triggered.connect(self._on_quick_run_orca)
-        menu_file.addAction(act_quick_orca)
-
-        act_generate_qm_input = QtGui.QAction("⚡ Generate &QM Calculation Input...", self)
-        act_generate_qm_input.setShortcut("Ctrl+G")
-        act_generate_qm_input.setToolTip("Set up and generate input files for Gaussian, ORCA, PySCF, openLOWDIN, or xTB")
-        act_generate_qm_input.triggered.connect(self._on_open_qm_dialog)
-        menu_file.addAction(act_generate_qm_input)
-
-        act_generate_brorsen_input = QtGui.QAction("✨ new&BRORSEN Input Builder (Positrons, NEO)...", self)
-        act_generate_brorsen_input.setShortcut("Ctrl+B")
-        act_generate_brorsen_input.setToolTip("Set up multi-stage input files for newBRORSEN (Positrons, NEO, and CCSD(T))")
-        act_generate_brorsen_input.triggered.connect(self._on_open_brorsen_dialog)
-        menu_file.addAction(act_generate_brorsen_input)
-
-        act_job_monitor = QtGui.QAction("🖥️ Calculation &Job Monitor...", self)
-        act_job_monitor.setShortcut("Ctrl+J")
-        act_job_monitor.setToolTip("View live calculation progress, streaming output logs, and real-time 3D updates")
-        act_job_monitor.triggered.connect(self._on_open_job_monitor)
-        menu_file.addAction(act_job_monitor)
-
-        act_remote_transfer = QtGui.QAction("📁 Remote &File Transfer (SSH / Cluster)...", self)
-        act_remote_transfer.setToolTip("Browse and transfer input and output files between local machine and remote cluster")
-        act_remote_transfer.triggered.connect(self._on_open_remote_file_manager)
-        menu_file.addAction(act_remote_transfer)
-
-        act_qm_engines = QtGui.QAction("🔧 Configure &QM Engines & Routes...", self)
-        act_qm_engines.setToolTip("Detect installed QM packages (ORCA, PySCF, Gaussian, openLOWDIN, xTB, Q-Chem) and configure custom executable routes")
-        act_qm_engines.triggered.connect(self._on_configure_qm_engines)
-        menu_file.addAction(act_qm_engines)
-
-        act_summary_card = QtGui.QAction("📊 &Calculation Summary Card...", self)
-        act_summary_card.setShortcut("F4")
-        act_summary_card.setToolTip("Open publication-ready 1-page summary card of current QM calculation results (F4)")
-        act_summary_card.triggered.connect(self._on_open_summary_card)
-        menu_file.addAction(act_summary_card)
-
-        act_unit_conv = QtGui.QAction("⚡ Energy &Unit Converter...", self)
-        act_unit_conv.setShortcut("Ctrl+U")
-        act_unit_conv.setToolTip("Instant physical constant conversions: Hartree ↔ eV ↔ kcal/mol ↔ kJ/mol ↔ cm⁻¹ ↔ K (Ctrl+U)")
-        act_unit_conv.triggered.connect(self._open_unit_converter)
-        menu_file.addAction(act_unit_conv)
+        menu_file.addSeparator()
 
         act_export_png = QtGui.QAction("Export &Image (PNG)...", self)
         act_export_png.setShortcuts([
@@ -1260,22 +1181,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_adj_d.triggered.connect(lambda: self._start_partial_reorder("dihedral"))
         menu_edit.addAction(act_adj_d)
 
-        act_dihed_scan = QtGui.QAction("🔄 1D &Dihedral Rotor Scan / PES Drive...", self)
-        act_dihed_scan.setToolTip("Step selected 4-atom dihedral through 360° with real-time forcefield relaxation (conformer search)")
-        act_dihed_scan.triggered.connect(self._on_open_dihedral_scan_dialog)
-        menu_edit.addAction(act_dihed_scan)
-
         menu_edit.addSeparator()
 
         act_add_h = QtGui.QAction("&Complete Valence with Hydrogens", self)
         act_add_h.setShortcut("Ctrl+H")
         act_add_h.triggered.connect(self._on_add_hydrogens)
         menu_edit.addAction(act_add_h)
-
-        act_clash = QtGui.QAction("⚠️ Highlight &Steric Clashes...", self)
-        act_clash.setToolTip("Scan molecular geometry and highlight severe non-bonded steric overlaps (< 70% Σr_vdw)")
-        act_clash.triggered.connect(self._check_and_highlight_steric_clashes)
-        menu_edit.addAction(act_clash)
 
         menu_origin = menu_edit.addMenu("🎯 &Translate to Origin (0, 0, 0)...")
         act_orig_com = QtGui.QAction("Center of Mass to Origin", self)
@@ -1339,11 +1250,121 @@ class UIMixin(UIInspectorTabsMixin):
         act_sym.triggered.connect(lambda _checked=False: self._on_detect_symmetry(switch_tab=True))
         menu_edit.addAction(act_sym)
 
+        # Variables Menu
+        menu_vars = menubar.addMenu("&Variables")
+
+        act_sym_bonds = QtGui.QAction("🔗 Assign &Symmetric Bond Variables Only (Keep Angles/Dihedrals Fixed)", self)
+        act_sym_bonds.setToolTip("Equivalent bond distances (e.g. C-C and C-H in benzene) share variables (R1, R2) "
+                                 "while angles and dihedrals remain fixed numerical constants")
+        act_sym_bonds.triggered.connect(self._on_assign_symmetric_bond_variables)
+        menu_vars.addAction(act_sym_bonds)
+
+        act_sym_vars = QtGui.QAction("🔗 Assign &Symmetric Variables (All: Bonds, Angles, Dihedrals)", self)
+        act_sym_vars.setToolTip("Equivalent coordinates (e.g. all C-C and all C-H bonds in benzene) share one "
+                                "variable, reducing the number of optimization parameters")
+        act_sym_vars.triggered.connect(self._on_assign_symmetric_variables)
+        menu_vars.addAction(act_sym_vars)
+
+        act_all_vars = QtGui.QAction("🔤 Assign &Individual Variables", self)
+        act_all_vars.setToolTip("Assign an individual variable name (R1..Rn, A1..An, D1..Dn) to every internal coordinate")
+        act_all_vars.triggered.connect(self._on_assign_individual_variables)
+        menu_vars.addAction(act_all_vars)
+
+        menu_vars.addSeparator()
+
+        act_var_save = QtGui.QAction("💾 Save Z-Matrix with &Variables...", self)
+        act_var_save.setToolTip("Save Z-Matrix with symbolic variable names and a 'Variables:' block of values")
+        act_var_save.triggered.connect(lambda: self._on_save_zmat_format("variables"))
+        menu_vars.addAction(act_var_save)
+
+        act_clear_vars = QtGui.QAction("🔢 &Clear Variables (Use Numbers Only)", self)
+        act_clear_vars.setToolTip("Clear all symbolic variables and restore explicit numeric values")
+        act_clear_vars.triggered.connect(self._on_clear_variables)
+        menu_vars.addAction(act_clear_vars)
+
+        # Tools Menu
+        menu_tools = menubar.addMenu("&Tools")
+
+        act_unit_conv = QtGui.QAction("⚡ Quantum &Unit Converter (Energy, Length, Dipole, Polarizability)...", self)
+        act_unit_conv.setShortcut("Ctrl+U")
+        act_unit_conv.setToolTip("Instant physical constant conversions: Hartree ↔ eV ↔ kcal/mol ↔ kJ/mol ↔ cm⁻¹ ↔ K; Bohr ↔ Å; Debye ↔ a.u.; Polarizability; Field & Pressure (Ctrl+U)")
+        act_unit_conv.triggered.connect(self._open_unit_converter)
+        menu_tools.addAction(act_unit_conv)
+
+        act_summary_card = QtGui.QAction("📊 &Calculation Summary Card...", self)
+        act_summary_card.setShortcut("F4")
+        act_summary_card.setToolTip("Open publication-ready 1-page summary card of current QM calculation results (F4)")
+        act_summary_card.triggered.connect(self._on_open_summary_card)
+        menu_tools.addAction(act_summary_card)
+
+        menu_tools.addSeparator()
+
+        act_quick_orca = QtGui.QAction("🚀 Quick Run &ORCA Calculation...", self)
+        act_quick_orca.setShortcut("Ctrl+R")
+        act_quick_orca.setToolTip("Quick 1-Click setup and execution of ORCA calculations for coursework")
+        act_quick_orca.triggered.connect(self._on_quick_run_orca)
+        menu_tools.addAction(act_quick_orca)
+
+        act_generate_qm_input = QtGui.QAction("⚡ Generate &QM Calculation Input...", self)
+        act_generate_qm_input.setShortcut("Ctrl+G")
+        act_generate_qm_input.setToolTip("Set up and generate input files for Gaussian, ORCA, PySCF, openLOWDIN, or xTB")
+        act_generate_qm_input.triggered.connect(self._on_open_qm_dialog)
+        menu_tools.addAction(act_generate_qm_input)
+
+        act_generate_brorsen_input = QtGui.QAction("✨ new&BRORSEN Input Builder (Positrons, NEO)...", self)
+        act_generate_brorsen_input.setShortcut("Ctrl+B")
+        act_generate_brorsen_input.setToolTip("Set up multi-stage input files for newBRORSEN (Positrons, NEO, and CCSD(T))")
+        act_generate_brorsen_input.triggered.connect(self._on_open_brorsen_dialog)
+        menu_tools.addAction(act_generate_brorsen_input)
+
+        act_job_monitor = QtGui.QAction("🖥️ Calculation &Job Monitor...", self)
+        act_job_monitor.setShortcut("Ctrl+J")
+        act_job_monitor.setToolTip("View live calculation progress, streaming output logs, and real-time 3D updates")
+        act_job_monitor.triggered.connect(self._on_open_job_monitor)
+        menu_tools.addAction(act_job_monitor)
+
+        act_remote_transfer = QtGui.QAction("📁 Remote &File Transfer (SSH / Cluster)...", self)
+        act_remote_transfer.setToolTip("Browse and transfer input and output files between local machine and remote cluster")
+        act_remote_transfer.triggered.connect(self._on_open_remote_file_manager)
+        menu_tools.addAction(act_remote_transfer)
+
+        act_qm_engines = QtGui.QAction("🔧 Configure &QM Engines & Routes...", self)
+        act_qm_engines.setToolTip("Detect installed QM packages (ORCA, PySCF, Gaussian, openLOWDIN, xTB, Q-Chem) and configure custom executable routes")
+        act_qm_engines.triggered.connect(self._on_configure_qm_engines)
+        menu_tools.addAction(act_qm_engines)
+
+        menu_tools.addSeparator()
+
+        act_dihed_scan = QtGui.QAction("🔄 1D &Dihedral Rotor Scan / PES Drive...", self)
+        act_dihed_scan.setToolTip("Step selected 4-atom dihedral through 360° with real-time forcefield relaxation (conformer search)")
+        act_dihed_scan.triggered.connect(self._on_open_dihedral_scan_dialog)
+        menu_tools.addAction(act_dihed_scan)
+
+        act_clash = QtGui.QAction("⚠️ Highlight &Steric Clashes...", self)
+        act_clash.setToolTip("Scan molecular geometry and highlight severe non-bonded steric overlaps (< 70% Σr_vdw)")
+        act_clash.triggered.connect(self._check_and_highlight_steric_clashes)
+        menu_tools.addAction(act_clash)
+
         act_overlay = QtGui.QAction("🔬 &Compare & Align Structures (RMSD Overlay)...", self)
         act_overlay.setShortcut("Ctrl+Shift+A")
         act_overlay.setToolTip("Superimpose two structures with Kabsch SVD alignment and calculate all-atom/heavy-atom RMSD")
         act_overlay.triggered.connect(self._on_open_structure_overlay)
-        menu_edit.addAction(act_overlay)
+        menu_tools.addAction(act_overlay)
+
+        act_esp_2d = QtGui.QAction("2D Electrostatic &Potential (ESP) Slicer...", self)
+        act_esp_2d.setToolTip("Open Molden file and plot 2D ESP slice contour maps on XY, XZ, or YZ planes")
+        act_esp_2d.triggered.connect(self._on_open_esp_2d_dialog)
+        menu_tools.addAction(act_esp_2d)
+
+        act_nci_plot = QtGui.QAction("📉 Non-Covalent Interactions (NCI / RDG Plot)...", self)
+        act_nci_plot.setToolTip("Plot 2D Reduced Density Gradient s(r) vs sign(λ₂)ρ to reveal H-bonds, dispersion, and steric clash")
+        act_nci_plot.triggered.connect(self._on_open_nci_plot_dialog)
+        menu_tools.addAction(act_nci_plot)
+
+        act_multiwfn = QtGui.QAction("Multiwfn &Wavefunction Suite (Bonds / Fukui / QTAIM / CM5)...", self)
+        act_multiwfn.setToolTip("Run Multiwfn Mayer/Wiberg bond orders, Conceptual DFT Fukui indices, QTAIM critical points, and CM5 charges")
+        act_multiwfn.triggered.connect(self._on_open_multiwfn_dialog)
+        menu_tools.addAction(act_multiwfn)
 
         # View Menu
         menu_view = menubar.addMenu("&View")
