@@ -298,6 +298,7 @@ class UnitConverterDialog(QtWidgets.QDialog):
         presets = QtWidgets.QHBoxLayout()
         presets.addWidget(QtWidgets.QLabel("Presets:"))
         for lbl, val_d in [
+            ("Benzene (0.0 D)", 0.0),
             ("Water (1.85 D)", 1.854),
             ("1.0 a.u. (2.5417 D)", 2.541746),
             ("Ammonia (1.47 D)", 1.47),
@@ -373,8 +374,8 @@ class UnitConverterDialog(QtWidgets.QDialog):
         for lbl, val_b3 in [
             ("1.0 Bohr³", 1.0),
             ("1.0 Å³", 1.0 / BOHR3_TO_ANG3),
-            ("Water (9.64 a.u.)", 9.64),
-            ("Benzene (70.4 a.u.)", 70.4),
+            ("Water α_iso (9.64 a.u.)", 9.64),
+            ("Benzene α_iso (70.4 a.u.)", 70.4),
         ]:
             btn = QtWidgets.QPushButton(lbl)
             btn.setStyleSheet("padding: 2px 6px; font-size: 10px;")
