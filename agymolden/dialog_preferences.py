@@ -47,6 +47,12 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.spin_msaa.addItem("Disabled (Fastest / Low-end GPU)", 0)
         v_layout.addRow("Anti-Aliasing (MSAA):", self.spin_msaa)
 
+        self.combo_mouse_mode = QtWidgets.QComboBox()
+        self.combo_mouse_mode.addItem("AgyMolden / Standard (Left: Rotate, Right: Pan, Wheel/Mid: Zoom)", "standard")
+        self.combo_mouse_mode.addItem("GaussView Preset (Left: Rotate, Right: Zoom, Mid: Pan)", "gaussview")
+        self.combo_mouse_mode.addItem("Chemcraft / PyMOL Preset (Left: Rotate, Right: Pan, Shift+Right: Zoom)", "chemcraft")
+        v_layout.addRow("Mouse Navigation Style:", self.combo_mouse_mode)
+
         tabs.addTab(tab_view, "🖥️ 3D Viewport")
 
         # Tab 2: Calculation & Symmetry Defaults
@@ -106,6 +112,11 @@ class PreferencesDialog(QtWidgets.QDialog):
         if idx_msaa >= 0:
             self.spin_msaa.setCurrentIndex(idx_msaa)
 
+        mouse_m = self.settings.value("viewport/mouse_mode", "standard", type=str)
+        idx_mouse = self.combo_mouse_mode.findData(mouse_m)
+        if idx_mouse >= 0:
+            self.combo_mouse_mode.setCurrentIndex(idx_mouse)
+
         self.spin_cores.setValue(self.settings.value("calc/nprocs", 4, type=int))
         self.spin_mem.setValue(self.settings.value("calc/memory", 4000, type=int))
         self.spin_sym_tol.setValue(self.settings.value("calc/sym_tol", 0.15, type=float))
@@ -115,6 +126,7 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.settings.setValue("viewport/show_labels", self.chk_labels.isChecked())
         self.settings.setValue("viewport/show_indices", self.chk_indices.isChecked())
         self.settings.setValue("viewport/msaa", self.spin_msaa.currentData())
+        self.settings.setValue("viewport/mouse_mode", self.combo_mouse_mode.currentData())
 
         self.settings.setValue("calc/nprocs", self.spin_cores.value())
         self.settings.setValue("calc/memory", self.spin_mem.value())
@@ -128,6 +140,7 @@ class PreferencesDialog(QtWidgets.QDialog):
                 parent.viewer.bg_color_mode = bg
                 parent.viewer.show_labels = self.chk_labels.isChecked()
                 parent.viewer.show_indices = self.chk_indices.isChecked()
+                parent.viewer.mouse_mode = self.combo_mouse_mode.currentData()
                 parent.viewer.update()
             if hasattr(parent, "spin_sym_tol"):
                 parent.spin_sym_tol.setValue(self.spin_sym_tol.value())

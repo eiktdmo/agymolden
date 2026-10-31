@@ -406,9 +406,27 @@ class CalculationsMixin:
                 self.table_vibrations.setItem(row, 2, new_it)
 
     def _on_spectrum_mode_clicked(self, mode_idx: int):
-        """Called when user clicks on an IR spectrum peak in the matplotlib plot."""
+        """Called when user clicks on an IR/Raman spectrum peak in the matplotlib plot."""
         if hasattr(self, "table_vibrations") and 0 <= mode_idx < self.table_vibrations.rowCount():
             self.table_vibrations.selectRow(mode_idx)
+            # Auto-start or update vibration simulation immediately upon clicking the peak
+            if self.vibrational_analysis and 0 <= mode_idx < self.vibrational_analysis.n_modes:
+                freq = self.vibrational_analysis.frequencies[mode_idx]
+                disp = self.vibrational_analysis.displacements[mode_idx]
+                amp = getattr(self, "slider_vib_amp", None)
+                amp_val = (amp.value() / 100.0) if amp is not None else 0.5
+                self.viewer.start_vibration(mode_idx, freq, disp, amplitude=amp_val)
+                if hasattr(self, "btn_play_vibration"):
+                    self.btn_play_vibration.setText("⏸ Pause Simulation")
+                    self.btn_play_vibration.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
+                if hasattr(self, "btn_stop_vibration"):
+                    self.btn_stop_vibration.setEnabled(True)
+                ir_int = ""
+                if self.vibrational_analysis.ir_intensities and mode_idx < len(self.vibrational_analysis.ir_intensities):
+                    ir_int = f" | IR Int: {self.vibrational_analysis.ir_intensities[mode_idx]:.1f} km/mol"
+                self.statusBar().showMessage(
+                    f"Animating Mode #{mode_idx + 1}: {freq:.1f} cm⁻¹{ir_int}", 4000
+                )
 
     def _on_vibration_mode_selected(self):
         """Called when a mode row is selected in the vibrations table."""

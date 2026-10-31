@@ -83,6 +83,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.show_qtaim_cps: bool = False
         self.transparent_bg: bool = False
         self.bg_color_mode: str = "white"  # "dark" or "white" (default: white)
+        self.mouse_mode: str = "standard"  # "standard", "gaussview", or "chemcraft"
         self._charge_key = None
         self._charge_cache = (np.empty(0), np.zeros(3), 0.0)
         self.custom_charges: Optional[np.ndarray] = None

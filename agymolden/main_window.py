@@ -141,6 +141,53 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Start with no molecule (empty workspace, like Molden)
         self.set_molecule_from_zatoms([])
 
+        # Auto-save timer (every 60 seconds)
+        self._autosave_timer = QtCore.QTimer(self)
+        self._autosave_timer.setInterval(60000)
+        self._autosave_timer.timeout.connect(self._auto_save_session)
+        self._autosave_timer.start()
+
+        # Check for previous crashed / unsaved session
+        QtCore.QTimer.singleShot(600, self._check_and_prompt_crash_recovery)
+
+    def _auto_save_session(self):
+        """Silently auto-save current molecule state to a hidden recovery file."""
+        if not getattr(self, "zatoms", None):
+            return
+        try:
+            cache_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppDataLocation)
+            os.makedirs(cache_dir, exist_ok=True)
+            recovery_path = os.path.join(cache_dir, "autosave_recovery.zmat")
+            txt = format_zmatrix_text(self.zatoms, self.variables)
+            with open(recovery_path, "w", encoding="utf-8") as f:
+                f.write(txt)
+        except Exception:
+            pass
+
+    def _check_and_prompt_crash_recovery(self):
+        """Check if an autosaved session exists from an abnormal exit and prompt the user to recover."""
+        try:
+            cache_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppDataLocation)
+            recovery_path = os.path.join(cache_dir, "autosave_recovery.zmat")
+            if os.path.isfile(recovery_path) and os.path.getsize(recovery_path) > 10:
+                settings = self._settings()
+                if not settings.value("clean_shutdown", True, type=bool):
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        "🔄 Recover Previous Session?",
+                        "AgyMolden detected an unsaved session from your previous run.\n\n"
+                        "Would you like to restore your molecule?",
+                        QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                        QtWidgets.QMessageBox.StandardButton.Yes,
+                    )
+                    if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                        self.open_path(recovery_path)
+                        self.statusBar().showMessage("Recovered unsaved molecule from previous session.", 4000)
+            settings = self._settings()
+            settings.setValue("clean_shutdown", False)
+        except Exception:
+            pass
+
     def _restore_window_state(self):
         settings = self._settings()
         geom = settings.value("main_window_geom")
@@ -157,6 +204,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         settings = self._settings()
         settings.setValue("main_window_geom", self.saveGeometry())
         settings.setValue("main_window_state", self.saveState())
+        settings.setValue("clean_shutdown", True)
         super().closeEvent(event)
 
     def _push_undo_state(self):

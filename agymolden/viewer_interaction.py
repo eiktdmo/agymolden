@@ -372,20 +372,34 @@ class ViewerInteractionMixin:
                 self.rot_y = (self.rot_y + dx * 0.5) % 360.0
                 self.update()
         elif event.buttons() & QtCore.Qt.MouseButton.RightButton:
-            # Mark that right button has moved beyond threshold for camera panning
-            # Require at least 14 pixels movement to distinguish from deliberate right-click delete
+            # Mark that right button has moved beyond threshold for camera panning/zooming
             r_dist = (event.pos() - self.right_press_pos).manhattanLength()
             if r_dist > 14:
                 self.right_dragged = True
-            # Camera Panning
-            factor = self.zoom * 0.0025
-            self.pan_x += dx * factor
-            self.pan_y -= dy * factor
-            self.update()
+
+            mode = getattr(self, "mouse_mode", "standard")
+            if mode == "gaussview":
+                # GaussView style: Right-drag zooms camera
+                self.zoom = max(1.0, min(150.0, self.zoom - dy * 0.15))
+                self.update()
+            else:
+                # Standard / Chemcraft style: Right-drag pans camera
+                factor = self.zoom * 0.0025
+                self.pan_x += dx * factor
+                self.pan_y -= dy * factor
+                self.update()
         elif event.buttons() & QtCore.Qt.MouseButton.MiddleButton:
-            # Zooming
-            self.zoom = max(1.0, min(150.0, self.zoom - dy * 0.1))
-            self.update()
+            mode = getattr(self, "mouse_mode", "standard")
+            if mode == "gaussview":
+                # GaussView style: Middle-drag pans camera
+                factor = self.zoom * 0.0025
+                self.pan_x += dx * factor
+                self.pan_y -= dy * factor
+                self.update()
+            else:
+                # Standard style: Middle-drag zooms
+                self.zoom = max(1.0, min(150.0, self.zoom - dy * 0.1))
+                self.update()
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         # Left-Click release
