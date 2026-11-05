@@ -300,6 +300,17 @@ def test_mainwindow_smartslides_ui_integration(qapp):
     assert np.isclose(d_after, 2.85, atol=1e-4)
 
 
+def _find_sample(filename: str) -> str:
+    for c in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", filename),
+        filename,
+    ]:
+        if os.path.isfile(c):
+            return c
+    return filename
+
+
 def test_bp_zmat_inter_ring_dihedral_rotation_without_ring_distortion(qapp):
     """
     Verify that selecting atoms 1, 3, 7, 12 (0-indexed: 0, 2, 6, 11) in bp.zmat
@@ -308,7 +319,7 @@ def test_bp_zmat_inter_ring_dihedral_rotation_without_ring_distortion(qapp):
     viewport selection and via Z-Matrix row/cell editing.
     """
     from PyQt6 import QtCore
-    bp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bp.zmat")
+    bp_path = _find_sample("bp.zmat")
     win = MainWindow()
     win.open_path(bp_path)
 
@@ -393,7 +404,7 @@ def test_oh_zmat_octahedral_detection_and_impose_symmetry_co_replacement(qapp):
     """
     from agymolden.symmetry import find_symmetry_operations, calculate_symmetry_representations, get_symmetry_orbits
 
-    oh_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "oh.zmat")
+    oh_path = _find_sample("oh.zmat")
     win = MainWindow()
     win.open_path(oh_path)
 
@@ -492,7 +503,7 @@ def test_choose_lower_and_higher_symmetry_subgroups_and_supergroups(qapp):
         get_symmetry_orbits,
     )
 
-    oh_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "oh.zmat")
+    oh_path = _find_sample("oh.zmat")
     win = MainWindow()
     win.open_path(oh_path)
 
@@ -635,7 +646,7 @@ def test_optimize_geometry_keeps_imposed_symmetry(qapp):
     assert "too far from D6h symmetry" in msg_bad
 
     # 2. End-to-end integration test with MainWindow
-    oh_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "oh.zmat")
+    oh_path = _find_sample("oh.zmat")
     win = MainWindow()
     win.open_path(oh_path)
     win._on_detect_symmetry()

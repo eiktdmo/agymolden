@@ -15,9 +15,23 @@ import numpy as np
 from agymolden.qm_log_parser import parse_qm_logfile, QMLogParseResult
 
 
+def _ref_path(filename: str) -> str:
+    """Find reference file in examples/ or repo root."""
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", filename),
+        os.path.join("examples", filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", filename),
+        filename,
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return filename
+
+
 def test_golden_orca_parser():
     """Verify golden extraction on real ORCA geometry optimization output."""
-    path = "orca_calc.out"
+    path = _ref_path("orca_calc.out")
     if not os.path.isfile(path):
         pytest.skip(f"Reference log {path} not found")
 
@@ -59,7 +73,8 @@ def test_golden_gaussian_parser():
 
 def test_golden_brorsen_multistage_parser():
     """Verify golden extraction on multi-stage newBRORSEN electronic/positronic calculations."""
-    for path in ["HLi_electronic_positronic.out", "2HLi_SP_HF_cc-pvdz.out"]:
+    for fn in ["HLi_electronic_positronic.out", "2HLi_SP_HF_cc-pvdz.out"]:
+        path = _ref_path(fn)
         if not os.path.isfile(path):
             continue
         res = parse_qm_logfile(path)
@@ -134,7 +149,7 @@ def test_golden_psi4_parser(tmp_path):
 
 def test_golden_brorsen_opt_trajectory():
     """Verify golden extraction of full optimization trajectory from real output."""
-    path = "C2H4_OPT_HF_cc-pvdz.out"
+    path = _ref_path("C2H4_OPT_HF_cc-pvdz.out")
     if not os.path.isfile(path):
         pytest.skip(f"Reference log {path} not found")
 
@@ -184,7 +199,7 @@ def test_golden_transition_state_imaginary_freq(tmp_path):
 
 def test_golden_linear_diatomic_and_polyatomic():
     """Verify parsing real linear molecule calculations (CO2 and 2HLi)."""
-    co2_path = "CO2_SP_HF_cc-pvdz.out"
+    co2_path = _ref_path("CO2_SP_HF_cc-pvdz.out")
     if os.path.isfile(co2_path):
         res_co2 = parse_qm_logfile(co2_path)
         assert res_co2.symbols == ["C", "O", "O"]

@@ -33,19 +33,19 @@ EXAMPLES: List[Tuple[str, str, str, str]] = [
     ),
     (
         "Ethylene Geometry Optimization (newBRORSEN)",
-        "C2H4_OPT_HF_cc-pvdz.out",
+        "examples/C2H4_OPT_HF_cc-pvdz.out",
         "newBRORSEN Log",
         "Complete geometry optimization trajectory computed with newBRORSEN showing iterative energy convergence and gradient minimization.",
     ),
     (
         "LiH Nuclear-Electronic Positronic State",
-        "HLi_electronic_positronic.out",
+        "examples/HLi_electronic_positronic.out",
         "Multi-Component QM",
         "Groundbreaking non-Born-Oppenheimer APMO positronic lithium hydride calculation featuring simultaneous electronic and positronic wavefunctions.",
     ),
     (
         "Water Reaction & Stationary Point (ORCA)",
-        "orca_calc.out",
+        "examples/orca_calc.out",
         "ORCA Log",
         "ORCA quantum chemistry calculation output with thermochemistry, Mulliken/Loewdin atomic charges, and orbital energies.",
     ),
