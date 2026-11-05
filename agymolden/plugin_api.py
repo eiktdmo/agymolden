@@ -93,6 +93,11 @@ class PluginContext:
 
     def show_message(self, title: str, text: str) -> None:
         """Display an informational popup message dialog."""
+        import os
+        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("AGYMOLDEN_HEADLESS"):
+            log.info("[%s] %s", title, text)
+            return
+
         if hasattr(self._window, "dialogs") and hasattr(self._window.dialogs, "show_info"):
             self._window.dialogs.show_info(self._window, title, text)
         else:
