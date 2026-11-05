@@ -151,8 +151,8 @@ if os.environ.get('AGYMOLDEN_ONEDIR', '0') == '1':
             icon=None,
             bundle_identifier='org.agymolden.app',
             info_plist={
-                'CFBundleShortVersionString': '1.0.0',
-                'CFBundleVersion': '1.0.0',
+                'CFBundleShortVersionString': '1.0.1',
+                'CFBundleVersion': '1.0.1',
                 'NSHighResolutionCapable': 'True',
             },
         )
@@ -184,8 +184,8 @@ else:
             icon=None,
             bundle_identifier='org.agymolden.app',
             info_plist={
-                'CFBundleShortVersionString': '1.0.0',
-                'CFBundleVersion': '1.0.0',
+                'CFBundleShortVersionString': '1.0.1',
+                'CFBundleVersion': '1.0.1',
                 'NSHighResolutionCapable': 'True',
             },
         )
