@@ -60,3 +60,11 @@ version = { attr = "agymolden.__version__" }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "slow: marks tests as computationally intensive (run with -m 'not slow' for fast pass)",
+    "gui: marks tests testing Qt GUI interfaces",
+    "network: marks tests requiring online network queries",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
