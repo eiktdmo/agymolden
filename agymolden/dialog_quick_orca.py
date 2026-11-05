@@ -1,11 +1,12 @@
 """
-Quick ORCA Calculation Dialog for undergraduate students and standard lab exercises.
-Provides 1-click execution for standard calculations (Optimization, IR/Vibrations, Orbitals)
-with automatic coordinate generation, charge/multiplicity defaults, and live 3D monitoring.
+Quick ORCA Calculation Dialog and Input Studio.
+Provides 1-click execution for standard calculations (Optimization, IR/Vibrations, Orbitals, ESP)
+with automatic coordinate generation, method/basis set selection, charge/multiplicity defaults,
+and live 3D monitoring.
 """
 
 import os
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from PyQt6 import QtCore, QtGui, QtWidgets
 import numpy as np
 
@@ -16,179 +17,365 @@ COURSE_PRESETS = [
     {
         "name": "⚡ Geometry Optimization (B3LYP / def2-SVP)",
         "route": "! B3LYP def2-SVP Opt",
+        "method": "B3LYP",
+        "basis": "def2-SVP",
+        "job": "Opt",
         "desc": "Standard ground-state geometry optimization. Finds the minimum energy structure.",
         "icon": "📐"
     },
     {
         "name": "🎵 Vibrations & IR Spectrum (B3LYP / def2-SVP Freq)",
         "route": "! B3LYP def2-SVP Opt Freq",
+        "method": "B3LYP",
+        "basis": "def2-SVP",
+        "job": "Opt Freq",
         "desc": "Optimizes geometry and computes harmonic vibrational frequencies and IR intensities.",
         "icon": "🎵"
     },
     {
         "name": "⚡ Transition State Search (OptTS + NumFreq)",
         "route": "! B3LYP def2-SVP OptTS NumFreq",
+        "method": "B3LYP",
+        "basis": "def2-SVP",
+        "job": "OptTS NumFreq",
         "desc": "Optimizes to a first-order saddle point transition state and calculates frequencies to confirm 1 imaginary mode.",
         "icon": "⚡"
     },
     {
         "name": "🌐 Molecular Orbitals / HOMO-LUMO (B3LYP / def2-SVP SP)",
         "route": "! B3LYP def2-SVP SP",
+        "method": "B3LYP",
+        "basis": "def2-SVP",
+        "job": "SP",
         "desc": "Single point energy to calculate molecular orbital energies, HOMO-LUMO gap, and dipole moment.",
         "icon": "🌐"
     },
     {
         "name": "🌌 Anions & Diffuse Orbitals (ma-def2-SVP)",
         "route": "! B3LYP ma-def2-SVP Opt",
+        "method": "B3LYP",
+        "basis": "ma-def2-SVP",
+        "job": "Opt",
         "desc": "Minimally augmented diffuse basis set for anions, Rydberg states, and bound positron species.",
         "icon": "🌌"
     },
     {
         "name": "⚡ Fast Semi-empirical Tight-Binding (GFN2-xTB)",
         "route": "! GFN2-xTB Opt",
+        "method": "GFN2-xTB",
+        "basis": "",
+        "job": "Opt",
         "desc": "Extremely fast geometry optimization for large molecules using Grimme's xTB method.",
         "icon": "⚡"
     },
     {
         "name": "🛠️ Custom Route Line",
         "route": "! B3LYP 6-31G* Opt",
+        "method": "B3LYP",
+        "basis": "6-31G*",
+        "job": "Opt",
         "desc": "Specify your own custom ORCA keywords (e.g. ! wB97X-D3 def2-TZVP).",
         "icon": "✏️"
     }
 ]
 
+ORCA_METHODS = [
+    ("B3LYP (Hybrid GGA - Standard general purpose)", "B3LYP"),
+    ("PBE0 (Hybrid GGA - Accurate structures & gaps)", "PBE0"),
+    ("wB97X-D3 (Range-separated hybrid - Best non-covalent)", "wB97X-D3"),
+    ("r2SCAN-3c (Composite meta-GGA - Fast, highly accurate)", "r2SCAN-3c"),
+    ("B97-3c (Composite GGA - Excellent speed/accuracy)", "B97-3c"),
+    ("M06-2X (Minnesota meta-hybrid - Thermochemistry & kinetics)", "M06-2X"),
+    ("CAM-B3LYP (Coulomb-attenuated hybrid)", "CAM-B3LYP"),
+    ("BP86 (Pure GGA - Organometallics & rapid opt)", "BP86"),
+    ("HF (Hartree-Fock - Wavefunction baseline)", "HF"),
+    ("MP2 (Second-order Møller-Plesset perturbation)", "MP2"),
+    ("DLPNO-CCSD(T) (Coupled Cluster - Gold standard energetics)", "DLPNO-CCSD(T)"),
+    ("GFN2-xTB (Semi-empirical Tight-Binding - Ultrafast)", "GFN2-xTB"),
+]
+
+ORCA_BASIS_SETS = [
+    ("def2-SVP (Split valence polarized - Fast & standard)", "def2-SVP"),
+    ("def2-TZVP (Triple-zeta polarized - Publication quality)", "def2-TZVP"),
+    ("def2-TZVPP (Triple-zeta valence double-polarization)", "def2-TZVPP"),
+    ("def2-QZVP (Quadruple-zeta - Benchmark accuracy)", "def2-QZVP"),
+    ("ma-def2-SVP (Minimally augmented diffuse - Anions/Rydberg)", "ma-def2-SVP"),
+    ("ma-def2-TZVP (Augmented triple-zeta diffuse)", "ma-def2-TZVP"),
+    ("6-31G* (Pople double-zeta polarized)", "6-31G*"),
+    ("6-31+G(d,p) (Pople diffuse & polarized)", "6-31+G(d,p)"),
+    ("6-311++G(d,p) (Pople triple-zeta diffuse)", "6-311++G(d,p)"),
+    ("cc-pVDZ (Dunning correlation consistent double-zeta)", "cc-pVDZ"),
+    ("cc-pVTZ (Dunning correlation consistent triple-zeta)", "cc-pVTZ"),
+]
+
+ORCA_JOBS = [
+    ("⚡ Geometry Optimization (! Opt)", "Opt"),
+    ("🎵 Optimization + Frequencies (! Opt Freq)", "Opt Freq"),
+    ("🌐 Single Point Energy (! SP)", "SP"),
+    ("⚡ Transition State Search (! OptTS NumFreq)", "OptTS NumFreq"),
+    ("🎵 Harmonic Frequencies Only (! Freq)", "Freq"),
+]
+
 
 class QuickOrcaDialog(QtWidgets.QDialog):
-    """Simplified modal dialog for running ORCA calculations in course labs."""
+    """Rich interactive modal dialog for setting up and running ORCA calculations."""
 
-    def __init__(self, parent: QtWidgets.QWidget, zatoms: List[ZAtom], coords: Optional[np.ndarray] = None):
-        super().__init__(parent)
-        self.setWindowTitle("🚀 Quick Run ORCA Calculation")
-        self.resize(520, 420)
+    def __init__(self, parent: Optional[QtWidgets.QWidget], zatoms: List[ZAtom], coords: Optional[np.ndarray] = None):
+        super().__init__(parent if isinstance(parent, QtWidgets.QWidget) else None)
+        self.setWindowTitle("🚀 ORCA Quantum Chemistry Studio & Input Generator")
+        self.resize(680, 620)
         self.zatoms = zatoms
         self.coords = coords
+        self._syncing_route = False
 
         self._init_ui()
 
     def _init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(14)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        # Header description
+        # Header bar with switch to full studio
+        hdr_layout = QtWidgets.QHBoxLayout()
         info_box = QtWidgets.QLabel(
-            "<b>Run ORCA Quantum Chemistry Calculation</b><br>"
+            "<b>ORCA Quantum Chemistry Calculation Studio</b><br>"
             "<span style='color: #64748b; font-size: 11px;'>"
-            "Select a course lab preset below. AgyMolden will generate the input file, "
-            "run ORCA in the background, and update the 3D molecule live as it optimizes.</span>"
+            "Configure theory, basis set, solvation, properties (ESP/NMR), and resources. Live 3D monitoring included.</span>"
         )
         info_box.setWordWrap(True)
-        layout.addWidget(info_box)
+        hdr_layout.addWidget(info_box, 1)
 
-        # Preset selection
-        grp_preset = QtWidgets.QGroupBox("Lab Calculation Preset")
-        p_layout = QtWidgets.QVBoxLayout(grp_preset)
-        self.combo_preset = QtWidgets.QComboBox()
-        for p in COURSE_PRESETS:
-            self.combo_preset.addItem(f"{p['icon']} {p['name']}", p)
-        self.combo_preset.currentIndexChanged.connect(self._on_preset_changed)
-        p_layout.addWidget(self.combo_preset)
+        btn_full_studio = QtWidgets.QPushButton("🎛️ Full Multi-Code QM Studio...")
+        btn_full_studio.setStyleSheet("background-color: #334155; color: white; padding: 5px 10px; font-size: 11px;")
+        btn_full_studio.setToolTip("Switch to the advanced multi-tab GaussView-style QM generator (Gaussian, ORCA, PySCF, xTB)")
+        btn_full_studio.clicked.connect(self._on_switch_to_full_studio)
+        hdr_layout.addWidget(btn_full_studio, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(hdr_layout)
 
-        self.lbl_preset_desc = QtWidgets.QLabel(COURSE_PRESETS[0]["desc"])
-        self.lbl_preset_desc.setStyleSheet("color: #475569; font-style: italic; font-size: 11px;")
-        self.lbl_preset_desc.setWordWrap(True)
-        p_layout.addWidget(self.lbl_preset_desc)
+        # Tabs for Options vs Deck Preview vs Course Presets
+        self.tabs = QtWidgets.QTabWidget()
 
-        # Route editor (editable)
-        route_row = QtWidgets.QHBoxLayout()
-        route_row.addWidget(QtWidgets.QLabel("ORCA Route:"))
-        self.txt_route = QtWidgets.QLineEdit(COURSE_PRESETS[0]["route"])
-        route_row.addWidget(self.txt_route, stretch=1)
-        p_layout.addLayout(route_row)
+        # -------------------------------------------------------------
+        # Tab 1: Comprehensive Options
+        # -------------------------------------------------------------
+        tab_opts = QtWidgets.QWidget()
+        opts_layout = QtWidgets.QVBoxLayout(tab_opts)
+        opts_layout.setSpacing(10)
 
-        layout.addWidget(grp_preset)
+        # 1. Theory & Basis Section
+        grp_theory = QtWidgets.QGroupBox("1. Method, Basis Set & Job Type")
+        theory_grid = QtWidgets.QGridLayout(grp_theory)
+        theory_grid.setVerticalSpacing(6)
+        theory_grid.setHorizontalSpacing(10)
 
-        # Molecular Charge & Multiplicity
-        grp_mol = QtWidgets.QGroupBox("Molecule State & Hardware")
-        m_form = QtWidgets.QFormLayout(grp_mol)
-        m_form.setSpacing(8)
+        theory_grid.addWidget(QtWidgets.QLabel("Job Type:"), 0, 0)
+        self.combo_job = QtWidgets.QComboBox()
+        for label, val in ORCA_JOBS:
+            self.combo_job.addItem(label, val)
+        self.combo_job.currentIndexChanged.connect(self._on_combo_options_changed)
+        theory_grid.addWidget(self.combo_job, 0, 1)
 
-        charge_mult_row = QtWidgets.QHBoxLayout()
+        theory_grid.addWidget(QtWidgets.QLabel("Functional / Method:"), 1, 0)
+        self.combo_method = QtWidgets.QComboBox()
+        for label, val in ORCA_METHODS:
+            self.combo_method.addItem(label, val)
+        self.combo_method.currentIndexChanged.connect(self._on_combo_options_changed)
+        theory_grid.addWidget(self.combo_method, 1, 1)
+
+        theory_grid.addWidget(QtWidgets.QLabel("Basis Set:"), 2, 0)
+        self.combo_basis = QtWidgets.QComboBox()
+        for label, val in ORCA_BASIS_SETS:
+            self.combo_basis.addItem(label, val)
+        self.combo_basis.currentIndexChanged.connect(self._on_combo_options_changed)
+        theory_grid.addWidget(self.combo_basis, 2, 1)
+
+        theory_grid.addWidget(QtWidgets.QLabel("Grid Quality:"), 3, 0)
+        self.combo_grid = QtWidgets.QComboBox()
+        self.combo_grid.addItem("DefGrid2 (Standard Default)", "DefGrid2")
+        self.combo_grid.addItem("DefGrid3 (Tight Grid for Freq/Opt)", "DefGrid3")
+        self.combo_grid.currentIndexChanged.connect(self._on_combo_options_changed)
+        theory_grid.addWidget(self.combo_grid, 3, 1)
+
+        opts_layout.addWidget(grp_theory)
+
+        # 2. Environment (Solvent & Dispersion)
+        grp_env = QtWidgets.QGroupBox("2. Environment & Dispersion")
+        env_grid = QtWidgets.QGridLayout(grp_env)
+        env_grid.setVerticalSpacing(6)
+
+        env_grid.addWidget(QtWidgets.QLabel("Solvent (CPCM):"), 0, 0)
+        self.combo_solvent = QtWidgets.QComboBox()
+        self.combo_solvent.addItems([
+            "None (Gas Phase)", "Water (CPCM)", "Dichloromethane (CPCM)",
+            "Acetonitrile (CPCM)", "Chloroform (CPCM)", "DMSO (CPCM)",
+            "THF (CPCM)", "Toluene (CPCM)", "Ethanol (CPCM)", "Methanol (CPCM)"
+        ])
+        self.combo_solvent.currentIndexChanged.connect(self._on_combo_options_changed)
+        env_grid.addWidget(self.combo_solvent, 0, 1)
+
+        env_grid.addWidget(QtWidgets.QLabel("Dispersion Correction:"), 1, 0)
+        self.combo_dispersion = QtWidgets.QComboBox()
+        self.combo_dispersion.addItems(["None / In Route", "D3BJ", "D4"])
+        self.combo_dispersion.currentIndexChanged.connect(self._on_combo_options_changed)
+        env_grid.addWidget(self.combo_dispersion, 1, 1)
+
+        opts_layout.addWidget(grp_env)
+
+        # 3. Properties to Calculate
+        grp_props = QtWidgets.QGroupBox("3. Properties to Compute")
+        props_layout = QtWidgets.QGridLayout(grp_props)
+        props_layout.setVerticalSpacing(4)
+
+        self.chk_esp = QtWidgets.QCheckBox("🌈 Generate 3D Electrostatic Potential (ESP) Cube File")
+        self.chk_esp.setToolTip("Appends %plots esp(\"esp.cube\") = true; end to evaluate the 3D ESP grid for isosurface plotting")
+        self.chk_esp.setChecked(True)
+        self.chk_esp.toggled.connect(self._update_deck_preview)
+        props_layout.addWidget(self.chk_esp, 0, 0)
+
+        self.chk_nmr = QtWidgets.QCheckBox("🧲 NMR Chemical Shielding Tensors (! NMR)")
+        self.chk_nmr.toggled.connect(self._on_combo_options_changed)
+        props_layout.addWidget(self.chk_nmr, 0, 1)
+
+        self.chk_polar = QtWidgets.QCheckBox("⚡ Molecular Polarizability (! Polar)")
+        self.chk_polar.toggled.connect(self._on_combo_options_changed)
+        props_layout.addWidget(self.chk_polar, 1, 0)
+
+        self.chk_mo_cubes = QtWidgets.QCheckBox("🌐 Export Frontier Orbitals (HOMO & LUMO Cube Files)")
+        self.chk_mo_cubes.toggled.connect(self._update_deck_preview)
+        props_layout.addWidget(self.chk_mo_cubes, 1, 1)
+
+        opts_layout.addWidget(grp_props)
+
+        # 4. Molecule State & Resources
+        grp_state = QtWidgets.QGroupBox("4. Electronic State & Hardware Resources")
+        state_grid = QtWidgets.QGridLayout(grp_state)
+        state_grid.setVerticalSpacing(6)
+
+        row_charge = QtWidgets.QHBoxLayout()
         self.spn_charge = QtWidgets.QSpinBox()
         self.spn_charge.setRange(-10, 10)
         self.spn_charge.setValue(0)
-        charge_mult_row.addWidget(QtWidgets.QLabel("Charge:"))
-        charge_mult_row.addWidget(self.spn_charge)
+        row_charge.addWidget(QtWidgets.QLabel("Net Charge:"))
+        row_charge.addWidget(self.spn_charge)
 
         self.spn_mult = QtWidgets.QSpinBox()
         self.spn_mult.setRange(1, 10)
         self.spn_mult.setValue(1)
-        charge_mult_row.addWidget(QtWidgets.QLabel("Multiplicity:"))
-        charge_mult_row.addWidget(self.spn_mult)
-        charge_mult_row.addStretch()
+        row_charge.addWidget(QtWidgets.QLabel("Multiplicity:"))
+        row_charge.addWidget(self.spn_mult)
+        row_charge.addStretch()
+        state_grid.addLayout(row_charge, 0, 0, 1, 2)
 
-        m_form.addRow("Electronic State:", charge_mult_row)
-
-        # Parity validation feedback label
         self.lbl_parity_warning = QtWidgets.QLabel("")
         self.lbl_parity_warning.setWordWrap(True)
-        m_form.addRow("Spin Parity:", self.lbl_parity_warning)
+        state_grid.addWidget(self.lbl_parity_warning, 1, 0, 1, 2)
 
         self.spn_charge.valueChanged.connect(self._validate_charge_multiplicity)
         self.spn_mult.valueChanged.connect(self._validate_charge_multiplicity)
-        self.txt_route.textChanged.connect(self._validate_charge_multiplicity)
 
-        # Solvent & Dispersion Environment
-        solv_disp_row = QtWidgets.QHBoxLayout()
-        self.combo_solvent = QtWidgets.QComboBox()
-        self.combo_solvent.addItems([
-            "None (Gas Phase)", "Water (CPCM)", "Acetonitrile (CPCM)",
-            "Dichloromethane (CPCM)", "Chloroform (CPCM)", "DMSO (CPCM)",
-            "THF (CPCM)", "Toluene (CPCM)", "Ethanol (CPCM)", "Methanol (CPCM)"
-        ])
-        solv_disp_row.addWidget(QtWidgets.QLabel("Solvent:"))
-        solv_disp_row.addWidget(self.combo_solvent, stretch=1)
-
-        self.combo_dispersion = QtWidgets.QComboBox()
-        self.combo_dispersion.addItems(["None / In Route", "D3BJ", "D4"])
-        solv_disp_row.addWidget(QtWidgets.QLabel("Dispersion:"))
-        solv_disp_row.addWidget(self.combo_dispersion)
-        m_form.addRow("Environment:", solv_disp_row)
-
-        # Processors and memory
-        hw_row = QtWidgets.QHBoxLayout()
+        row_hw = QtWidgets.QHBoxLayout()
         self.spn_cores = QtWidgets.QSpinBox()
         self.spn_cores.setRange(1, 64)
-        self.spn_cores.setValue(1)  # Default 1 core for safe student execution without MPI errors
-        hw_row.addWidget(QtWidgets.QLabel("Cores (%pal):"))
-        hw_row.addWidget(self.spn_cores)
+        self.spn_cores.setValue(4)
+        row_hw.addWidget(QtWidgets.QLabel("Cores (%pal):"))
+        row_hw.addWidget(self.spn_cores)
 
         self.spn_mem = QtWidgets.QSpinBox()
         self.spn_mem.setRange(500, 32000)
         self.spn_mem.setSingleStep(500)
         self.spn_mem.setValue(2000)
         self.spn_mem.setSuffix(" MB")
-        hw_row.addWidget(QtWidgets.QLabel("Memory per core:"))
-        hw_row.addWidget(self.spn_mem)
-        hw_row.addStretch()
+        row_hw.addWidget(QtWidgets.QLabel("RAM per core:"))
+        row_hw.addWidget(self.spn_mem)
+        row_hw.addStretch()
+        state_grid.addLayout(row_hw, 2, 0, 1, 2)
 
-        m_form.addRow("Hardware Resources:", hw_row)
+        self.spn_cores.valueChanged.connect(self._update_deck_preview)
+        self.spn_mem.valueChanged.connect(self._update_deck_preview)
 
-        # Job Name & Working Directory
-        curr_dir = os.path.abspath(".")
+        opts_layout.addWidget(grp_state)
+
+        # Route Line
+        row_route = QtWidgets.QHBoxLayout()
+        row_route.addWidget(QtWidgets.QLabel("<b>Active Route:</b>"))
+        self.txt_route = QtWidgets.QLineEdit("! B3LYP def2-SVP Opt")
+        self.txt_route.textChanged.connect(self._on_route_text_edited)
+        row_route.addWidget(self.txt_route, 1)
+        opts_layout.addLayout(row_route)
+
+        opts_layout.addStretch()
+        self.tabs.addTab(tab_opts, "⚡ Calculation Setup")
+
+        # -------------------------------------------------------------
+        # Tab 2: Deck Preview
+        # -------------------------------------------------------------
+        tab_preview = QtWidgets.QWidget()
+        prev_layout = QtWidgets.QVBoxLayout(tab_preview)
+        prev_layout.setSpacing(8)
+
+        lbl_prev_info = QtWidgets.QLabel("Full ORCA input deck (*.inp) generated from your current configuration:")
+        lbl_prev_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        prev_layout.addWidget(lbl_prev_info)
+
+        self.txt_deck_preview = QtWidgets.QPlainTextEdit()
+        self.txt_deck_preview.setFont(QtGui.QFont("Monospace", 10))
+        self.txt_deck_preview.setStyleSheet("background-color: #0f172a; color: #f8fafc;")
+        prev_layout.addWidget(self.txt_deck_preview, 1)
+
+        row_prev_btns = QtWidgets.QHBoxLayout()
+        btn_copy_deck = QtWidgets.QPushButton("📋 Copy Deck to Clipboard")
+        btn_copy_deck.clicked.connect(self._on_copy_deck)
+        row_prev_btns.addWidget(btn_copy_deck)
+        row_prev_btns.addStretch()
+        prev_layout.addLayout(row_prev_btns)
+
+        self.tabs.addTab(tab_preview, "📄 Live Deck Preview")
+
+        # -------------------------------------------------------------
+        # Tab 3: Quick Presets
+        # -------------------------------------------------------------
+        tab_presets = QtWidgets.QWidget()
+        presets_layout = QtWidgets.QVBoxLayout(tab_presets)
+        presets_layout.setSpacing(8)
+
+        lbl_pr_info = QtWidgets.QLabel("1-Click Course Lab Presets (standard student exercises):")
+        lbl_pr_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        presets_layout.addWidget(lbl_pr_info)
+
+        self.combo_preset = QtWidgets.QComboBox()
+        for p in COURSE_PRESETS:
+            self.combo_preset.addItem(f"{p['icon']} {p['name']}", p)
+        self.combo_preset.currentIndexChanged.connect(self._on_preset_changed)
+        presets_layout.addWidget(self.combo_preset)
+
+        self.lbl_preset_desc = QtWidgets.QLabel(COURSE_PRESETS[0]["desc"])
+        self.lbl_preset_desc.setStyleSheet("color: #475569; font-style: italic; font-size: 12px; padding: 6px;")
+        self.lbl_preset_desc.setWordWrap(True)
+        presets_layout.addWidget(self.lbl_preset_desc)
+        presets_layout.addStretch()
+
+        self.tabs.addTab(tab_presets, "📚 Course Presets")
+
+        layout.addWidget(self.tabs, 1)
+
+        # Bottom: Working Directory, File Name & Action Buttons
+        bottom_box = QtWidgets.QGroupBox("Target File & Launch")
+        bot_layout = QtWidgets.QFormLayout(bottom_box)
+        bot_layout.setSpacing(6)
+
         self.txt_filename = QtWidgets.QLineEdit("orca_calc.inp")
-        m_form.addRow("Input File Name:", self.txt_filename)
+        bot_layout.addRow("Input File:", self.txt_filename)
 
         dir_row = QtWidgets.QHBoxLayout()
-        self.txt_dir = QtWidgets.QLineEdit(curr_dir)
+        self.txt_dir = QtWidgets.QLineEdit(os.path.abspath("."))
         dir_row.addWidget(self.txt_dir, stretch=1)
         btn_browse = QtWidgets.QPushButton("Browse...")
         btn_browse.clicked.connect(self._on_browse_dir)
         dir_row.addWidget(btn_browse)
-        m_form.addRow("Working Directory:", dir_row)
+        bot_layout.addRow("Directory:", dir_row)
 
-        layout.addWidget(grp_mol)
+        layout.addWidget(bottom_box)
 
-        # Dialog Buttons
         btn_box = QtWidgets.QHBoxLayout()
         btn_box.addStretch()
 
@@ -198,18 +385,186 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         self.btn_run = QtWidgets.QPushButton("🚀 Run ORCA Now")
         self.btn_run.setStyleSheet(
-            "background-color: #2563eb; color: white; font-weight: bold; font-size: 13px; padding: 6px 16px; border-radius: 4px;"
+            "background-color: #2563eb; color: white; font-weight: bold; font-size: 13px; padding: 8px 20px; border-radius: 4px;"
         )
         self.btn_run.clicked.connect(self._on_run_clicked)
         btn_box.addWidget(self.btn_run)
 
         layout.addLayout(btn_box)
 
-        # Validate charge and spin multiplicity at start
+        # Initial composition
+        self._compose_route_from_controls()
         self._validate_charge_multiplicity()
+        self._update_deck_preview()
+
+    def _on_switch_to_full_studio(self):
+        """Switch to full multi-code QM Calculation Setup dialog."""
+        self.reject()
+        parent = self.parent()
+        if parent and hasattr(parent, "_on_open_qm_dialog"):
+            parent._on_open_qm_dialog(target_code="orca")
+
+    def _compose_route_from_controls(self):
+        """Construct the ORCA route line string from current combo and checkbox controls."""
+        if self._syncing_route:
+            return
+        self._syncing_route = True
+
+        tokens = ["!"]
+        method = self.combo_method.currentData() or "B3LYP"
+        basis = self.combo_basis.currentData() or "def2-SVP"
+        job = self.combo_job.currentData() or "Opt"
+        grid = self.combo_grid.currentData() or "DefGrid2"
+        disp = self.combo_dispersion.currentText()
+        solv = self.combo_solvent.currentText()
+
+        # xTB and composite methods have fixed basis & dispersion
+        if method in ("GFN2-xTB", "r2SCAN-3c", "B97-3c"):
+            tokens.append(method)
+        else:
+            tokens.append(method)
+            if basis:
+                tokens.append(basis)
+            if disp in ("D3BJ", "D4"):
+                tokens.append(disp)
+
+        if job:
+            tokens.append(job)
+
+        if grid and grid != "DefGrid2":
+            tokens.append(grid)
+
+        if self.chk_nmr.isChecked():
+            tokens.append("NMR")
+
+        if self.chk_polar.isChecked():
+            tokens.append("Polar")
+
+        if solv != "None (Gas Phase)":
+            solv_name = solv.split()[0]
+            if solv_name == "Dichloromethane":
+                solv_name = "CH2Cl2"
+            tokens.append(f"CPCM({solv_name})")
+
+        route_str = " ".join(tokens)
+        self.txt_route.setText(route_str)
+        self._syncing_route = False
+
+        self._update_deck_preview()
+
+    def _on_combo_options_changed(self, _idx: int = 0):
+        self._compose_route_from_controls()
+
+    def _on_route_text_edited(self, text: str):
+        self._validate_charge_multiplicity()
+        self._update_deck_preview()
+
+    def _generate_deck_content(self) -> str:
+        return self.get_orca_input_text()
+
+    def get_orca_input_text(self) -> str:
+        """Assemble the complete ORCA input deck as a string."""
+        route_line = self.txt_route.text().strip()
+        if not route_line.startswith("!"):
+            route_line = "! " + route_line
+
+        lines = [route_line]
+
+        nprocs = self.spn_cores.value()
+        if nprocs > 1:
+            lines.append(f"%pal nprocs {nprocs} end")
+
+        lines.append(f"%maxcore {self.spn_mem.value()}")
+
+        # Check for ESP or MO cubes
+        plot_items = []
+        if self.chk_esp.isChecked():
+            plot_items.append("  dim1 40")
+            plot_items.append("  dim2 40")
+            plot_items.append("  dim3 40")
+            plot_items.append('  esp("esp.cube") = true;')
+        if self.chk_mo_cubes.isChecked():
+            plot_items.append("  dim1 40")
+            plot_items.append("  dim2 40")
+            plot_items.append("  dim3 40")
+            plot_items.append('  mo("homo.cube") = true;')
+            plot_items.append('  mo("lumo.cube") = true;')
+
+        if plot_items:
+            lines.append("%plots")
+            lines.extend(plot_items)
+            lines.append("end")
+
+        lines.append("")
+        lines.append(f"* xyz {self.spn_charge.value()} {self.spn_mult.value()}")
+
+        if self.coords is not None and len(self.coords) == len(self.zatoms):
+            c_use = self.coords
+        elif self.zatoms:
+            from .zmatrix import zmatrix_to_cartesian
+            try:
+                c_use = zmatrix_to_cartesian(self.zatoms)
+            except Exception:
+                c_use = np.zeros((len(self.zatoms), 3))
+        else:
+            c_use = np.zeros((0, 3))
+
+        for atom, pos in zip(self.zatoms, c_use):
+            lines.append(f"  {atom.symbol:<2}  {pos[0]:12.6f}  {pos[1]:12.6f}  {pos[2]:12.6f}")
+        lines.append("*\n")
+
+        return "\n".join(lines)
+
+    def _update_deck_preview(self):
+        """Update live text in Tab 2."""
+        if hasattr(self, "txt_deck_preview"):
+            self.txt_deck_preview.setPlainText(self._generate_deck_content())
+
+    def _on_copy_deck(self):
+        QtWidgets.QApplication.clipboard().setText(self._generate_deck_content())
+        self.statusBar = getattr(self, "statusBar", None)
+
+    def _on_preset_changed(self, idx: int):
+        data = self.combo_preset.currentData()
+        if data:
+            self._syncing_route = True
+            self.txt_route.setText(data["route"])
+            self.lbl_preset_desc.setText(data["desc"])
+
+            # Sync combo controls if known
+            method = data.get("method")
+            if method:
+                for i in range(self.combo_method.count()):
+                    if self.combo_method.itemData(i) == method:
+                        self.combo_method.blockSignals(True)
+                        self.combo_method.setCurrentIndex(i)
+                        self.combo_method.blockSignals(False)
+                        break
+
+            basis = data.get("basis")
+            if basis is not None:
+                for i in range(self.combo_basis.count()):
+                    if self.combo_basis.itemData(i) == basis:
+                        self.combo_basis.blockSignals(True)
+                        self.combo_basis.setCurrentIndex(i)
+                        self.combo_basis.blockSignals(False)
+                        break
+
+            job = data.get("job")
+            if job:
+                for i in range(self.combo_job.count()):
+                    if self.combo_job.itemData(i) == job:
+                        self.combo_job.blockSignals(True)
+                        self.combo_job.setCurrentIndex(i)
+                        self.combo_job.blockSignals(False)
+                        break
+
+            self._syncing_route = False
+            self._validate_charge_multiplicity()
+            self._update_deck_preview()
 
     def _run_preflight_sanity(self) -> dict:
-        """Run chemistry_checker pre-flight sanity checks on current molecule, charge, multiplicity, and route."""
+        """Run chemistry_checker pre-flight sanity checks."""
         from .chemistry_checker import check_calculation_sanity
         symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
         coords_arr = self.coords
@@ -259,12 +614,6 @@ class QuickOrcaDialog(QtWidgets.QDialog):
                 f"<span style='color: #16a34a;'>({info['formula']}, {num_electrons} e⁻, mult={mult})</span>"
             )
 
-    def _on_preset_changed(self, idx: int):
-        data = self.combo_preset.currentData()
-        if data:
-            self.txt_route.setText(data["route"])
-            self.lbl_preset_desc.setText(data["desc"])
-
     def _on_browse_dir(self):
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Working Directory", self.txt_dir.text())
         if d:
@@ -290,25 +639,6 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             if ans != QtWidgets.QMessageBox.StandardButton.Yes:
                 return
 
-        route_line = self.txt_route.text().strip()
-        if not route_line.startswith("!"):
-            route_line = "! " + route_line
-
-        # Append dispersion if selected and not already in route
-        if hasattr(self, "combo_dispersion"):
-            disp = self.combo_dispersion.currentText()
-            if disp in ("D3BJ", "D4") and disp.lower() not in route_line.lower():
-                route_line += f" {disp}"
-
-        # Append solvent if selected and not already in route
-        if hasattr(self, "combo_solvent"):
-            solv = self.combo_solvent.currentText()
-            if solv != "None (Gas Phase)" and "cpcm" not in route_line.lower() and "smd" not in route_line.lower():
-                solv_name = solv.split()[0]
-                if solv_name == "Dichloromethane":
-                    solv_name = "CH2Cl2"
-                route_line += f" CPCM({solv_name})"
-
         fname = self.txt_filename.text().strip()
         if not fname.endswith(".inp"):
             fname += ".inp"
@@ -316,25 +646,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         target_dir = self.txt_dir.text().strip() or os.path.abspath(".")
         target_path = os.path.join(target_dir, fname)
 
-        # Assemble coordinates
-        lines = [f"{route_line}"]
-        nprocs = self.spn_cores.value()
-        if nprocs > 1:
-            lines.append(f"%pal nprocs {nprocs} end")
-        lines.append(f"%maxcore {self.spn_mem.value()}")
-        lines.append("")
-        lines.append(f"* xyz {self.spn_charge.value()} {self.spn_mult.value()}")
-
-        # Coordinates from array or ZAtom definitions
-        if self.coords is not None and len(self.coords) == len(self.zatoms):
-            for atom, pos in zip(self.zatoms, self.coords):
-                lines.append(f"  {atom.symbol:<2}  {pos[0]:12.6f}  {pos[1]:12.6f}  {pos[2]:12.6f}")
-        else:
-            for atom in self.zatoms:
-                lines.append(f"  {atom.symbol:<2}  {atom.x:12.6f}  {atom.y:12.6f}  {atom.z:12.6f}")
-        lines.append("*\n")
-
-        content = "\n".join(lines)
+        content = self._generate_deck_content()
         try:
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(content)

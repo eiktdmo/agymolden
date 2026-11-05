@@ -1657,8 +1657,14 @@ class EditingMixin:
                 self.stored_fragment or self.last_added_fragment, screen_pos=local_pos
             ) if (self.stored_fragment or self.last_added_fragment) else self._on_paste())
 
+        menu.addSeparator()
+        act_esp = menu.addAction("🌈 3D Electrostatic Potential (ESP) Map (Ctrl+Alt+P)")
+        act_esp.triggered.connect(self._on_quick_view_esp_map)
+
+        act_vol = menu.addAction("🌐 Volumetric Studio & MOs (Ctrl+Alt+O)...")
+        act_vol.triggered.connect(self._on_open_volumetric_dialog)
+
         if getattr(self.viewer, "active_isosurfaces", None):
-            menu.addSeparator()
             act_clear_surf = menu.addAction("✖ Clear 3D Orbital / Isosurface (Esc)")
             act_clear_surf.triggered.connect(self._on_clear_orbital_surface)
 

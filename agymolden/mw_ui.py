@@ -579,6 +579,7 @@ class UIMixin(UIInspectorTabsMixin):
 
         # Table
         self.table_widget = ZMatrixTableWidget()
+        self.table_widget.setMinimumHeight(120)
         self.table_widget.before_data_changed.connect(self._push_undo_state)
         self.table_widget.data_changed.connect(self._on_table_data_changed)
         self.table_widget.atom_selected.connect(self._on_table_atom_selected)
@@ -704,6 +705,9 @@ class UIMixin(UIInspectorTabsMixin):
 
         # Selected Atom Fine Adjustment Group (Molden Style Slider Adjustment + GaussView SmartSlides)
         self.grp_adjust = QtWidgets.QGroupBox("Interactive Parameter Tuning / SmartSlides (Selected Atom or 2/3/4-Atom Selection)")
+        self.grp_adjust.setCheckable(True)
+        self.grp_adjust.setChecked(True)
+        self.grp_adjust.setToolTip("Toggle to expand or collapse Interactive Parameter Tuning / SmartSlides")
         adjust_layout = QtWidgets.QGridLayout(self.grp_adjust)
         adjust_layout.setHorizontalSpacing(10)
         adjust_layout.setVerticalSpacing(6)
@@ -785,7 +789,15 @@ class UIMixin(UIInspectorTabsMixin):
         self.grp_var_sliders.setVisible(False)
         tab_table_layout.addWidget(self.grp_var_sliders)
 
-        self.tabs.addTab(tab_table, "Z-Matrix")
+        scroll_tab_table = QtWidgets.QScrollArea()
+        scroll_tab_table.setWidgetResizable(True)
+        scroll_tab_table.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_tab_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_tab_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_tab_table.setWidget(tab_table)
+        self.tab_table = tab_table
+        self.scroll_tab_table = scroll_tab_table
+        self.tabs.addTab(scroll_tab_table, "Z-Matrix")
 
         # Tab 2: Raw Text Z-Matrix / Gaussian Format
         tab_raw = QtWidgets.QWidget()
@@ -1045,8 +1057,15 @@ class UIMixin(UIInspectorTabsMixin):
         tab_builder_layout.addWidget(grp_orient)
 
         tab_builder_layout.addStretch()
-        self.tab_builder = tab_builder
-        self.tabs.addTab(tab_builder, "Presets & Fragments")
+        scroll_builder = QtWidgets.QScrollArea()
+        scroll_builder.setWidgetResizable(True)
+        scroll_builder.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_builder.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_builder.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_builder.setWidget(tab_builder)
+        self.tab_builder = scroll_builder
+        self.tab_builder_widget = tab_builder
+        self.tabs.addTab(scroll_builder, "Presets & Fragments")
 
         # Tabs 4, 5, 6 (Vibrations, Symmetry, Molecular Orbitals) via UIInspectorTabsMixin
         self._init_vibrations_tab()
@@ -1056,7 +1075,7 @@ class UIMixin(UIInspectorTabsMixin):
         right_layout.addWidget(self.tabs)
         # Tab contents must never dictate the window width
         self.tabs.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Expanding)
-        right_container.setMinimumWidth(420)
+        right_container.setMinimumWidth(320)
         splitter.addWidget(right_container)
 
         # Splitter dynamic sizing: responsive in full window view
@@ -1593,6 +1612,57 @@ class UIMixin(UIInspectorTabsMixin):
         act_plugins.triggered.connect(self._on_open_script_runner)
         menu_tools.addAction(act_plugins)
 
+        # Surfaces & Electrostatic Potential Menu
+        menu_surfaces = menubar.addMenu("&Surfaces")
+        self.menu_surfaces = menu_surfaces
+
+        act_esp_3d = QtGui.QAction("🌈 3D Electrostatic Potential (ESP) Mapped Density Surface", self)
+        act_esp_3d.setShortcut("Ctrl+Alt+P")
+        act_esp_3d.setToolTip("Evaluate and display 3D Electrostatic Potential (ESP) mapped onto total electron density isosurface (ρ = 0.002 a.u.) (Ctrl+Alt+P)")
+        act_esp_3d.triggered.connect(self._on_quick_view_esp_map)
+        menu_surfaces.addAction(act_esp_3d)
+
+        act_esp_2d = QtGui.QAction("📈 2D Electrostatic Potential (ESP) Contour Map Slicer...", self)
+        act_esp_2d.setToolTip("Compute and interactively slice 2D ESP contour isoline heatmaps across any molecular plane")
+        act_esp_2d.triggered.connect(self._on_open_esp_2d_dialog)
+        menu_surfaces.addAction(act_esp_2d)
+
+        menu_surfaces.addSeparator()
+
+        act_vol_studio = QtGui.QAction("🌐 Molecular Orbitals & Isosurfaces Studio (Cube / Molden)...", self)
+        act_vol_studio.setShortcut("Ctrl+Alt+O")
+        act_vol_studio.setToolTip("Open full GaussView / Avogadro style Volumetric Studio for MOs, ESP, ELF, NCI/RDG, ALIE, and Cube file arithmetic (Ctrl+Alt+O)")
+        act_vol_studio.triggered.connect(self._on_open_volumetric_dialog)
+        menu_surfaces.addAction(act_vol_studio)
+
+        act_homo = QtGui.QAction("⚡ 1-Click View HOMO Orbital Surface", self)
+        act_homo.setToolTip("Compute and display Highest Occupied Molecular Orbital (HOMO) 3D isosurface lobes")
+        act_homo.triggered.connect(self._on_quick_view_homo)
+        menu_surfaces.addAction(act_homo)
+
+        act_lumo = QtGui.QAction("⚡ 1-Click View LUMO Orbital Surface", self)
+        act_lumo.setToolTip("Compute and display Lowest Unoccupied Molecular Orbital (LUMO) 3D isosurface lobes")
+        act_lumo.triggered.connect(self._on_quick_view_lumo)
+        menu_surfaces.addAction(act_lumo)
+
+        act_spin = QtGui.QAction("🌀 1-Click View Open-Shell Spin Density Lobes", self)
+        act_spin.setToolTip("Compute and display alpha - beta open-shell spin density 3D isosurface lobes")
+        act_spin.triggered.connect(self._on_quick_view_spin_density)
+        menu_surfaces.addAction(act_spin)
+
+        act_gallery = QtGui.QAction("📸 All Molecular Orbitals Snapshot Gallery...", self)
+        act_gallery.setToolTip("Batch capture all or selected molecular orbitals into a contact sheet collage or folder of images")
+        act_gallery.triggered.connect(self._on_open_orbital_snapshot_gallery)
+        menu_surfaces.addAction(act_gallery)
+
+        menu_surfaces.addSeparator()
+
+        act_clear_surf = QtGui.QAction("✖ Clear 3D Isosurfaces / Orbitals", self)
+        act_clear_surf.setShortcut("Esc")
+        act_clear_surf.setToolTip("Remove active 3D isosurfaces, ESP maps, and orbital lobes from viewport (Esc)")
+        act_clear_surf.triggered.connect(self._on_clear_orbital_surface)
+        menu_surfaces.addAction(act_clear_surf)
+
         # View Menu
         menu_view = menubar.addMenu("&View")
 
@@ -1780,7 +1850,7 @@ class UIMixin(UIInspectorTabsMixin):
         menu_help.addAction(act_manual)
 
     def _create_toolbar(self):
-        toolbar = QtWidgets.QToolBar("Main Controls")
+        toolbar = QtWidgets.QToolBar("File & Editing")
         toolbar.setObjectName("MainControlsToolbar")
         toolbar.setIconSize(QtCore.QSize(18, 18))
         self.addToolBar(toolbar)
@@ -1791,7 +1861,7 @@ class UIMixin(UIInspectorTabsMixin):
         toolbar.addWidget(btn_new)
 
         btn_open = QtWidgets.QToolButton()
-        btn_open.setText("📂 Open File")
+        btn_open.setText("📂 Open")
         btn_open.setToolTip("Open any supported file sorted newest-first: .out, .log, .xyz, .molden.input, .molden, .gbw, .cube, .zmat (Ctrl+O)")
         btn_open.clicked.connect(self._on_open_universal_file)
         toolbar.addWidget(btn_open)
@@ -1802,18 +1872,18 @@ class UIMixin(UIInspectorTabsMixin):
         toolbar.addWidget(btn_save)
 
         btn_xyz = QtWidgets.QToolButton()
-        btn_xyz.setText("📤 Export XYZ")
+        btn_xyz.setText("📤 XYZ")
         btn_xyz.clicked.connect(self._on_export_xyz)
         toolbar.addWidget(btn_xyz)
 
         btn_png = QtWidgets.QToolButton()
-        btn_png.setText("📷 Save PNG")
+        btn_png.setText("📷 PNG")
         btn_png.setToolTip("Export high-resolution PNG image of the 3D view (Ctrl+P)")
         btn_png.clicked.connect(self._on_export_image)
         toolbar.addWidget(btn_png)
 
         btn_html = QtWidgets.QToolButton()
-        btn_html.setText("🌐 3D HTML")
+        btn_html.setText("🌐 HTML")
         btn_html.setToolTip("Export interactive standalone 3D WebGL HTML webpage (Ctrl+Shift+H)")
         btn_html.clicked.connect(self._on_export_html)
         toolbar.addWidget(btn_html)
@@ -1848,50 +1918,63 @@ class UIMixin(UIInspectorTabsMixin):
         btn_opt.clicked.connect(self._on_optimize_geometry)
         toolbar.addWidget(btn_opt)
 
-        toolbar.addSeparator()
+        toolbar_qm = QtWidgets.QToolBar("Calculations & Surfaces")
+        toolbar_qm.setObjectName("QMAndSurfacesToolbar")
+        toolbar_qm.setIconSize(QtCore.QSize(18, 18))
+        self.addToolBar(toolbar_qm)
 
         btn_quick_orca = QtWidgets.QToolButton()
         btn_quick_orca.setText("🚀 Run ORCA")
-        btn_quick_orca.setToolTip("Quick 1-Click ORCA calculation for course labs (Opt, Freq, Orbitals)")
+        btn_quick_orca.setToolTip("Quick ORCA calculation studio (Methods, Basis sets, ESP, Opt, Freq)")
         btn_quick_orca.setStyleSheet("color: #2563eb; font-weight: bold;")
         btn_quick_orca.clicked.connect(self._on_quick_run_orca)
-        toolbar.addWidget(btn_quick_orca)
+        toolbar_qm.addWidget(btn_quick_orca)
 
         btn_qm = QtWidgets.QToolButton()
         btn_qm.setText("⚛️ QM Setup")
         btn_qm.setToolTip("Generate calculation input for Gaussian, ORCA, PySCF, openLOWDIN, xTB (Ctrl+G)")
         btn_qm.clicked.connect(self._on_open_qm_dialog)
-        toolbar.addWidget(btn_qm)
+        toolbar_qm.addWidget(btn_qm)
 
         btn_brorsen = QtWidgets.QToolButton()
         btn_brorsen.setText("✨ newBRORSEN")
         btn_brorsen.setToolTip("Generate input files for newBRORSEN (Positrons, NEO, CCSD(T)) (Ctrl+B)")
         btn_brorsen.clicked.connect(self._on_open_brorsen_dialog)
-        toolbar.addWidget(btn_brorsen)
+        toolbar_qm.addWidget(btn_brorsen)
+
+        toolbar_qm.addSeparator()
+
+        btn_esp = QtWidgets.QToolButton()
+        btn_esp.setText("🌈 ESP Map")
+        btn_esp.setToolTip("1-Click Electrostatic Potential (ESP) mapped onto Electron Density (Ctrl+Alt+P)")
+        btn_esp.setStyleSheet("color: #db2777; font-weight: bold;")
+        btn_esp.clicked.connect(self._on_quick_view_esp_map)
+        toolbar_qm.addWidget(btn_esp)
+        self.btn_toolbar_esp = btn_esp
 
         btn_orbitals = QtWidgets.QToolButton()
         btn_orbitals.setText("🌐 Orbitals/Grid")
-        btn_orbitals.setToolTip("Open Volumetric Cube or Molden file to view Molecular Orbitals / ESP isosurfaces")
+        btn_orbitals.setToolTip("Open Volumetric Cube or Molden file to view Molecular Orbitals / ESP isosurfaces (Ctrl+Alt+O)")
         btn_orbitals.clicked.connect(self._on_open_volumetric_dialog)
-        toolbar.addWidget(btn_orbitals)
+        toolbar_qm.addWidget(btn_orbitals)
 
         btn_view_log_tb = QtWidgets.QToolButton()
         btn_view_log_tb.setText("📄 View Log")
         btn_view_log_tb.setToolTip("Open Calculation Output Log & Results Viewer (F2)")
         btn_view_log_tb.clicked.connect(self._on_view_qm_output_file)
-        toolbar.addWidget(btn_view_log_tb)
+        toolbar_qm.addWidget(btn_view_log_tb)
 
         btn_vib = QtWidgets.QToolButton()
         btn_vib.setText("🎵 Vibrations")
         btn_vib.setToolTip("Compute vibrational frequencies and simulate normal modes")
         btn_vib.clicked.connect(self._on_calculate_vibrations)
-        toolbar.addWidget(btn_vib)
+        toolbar_qm.addWidget(btn_vib)
 
         self.btn_toolbar_sym = QtWidgets.QToolButton()
         self.btn_toolbar_sym.setText("🔮 Symmetry")
         self.btn_toolbar_sym.setToolTip("Detect Schoenflies point group symmetry")
         self.btn_toolbar_sym.clicked.connect(lambda _checked=False: self._on_detect_symmetry(switch_tab=True))
-        toolbar.addWidget(self.btn_toolbar_sym)
+        toolbar_qm.addWidget(self.btn_toolbar_sym)
 
         # Permanent Chemical Summary Label on Status Bar
         self.lbl_chem_summary = QtWidgets.QLabel("Empty Molecule")

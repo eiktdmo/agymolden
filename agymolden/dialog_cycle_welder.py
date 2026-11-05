@@ -16,6 +16,10 @@ from .cycle_welder import (
     RING_PRESETS,
     fuse_ring_to_bond,
     bridge_cycle_atoms,
+    detect_peri_bays,
+    fuse_ring_to_triad,
+    _find_attached_hydrogens,
+    _find_adjacent_heavy_neighbors,
 )
 from .dialog_service import dialog_service
 
@@ -27,9 +31,10 @@ class CycleWelderDialog(QtWidgets.QDialog):
         super().__init__(parent if isinstance(parent, QtWidgets.QWidget) else None)
         self.window = parent
         self.setWindowTitle("💍 Molecular Cycle Welder & Ring Fusion Studio")
-        self.resize(560, 520)
+        self.resize(600, 560)
 
         self.target_bond: Optional[Tuple[int, int]] = None
+        self.target_triad: Optional[Tuple[int, int, int]] = None
         self._init_ui()
         self._populate_selection()
 
@@ -67,6 +72,14 @@ class CycleWelderDialog(QtWidgets.QDialog):
         self.lbl_atoms = QtWidgets.QLabel("No bond selected.")
         self.lbl_atoms.setStyleSheet("font-weight: bold; color: #38bdf8;")
         sel_layout.addWidget(self.lbl_atoms)
+
+        self.lbl_bridgehead_tip = QtWidgets.QLabel()
+        self.lbl_bridgehead_tip.setWordWrap(True)
+        self.lbl_bridgehead_tip.setStyleSheet(
+            "background-color: #272015; border: 1px solid #b45309; color: #fcd34d; padding: 6px; border-radius: 4px; font-size: 11px;"
+        )
+        self.lbl_bridgehead_tip.setVisible(False)
+        sel_layout.addWidget(self.lbl_bridgehead_tip)
 
         fuse_layout.addWidget(grp_sel)
 
@@ -130,6 +143,96 @@ class CycleWelderDialog(QtWidgets.QDialog):
 
         self.tabs.addTab(tab_fuse, "🔗 Edge Annulation (Fuse Ring)")
 
+        # Tab 2: Peri-Annulation (Bay Fusion / 3 Atoms)
+        tab_peri = QtWidgets.QWidget()
+        peri_layout = QtWidgets.QVBoxLayout(tab_peri)
+        peri_layout.setSpacing(10)
+
+        grp_peri_sel = QtWidgets.QGroupBox("1. Target Bay Triad (Left — Bridgehead — Right)")
+        peri_sel_layout = QtWidgets.QVBoxLayout(grp_peri_sel)
+        peri_sel_layout.setSpacing(6)
+
+        row_bay = QtWidgets.QHBoxLayout()
+        row_bay.addWidget(QtWidgets.QLabel("Select Bay:"))
+        self.combo_bays = QtWidgets.QComboBox()
+        self.combo_bays.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.combo_bays.currentIndexChanged.connect(self._on_bay_combo_changed)
+        row_bay.addWidget(self.combo_bays, 1)
+
+        btn_peri_refresh = QtWidgets.QPushButton("🔄 Read 3D Viewport")
+        btn_peri_refresh.setToolTip("Read 3 atoms selected in the 3D viewport")
+        btn_peri_refresh.clicked.connect(self._populate_selection)
+        row_bay.addWidget(btn_peri_refresh)
+        peri_sel_layout.addLayout(row_bay)
+
+        self.lbl_bay_status = QtWidgets.QLabel("No bay triad selected.")
+        self.lbl_bay_status.setStyleSheet("font-weight: bold; color: #38bdf8;")
+        peri_sel_layout.addWidget(self.lbl_bay_status)
+
+        peri_layout.addWidget(grp_peri_sel)
+
+        # Tab 2 Ring template group
+        grp_peri_ring = QtWidgets.QGroupBox("2. Ring Template & Peri-Annulation Preset")
+        peri_ring_layout = QtWidgets.QGridLayout(grp_peri_ring)
+        peri_ring_layout.setVerticalSpacing(8)
+
+        peri_ring_layout.addWidget(QtWidgets.QLabel("Ring Type:"), 0, 0)
+        self.combo_peri_preset = QtWidgets.QComboBox()
+        self.combo_peri_preset.addItem("Benzene (6-membered, adds 3 C → Phenalene)", "Benzene")
+        self.combo_peri_preset.addItem("Cyclopentyl (5-membered, adds 2 C → Acenaphthene)", "Cyclopentyl")
+        self.combo_peri_preset.addItem("Cyclopentadiene (5-membered conjugated)", "Cyclopentadiene")
+        self.combo_peri_preset.addItem("Pyridine (6-membered azine)", "Pyridine")
+        self.combo_peri_preset.addItem("Custom N-gon...", "Custom")
+        self.combo_peri_preset.currentIndexChanged.connect(self._on_peri_preset_changed)
+        peri_ring_layout.addWidget(self.combo_peri_preset, 0, 1)
+
+        self.lbl_peri_custom = QtWidgets.QLabel("Ring Size (N):")
+        self.spin_peri_custom = QtWidgets.QSpinBox()
+        self.spin_peri_custom.setRange(4, 8)
+        self.spin_peri_custom.setValue(6)
+        self.lbl_peri_custom.setVisible(False)
+        self.spin_peri_custom.setVisible(False)
+        peri_ring_layout.addWidget(self.lbl_peri_custom, 1, 0)
+        peri_ring_layout.addWidget(self.spin_peri_custom, 1, 1)
+
+        peri_ring_layout.addWidget(QtWidgets.QLabel("Apex Saturation:"), 2, 0)
+        self.combo_peri_sat = QtWidgets.QComboBox()
+        self.combo_peri_sat.addItem("Aromatic / Radical (=CH-, 1 H per carbon)", "aromatic")
+        self.combo_peri_sat.addItem("Neutral Hydrocarbon (-CH2- on apex, e.g. 1H-phenalene)", "neutral")
+        peri_ring_layout.addWidget(self.combo_peri_sat, 2, 1)
+
+        self.lbl_peri_desc = QtWidgets.QLabel("Fuses a 6-membered aromatic ring across 3 bay carbons to form Phenalene.")
+        self.lbl_peri_desc.setWordWrap(True)
+        self.lbl_peri_desc.setStyleSheet("color: #94a3b8; font-size: 11px; font-style: italic;")
+        peri_ring_layout.addWidget(self.lbl_peri_desc, 3, 0, 1, 2)
+
+        peri_layout.addWidget(grp_peri_ring)
+
+        # Tab 2 Options
+        grp_peri_opt = QtWidgets.QGroupBox("3. Fusion Geometry Options")
+        peri_opt_layout = QtWidgets.QVBoxLayout(grp_peri_opt)
+        peri_opt_layout.setSpacing(6)
+
+        self.chk_peri_relax = QtWidgets.QCheckBox("Auto-relax with Analytical Force Field (UFF / MMFF94)")
+        self.chk_peri_relax.setChecked(True)
+        peri_opt_layout.addWidget(self.chk_peri_relax)
+
+        self.chk_peri_freeze = QtWidgets.QCheckBox("Freeze parent atoms (relax only newly fused ring)")
+        self.chk_peri_freeze.setChecked(False)
+        peri_opt_layout.addWidget(self.chk_peri_freeze)
+
+        peri_layout.addWidget(grp_peri_opt)
+
+        self.btn_fuse_triad = QtWidgets.QPushButton("🌌 Weld Ring Across Bay (Peri-Fusion)")
+        self.btn_fuse_triad.setStyleSheet(
+            "background-color: #8b5cf6; color: white; font-weight: bold; font-size: 13px; padding: 10px; border-radius: 6px;"
+        )
+        self.btn_fuse_triad.clicked.connect(self._on_execute_fuse_triad)
+        peri_layout.addWidget(self.btn_fuse_triad)
+        peri_layout.addStretch()
+
+        self.tabs.addTab(tab_peri, "🌌 Peri-Annulation (3 Atoms / Bay)")
+
         # Tab 2: Bicyclic Bridgehead Welding
         tab_bridge = QtWidgets.QWidget()
         bridge_layout = QtWidgets.QVBoxLayout(tab_bridge)
@@ -179,29 +282,38 @@ class CycleWelderDialog(QtWidgets.QDialog):
         coords = getattr(self.window, "coords", None)
         viewer = getattr(self.window, "viewer", None) if self.window else None
 
-        # 1. Determine active selection
+        # 1. Determine active selection BEFORE modifying combo boxes
         sel = []
+        sel3 = []
         if viewer:
-            # Did user click a bond directly?
             if getattr(viewer, "selected_bond", None) is not None:
                 sel = list(viewer.selected_bond)
-            # Or Shift-selected 2 atoms?
-            elif getattr(viewer, "multi_selected", None) and len(viewer.multi_selected) == 2:
-                sel = list(viewer.multi_selected)
+            elif getattr(viewer, "multi_selected", None):
+                ms = list(viewer.multi_selected)
+                if len(ms) == 2:
+                    sel = ms
+                elif len(ms) == 3:
+                    sel3 = ms
             elif getattr(viewer, "selected_atom_idx", None) is not None and getattr(viewer, "multi_selected", None):
                 combined = [viewer.selected_atom_idx] + [i for i in viewer.multi_selected if i != viewer.selected_atom_idx]
                 if len(combined) == 2:
                     sel = combined[:2]
+                elif len(combined) == 3:
+                    sel3 = combined[:3]
 
-        if not sel and hasattr(self.window, "_get_ordered_selection"):
+        if not sel and not sel3 and hasattr(self.window, "_get_ordered_selection"):
             ord_sel = self.window._get_ordered_selection()
             if len(ord_sel) == 2:
                 sel = ord_sel
+            elif len(ord_sel) == 3:
+                sel3 = ord_sel
 
-        if not sel and self.window:
+        if not sel and not sel3 and self.window:
             cand = list(getattr(self.window, "selected_atoms", []))
             if len(cand) == 2:
                 sel = cand
+            elif len(cand) == 3:
+                sel3 = cand
 
         # 2. Get all molecular bonds
         bonds = []
@@ -235,6 +347,57 @@ class CycleWelderDialog(QtWidgets.QDialog):
         self.combo_bonds.blockSignals(False)
         self._on_bond_combo_changed(self.combo_bonds.currentIndex())
 
+        # 3. Detect and populate Peri-Bays for Tab 2
+        self.combo_bays.blockSignals(True)
+        self.combo_bays.clear()
+
+        bays = detect_peri_bays(symbols, coords, bonds) if (symbols and coords is not None and len(symbols) >= 3) else []
+
+        selected_bay_idx = -1
+        if len(sel3) == 3:
+            adj_sel = {x: [y for y in sel3 if y != x and tuple(sorted((x, y))) in [tuple(sorted(b)) for b in bonds]] for x in sel3}
+            center_cand = [x for x, neighs in adj_sel.items() if len(neighs) == 2]
+            if center_cand:
+                a_C = center_cand[0]
+                others = [x for x in sel3 if x != a_C]
+                ordered_triad = (others[0], a_C, others[1])
+            else:
+                ordered_triad = (sel3[0], sel3[1], sel3[2])
+
+            triad_set = set(ordered_triad)
+            for idx_b, b_triad in enumerate(bays):
+                if set(b_triad) == triad_set:
+                    selected_bay_idx = idx_b
+                    break
+            if selected_bay_idx == -1:
+                sL = symbols[ordered_triad[0]] if ordered_triad[0] < len(symbols) else f"Atom {ordered_triad[0]+1}"
+                sC = symbols[ordered_triad[1]] if ordered_triad[1] < len(symbols) else f"Atom {ordered_triad[1]+1}"
+                sR = symbols[ordered_triad[2]] if ordered_triad[2] < len(symbols) else f"Atom {ordered_triad[2]+1}"
+                label = f"Selected Viewport Triad: {sL}{ordered_triad[0]+1} — {sC}{ordered_triad[1]+1} — {sR}{ordered_triad[2]+1}"
+                self.combo_bays.addItem(label, ordered_triad)
+                selected_bay_idx = 0
+
+        for idx_b, (a_L, a_C, a_R) in enumerate(bays):
+            sL = symbols[a_L] if a_L < len(symbols) else f"Atom {a_L+1}"
+            sC = symbols[a_C] if a_C < len(symbols) else f"Atom {a_C+1}"
+            sR = symbols[a_R] if a_R < len(symbols) else f"Atom {a_R+1}"
+            d_span = float(np.linalg.norm(coords[a_L] - coords[a_R])) if coords is not None else 0.0
+            label = f"Bay {idx_b+1}: {sL}{a_L+1} — {sC}{a_C+1}(bridgehead) — {sR}{a_R+1} (Span: {d_span:.2f} Å)"
+            self.combo_bays.addItem(label, (a_L, a_C, a_R))
+            if len(sel3) == 3 and selected_bay_idx == -1 and set((a_L, a_C, a_R)) == set(sel3):
+                selected_bay_idx = self.combo_bays.count() - 1
+
+        if selected_bay_idx >= 0:
+            self.combo_bays.setCurrentIndex(selected_bay_idx)
+        elif self.combo_bays.count() > 0:
+            self.combo_bays.setCurrentIndex(0)
+
+        self.combo_bays.blockSignals(False)
+        self._on_bay_combo_changed(self.combo_bays.currentIndex())
+
+        if len(sel3) == 3:
+            self.tabs.setCurrentIndex(1)
+
     def _on_bond_combo_changed(self, idx: int):
         data = self.combo_bonds.currentData()
         if data and len(data) == 2:
@@ -261,12 +424,81 @@ class CycleWelderDialog(QtWidgets.QDialog):
             self.lbl_atoms.setStyleSheet("font-weight: bold; color: #4ade80;")
             self.btn_fuse.setEnabled(True)
             self.btn_bridge.setEnabled(True)
+
+            # Bridgehead advisory
+            bh_tip = ""
+            for a_cand in (u, v):
+                if (
+                    len(_find_attached_hydrogens(symbols, coords, a_cand)) == 0
+                    and len(_find_adjacent_heavy_neighbors(symbols, coords, a_cand, -1)) >= 3
+                ):
+                    bh_tip = (
+                        f"💡 Advisory: {symbols[a_cand]}{a_cand+1} is a bridgehead carbon without hydrogens. "
+                        f"To fuse a ring across the bay (e.g. Naphthalene → Phenalene), switch to the '🌌 Peri-Annulation (3 Atoms / Bay)' tab!"
+                    )
+                    break
+            if bh_tip:
+                self.lbl_bridgehead_tip.setText(bh_tip)
+                self.lbl_bridgehead_tip.setVisible(True)
+            else:
+                self.lbl_bridgehead_tip.setVisible(False)
         else:
             self.target_bond = None
             self.lbl_atoms.setText("No bond selected in molecule.")
             self.lbl_atoms.setStyleSheet("font-weight: bold; color: #f87171;")
+            self.lbl_bridgehead_tip.setVisible(False)
             self.btn_fuse.setEnabled(False)
             self.btn_bridge.setEnabled(False)
+
+    def _on_bay_combo_changed(self, idx: int):
+        data = self.combo_bays.currentData()
+        if data and len(data) == 3:
+            self.target_triad = (data[0], data[1], data[2])
+            a_L, a_C, a_R = self.target_triad
+            if self.window:
+                self.window.selected_atoms = [a_L, a_C, a_R]
+                viewer = getattr(self.window, "viewer", None)
+                if viewer:
+                    viewer.selected_bond = None
+                    viewer.multi_selected = [a_L, a_C, a_R]
+                    viewer.selected_atom_idx = a_C
+                    viewer.update()
+
+            symbols = [a.symbol for a in getattr(self.window, "zatoms", [])] if self.window else []
+            coords = getattr(self.window, "coords", None)
+            sL = symbols[a_L] if a_L < len(symbols) else f"Atom {a_L+1}"
+            sC = symbols[a_C] if a_C < len(symbols) else f"Atom {a_C+1}"
+            sR = symbols[a_R] if a_R < len(symbols) else f"Atom {a_R+1}"
+            dist_str = ""
+            if coords is not None and a_L < len(coords) and a_R < len(coords):
+                d = float(np.linalg.norm(coords[a_L] - coords[a_R]))
+                dist_str = f" (Bay Span: {d:.3f} Å)"
+            self.lbl_bay_status.setText(f"Target Bay: {sL}{a_L+1} — {sC}{a_C+1} — {sR}{a_R+1}{dist_str}")
+            self.lbl_bay_status.setStyleSheet("font-weight: bold; color: #a78bfa;")
+            self.btn_fuse_triad.setEnabled(True)
+        else:
+            self.target_triad = None
+            self.lbl_bay_status.setText("No bay triad selected.")
+            self.lbl_bay_status.setStyleSheet("font-weight: bold; color: #f87171;")
+            self.btn_fuse_triad.setEnabled(False)
+
+    def _on_peri_preset_changed(self, idx: int):
+        key = self.combo_peri_preset.currentData()
+        if key == "Custom":
+            self.lbl_peri_custom.setVisible(True)
+            self.spin_peri_custom.setVisible(True)
+            self.lbl_peri_desc.setText("Custom regular polygon ring fused across the 3 bay atoms.")
+        else:
+            self.lbl_peri_custom.setVisible(False)
+            self.spin_peri_custom.setVisible(False)
+            if key == "Benzene":
+                self.lbl_peri_desc.setText("Fuses a 6-membered aromatic ring across 3 bay carbons to form Phenalene.")
+            elif key == "Cyclopentyl":
+                self.lbl_peri_desc.setText("Fuses a 5-membered saturated ring across 3 bay carbons to form Acenaphthene.")
+            elif key == "Cyclopentadiene":
+                self.lbl_peri_desc.setText("Fuses a 5-membered conjugated ring across 3 bay carbons.")
+            elif key == "Pyridine":
+                self.lbl_peri_desc.setText("Fuses a 6-membered azine across 3 bay carbons.")
 
     def _on_preset_changed(self, idx: int):
         key = self.combo_preset.currentData()
@@ -348,6 +580,71 @@ class CycleWelderDialog(QtWidgets.QDialog):
             self.accept()
         except Exception as e:
             dialog_service.error(self, "Welding Error", f"Failed to weld ring:\n{e}")
+
+    def _on_execute_fuse_triad(self):
+        """Execute peri-annulation / bay ring fusion across 3 atoms."""
+        triad = getattr(self, "target_triad", None)
+        if not triad:
+            dialog_service.warning(self, "Triad Required", "Please select a 3-atom bay triad (Left — Bridgehead — Right) to fuse across.")
+            return
+
+        a_L, a_C, a_R = triad
+        symbols = [a.symbol for a in self.window.zatoms]
+        coords = self.window.coords
+
+        preset_key = self.combo_peri_preset.currentData()
+        custom_sz = self.spin_peri_custom.value() if preset_key == "Custom" else None
+        sat_mode = self.combo_peri_sat.currentData()
+        relax = self.chk_peri_relax.isChecked()
+        freeze = self.chk_peri_freeze.isChecked()
+
+        try:
+            new_syms, new_coords = fuse_ring_to_triad(
+                symbols=symbols,
+                coords=coords,
+                a_left=a_L,
+                a_center=a_C,
+                a_right=a_R,
+                ring_preset=preset_key,
+                custom_size=custom_sz,
+                apex_saturation=sat_mode,
+                relax=relax,
+                freeze_parent=freeze,
+            )
+
+            if hasattr(self.window, "_push_undo_state"):
+                self.window._push_undo_state()
+
+            from .zmatrix import cartesian_to_zmatrix
+            from .forcefield import detect_connectivity
+            detected_bonds = detect_connectivity(new_syms, new_coords, strict=False)
+            zatoms = cartesian_to_zmatrix(new_syms, new_coords, user_bonds=detected_bonds)
+
+            if hasattr(self.window, "set_molecule_from_zatoms"):
+                self.window.set_molecule_from_zatoms(zatoms, exact_coords=new_coords)
+            else:
+                self.window.zatoms = zatoms
+                self.window.coords = new_coords
+                if hasattr(self.window, "viewer") and self.window.viewer:
+                    self.window.viewer.set_molecule(new_syms, new_coords)
+
+            if hasattr(self.window, "viewer") and self.window.viewer:
+                self.window.viewer.selected_atom_idx = None
+                self.window.viewer.multi_selected = []
+                self.window.viewer.selected_bond = None
+                self.window.viewer.auto_center()
+                self.window.viewer.update()
+
+            p_name = preset_key if preset_key != "Custom" else f"{custom_sz}-gon"
+            dialog_service.info(
+                self,
+                "Bay Ring Welded Successfully",
+                f"Successfully fused {p_name} across bay {symbols[a_L]}{a_L+1}—{symbols[a_C]}{a_C+1}—{symbols[a_R]}{a_R+1}!\n"
+                f"Total atoms: {len(new_syms)} (Phenalene / peri-fused architecture generated smoothly)."
+            )
+            self.accept()
+        except Exception as e:
+            dialog_service.error(self, "Welding Error", f"Failed to fuse ring across bay:\n{e}")
 
     def _on_execute_bridge(self):
         """Execute bicyclic bridgehead insertion."""
