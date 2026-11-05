@@ -54,7 +54,7 @@ def test_qm_input_generators():
 
     # Test Gaussian-specific output
     g_out = GaussianGenerator().generate_input(symbols, coords, params)
-    assert "#p B3LYP/def2-SVP opt freq" in g_out
+    assert "#p B3LYP/def2SVP opt freq" in g_out
     assert "%nprocshared=4" in g_out
     assert "scrf=(cpcm,solvent=water)" in g_out
 

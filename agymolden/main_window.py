@@ -13,7 +13,7 @@ from .workers import run_in_background
 
 log = logging.getLogger(__name__)
 
-from .elements import ELEMENT_DATA, normalize_symbol, estimate_bond_length
+from .elements import ELEMENT_DATA, normalize_symbol, estimate_bond_length, get_atomic_number
 from .zmatrix import (
     ZAtom,
     zmatrix_to_cartesian,
@@ -161,11 +161,13 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             txt = format_zmatrix_text(self.zatoms, self.variables)
             with open(recovery_path, "w", encoding="utf-8") as f:
                 f.write(txt)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Autosave recovery write failed: %s", e)
 
     def _check_and_prompt_crash_recovery(self):
         """Check if an autosaved session exists from an abnormal exit and prompt the user to recover."""
+        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            return
         try:
             cache_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppDataLocation)
             recovery_path = os.path.join(cache_dir, "autosave_recovery.zmat")
@@ -185,8 +187,8 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                         self.statusBar().showMessage("Recovered unsaved molecule from previous session.", 4000)
             settings = self._settings()
             settings.setValue("clean_shutdown", False)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Crash recovery check failed: %s", e)
 
     def _restore_window_state(self):
         settings = self._settings()
@@ -265,8 +267,13 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
     def _topology_snapshot(self):
         rf = self._rigid_frame.copy() if getattr(self, "_rigid_frame", None) is not None else None
-        return (set(self.cross_bonds), bool(getattr(self, "strict_topology", False)),
-                dict(getattr(self.viewer, "bond_orders", {})), rf)
+        return (
+            set(self.cross_bonds),
+            bool(getattr(self, "strict_topology", False)),
+            dict(getattr(self.viewer, "bond_orders", {})),
+            rf,
+            set(getattr(self, "frozen_atoms", set())),
+        )
 
     def _restore_state(self, zatoms: List[ZAtom], coords: np.ndarray, variables: Dict[str, float], topo=None):
         if topo is not None:
@@ -274,8 +281,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self.strict_topology = topo[1]
             self.viewer.bond_orders = dict(topo[2])
             self._rigid_frame = topo[3].copy() if len(topo) > 3 and topo[3] is not None else None
+            self.frozen_atoms = set(topo[4]) if len(topo) > 4 and topo[4] is not None else set()
         else:
             self.cross_bonds, self.strict_topology, self._rigid_frame = set(), False, None
+            self.frozen_atoms = set()
+        if hasattr(self, "_update_frozen_buttons_ui"):
+            self._update_frozen_buttons_ui()
         self.zatoms = zatoms
         self.coords = np.copy(coords)
         self.variables = variables
@@ -369,6 +380,10 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
         # Include persistent cross_bonds (filtered to valid atom indices)
         n_atoms = len(zatoms)
+        if hasattr(self, 'frozen_atoms'):
+            self.frozen_atoms = {i for i in self.frozen_atoms if 0 <= i < n_atoms}
+        if hasattr(self, "_update_frozen_buttons_ui"):
+            self._update_frozen_buttons_ui()
         if hasattr(self, 'cross_bonds'):
             valid_cross = set()
             for u, v in self.cross_bonds:
@@ -481,33 +496,38 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             formula_parts.append(f"{sym}{cnt_str}")
         formula = "".join(formula_parts)
 
-        # Molecular Weight
+        # Molecular Weight & Total Electrons
         mw = 0.0
+        n_electrons = 0
         for sym, cnt in counts.items():
+            if sym == "X":
+                continue
             info = ELEMENT_DATA.get(sym, {})
             m = info.get("mass", info.get("atomic_mass", 0.0))
             mw += cnt * float(m)
+            n_electrons += cnt * get_atomic_number(sym)
 
         # Aromaticity detection
         aro_str = ""
         try:
             from .aromatic import find_aromatic_rings
-            n_b = len(self.zatoms)
-            bonds_list = []
-            for idx, a in enumerate(self.zatoms):
-                if a.ref1 is not None and a.ref1 < idx:
-                    bonds_list.append((a.ref1, idx))
-            if hasattr(self, "cross_bonds"):
-                for u, v in self.cross_bonds:
-                    if u < n_b and v < n_b:
-                        bonds_list.append((min(u, v), max(u, v)))
-            for i in range(min(n_b, len(self.coords))):
-                for j in range(i + 1, min(n_b, len(self.coords))):
-                    if (i, j) not in bonds_list and (j, i) not in bonds_list:
-                        d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
-                        sum_r = get_cov_radius(self.zatoms[i].symbol) + get_cov_radius(self.zatoms[j].symbol)
-                        if d <= sum_r * 1.25:
-                            bonds_list.append((i, j))
+            bonds_list = list(getattr(self.viewer, "bonds", []))
+            if not bonds_list:
+                n_b = len(self.zatoms)
+                for idx, a in enumerate(self.zatoms):
+                    if a.ref1 is not None and a.ref1 < idx:
+                        bonds_list.append((a.ref1, idx))
+                if hasattr(self, "cross_bonds"):
+                    for u, v in self.cross_bonds:
+                        if u < n_b and v < n_b:
+                            bonds_list.append((min(u, v), max(u, v)))
+                for i in range(min(n_b, len(self.coords))):
+                    for j in range(i + 1, min(n_b, len(self.coords))):
+                        if (i, j) not in bonds_list and (j, i) not in bonds_list:
+                            d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
+                            sum_r = get_cov_radius(self.zatoms[i].symbol) + get_cov_radius(self.zatoms[j].symbol)
+                            if d <= sum_r * 1.25:
+                                bonds_list.append((i, j))
             aro_rings = find_aromatic_rings([a.symbol for a in self.zatoms], self.coords, bonds_list)
             if aro_rings:
                 r_cnt = len(aro_rings)
@@ -543,9 +563,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 + "\n".join(f"  • {c[2]}{c[0]+1} and {c[3]}{c[1]+1}: distance {c[4]:.3f} Å" for c in clashes[:5])
             )
         else:
-            self.lbl_chem_summary.setToolTip(f"{formula} ({len(symbols)} atoms, molecular weight {mw:.3f} g/mol)")
+            self.lbl_chem_summary.setToolTip(f"{formula} ({len(symbols)} atoms, {n_electrons} electrons, molecular weight {mw:.3f} g/mol)")
 
-        self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {len(symbols)} atoms{aro_str}{clash_str}")
+        self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {n_electrons} e⁻  |  {len(symbols)} atoms{aro_str}{clash_str}")
 
     def load_preset_molecule(self, name: str):
         if name in SAMPLE_MOLECULES:
@@ -1450,6 +1470,30 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self.table_widget.load_zatoms(self.zatoms)
             self.update_geometry_live()
 
+    def _on_raw_zmat_text_changed(self):
+        """Called whenever user types in the Raw ZMAT text editor."""
+        if hasattr(self, "chk_auto_apply_raw") and self.chk_auto_apply_raw.isChecked():
+            if hasattr(self, "_raw_zmat_timer"):
+                self._raw_zmat_timer.start()
+
+    def _on_auto_apply_text_zmat(self):
+        """Silently apply parsed raw Z-matrix text to 3D model without popups if valid."""
+        text = self.text_raw_zmat.toPlainText().strip()
+        if not text:
+            return
+        try:
+            zatoms, vars_dict = parse_zmatrix_text(text)
+            if not zatoms:
+                return
+            # Check if atom count and symbols match current zatoms to preserve smooth live updates
+            self.variables = vars_dict
+            self._push_undo_state()
+            self.set_molecule_from_zatoms(zatoms)
+            self.statusBar().showMessage("Auto-applied Z-matrix text updates", 1500)
+        except Exception:
+            # While typing, syntax may be momentarily incomplete - do not disturb the user with error boxes
+            pass
+
     def _on_apply_text_zmat(self):
         text = self.text_raw_zmat.toPlainText()
         try:
@@ -1616,6 +1660,19 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         if hasattr(self, "_settings"):
             self._settings().setValue("color_theme", theme)
         self.viewer.update()
+
+    def apply_journal_preset(self, preset: str):
+        """Apply publication-grade visual preset across viewer, theme actions, and status notification."""
+        label = self.viewer.apply_journal_preset(preset)
+        is_white = (getattr(self.viewer, "bg_color_mode", "white") == "white")
+        current_theme = getattr(self, "current_theme", "dark")
+        if (is_white and current_theme != "white") or (not is_white and current_theme != "dark"):
+            self.set_color_theme("white" if is_white else "dark")
+        if hasattr(self, "chk_pub_outlines"):
+            self.chk_pub_outlines.blockSignals(True)
+            self.chk_pub_outlines.setChecked(self.viewer.show_publication_outlines)
+            self.chk_pub_outlines.blockSignals(False)
+        self.statusBar().showMessage(f"🎨 Applied Journal Figure Preset: {label}", 4000)
 
     def _on_toggle_labels(self, enabled: bool):
         self.viewer.show_labels = enabled

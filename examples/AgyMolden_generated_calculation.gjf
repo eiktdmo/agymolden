@@ -1,0 +1,15 @@
+%chk=calculation.chk
+%nprocshared=1
+%mem=16GB
+#p B3LYP/def2SVP opt EmpiricalDispersion=GD3BJ gfinput pop=regular
+
+AgyMolden generated calculation
+
+0 1
+ C       0.000000     0.000000     0.000000
+ H       0.000000     0.000000     1.089000
+ H       0.000000    -1.026720    -0.362996
+ H      -0.889166     0.513360    -0.362996
+ H       0.889166     0.513360    -0.362996
+
+

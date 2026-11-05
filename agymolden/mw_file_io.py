@@ -75,6 +75,7 @@ class FileIOMixin:
 
     def _remember_file(self, path: str):
         abs_path = os.path.abspath(path)
+        self.current_file_path = abs_path
         s = self._settings()
         s.setValue("last_dir", os.path.dirname(abs_path))
         recent = s.value("recent_files", [])
@@ -117,9 +118,10 @@ class FileIOMixin:
             self,
             "Open File (All Supported Molecular & QM Formats)",
             self._last_dir(),
-            "All Supported Files (*.out *.log *.xyz *.molden.input *.molden *.molf *.gbw *.cube *.zmat *.dat *.inp *.txt *.smi *.smiles *.inchi);;"
-            "QM Output Logs (*.out *.log *.output);;"
+            "All Supported Files (*.out *.log *.xyz *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "QM Output Logs & Checkpoints (*.out *.log *.output *.fchk *.fch);;"
             "Molden & ORCA Wavefunctions (*.molden.input *.molden *.molf *.gbw);;"
+            "QM Input Decks (*.inp *.in *.gjf *.com *.lowdin *.py);;"
             "XYZ Coordinates (*.xyz);;"
             "Gaussian Volumetric Grids (*.cube);;"
             "Z-Matrix & Input Files (*.zmat *.dat *.inp *.txt);;"
@@ -162,7 +164,7 @@ class FileIOMixin:
         low = path.lower()
         if low.endswith(".xyz"):
             self._load_xyz_path(path)
-        elif low.endswith((".log", ".out")):
+        elif low.endswith((".log", ".out", ".fchk", ".fch")):
             self._load_qm_log_path(path)
         elif low.endswith((".smi", ".smiles")):
             self._load_smiles_path(path)
@@ -172,6 +174,14 @@ class FileIOMixin:
             self._load_cube_path(path)
         elif low.endswith((".molden", ".molden.input", ".molf", ".gbw")):
             self._load_molden_path(path)
+        elif low.endswith((".gjf", ".com")):
+            self._load_gaussian_input_path(path)
+        elif low.endswith(".lowdin"):
+            self._load_openlowdin_input_path(path)
+        elif low.endswith(".py"):
+            self._load_pyscf_script_path(path)
+        elif low.endswith((".inp", ".in")):
+            self._load_brorsen_inp_path(path)
         else:
             self._load_zmat_path(path)
 
@@ -211,36 +221,45 @@ class FileIOMixin:
         self.statusBar().showMessage(f"Generated 3D structure for {name} ({len(symbols)} atoms).", 5000)
 
     def _on_prompt_smiles_or_inchi(self):
-        """Prompt user for a SMILES or InChI string and generate 3D structure."""
+        """Prompt user for a chemical name, SMILES, or InChI and generate 3D structure."""
         text, ok = QtWidgets.QInputDialog.getText(
             self,
-            "Open from SMILES or InChI",
-            "Paste SMILES string (e.g. CC(=O)O or c1ccccc1) or InChI:",
+            "Build 3D Molecule from Chemical Name / SMILES / InChI",
+            "Enter Chemical Name (e.g. ferrocene, aspirin, caffeine, bipyridine),\n"
+            "SMILES (e.g. c1ccccc1, CC(=O)O), or InChI (Ctrl+I):",
             QtWidgets.QLineEdit.EchoMode.Normal,
             "",
         )
         if ok and text.strip():
             try:
-                self.load_from_smiles_or_inchi(text.strip(), name=text.strip()[:20])
+                self.load_from_smiles_or_inchi(text.strip(), name=text.strip()[:30])
             except Exception as e:
-                log.exception("Error parsing SMILES / InChI")
-                QtWidgets.QMessageBox.critical(self, "Chemical Identifier Error", str(e))
+                log.exception("Error resolving chemical identifier")
+                QtWidgets.QMessageBox.critical(self, "Chemical Name / Identifier Error", str(e))
 
     def _on_open_esp_2d_dialog(self):
         """Open 2D Electrostatic Potential (ESP) Contour Slicer Dialog."""
         from .dialog_esp_2d import ESP2DContourDialog
 
-        molden_path = None
-        if hasattr(self, "_volumetric_dlg") and getattr(self._volumetric_dlg, "_active_molden_path", None):
-            molden_path = self._volumetric_dlg._active_molden_path
-        elif hasattr(self, "current_file_path") and self.current_file_path and self.current_file_path.endswith((".molden", ".molden.input")):
+        molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path and hasattr(self, "_volumetric_dlg") and self._volumetric_dlg:
+            molden_path = (
+                getattr(self._volumetric_dlg, "current_molden_path", None)
+                or getattr(self._volumetric_dlg, "_active_molden_path", None)
+            )
+        if (
+            not molden_path
+            and hasattr(self, "current_file_path")
+            and self.current_file_path
+            and self.current_file_path.endswith((".molden", ".molden.input"))
+        ):
             molden_path = self.current_file_path
 
         if not molden_path or not os.path.isfile(molden_path):
             path, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self,
                 "Select Molden Wavefunction File for 2D ESP",
-                self.last_directory or "",
+                self._last_dir(),
                 "Molden Files (*.molden *.molden.input);;All Files (*)",
             )
             if not path:
@@ -412,6 +431,260 @@ class FileIOMixin:
         )
         dlg.exec()
 
+    def _apply_imported_cartesian_molecule(self, syms: List[str], crds: np.ndarray, path: str, label: str = "Input"):
+        """Helper to commit imported Cartesian coordinates into the active viewer and Z-matrix."""
+        if not syms or len(crds) != len(syms):
+            return
+        self._push_undo_state()
+        self.variables = {}
+        self.cross_bonds = set()
+        self.strict_topology = False
+        bonds = detect_connectivity(syms, crds)
+        bo = detect_bond_orders(syms, crds, bonds)
+        zatoms = cartesian_to_zmatrix(syms, crds, user_bonds=bonds, strict_bonds=True)
+        self.set_molecule_from_zatoms(zatoms, exact_coords=crds)
+        self.viewer.bond_orders = bo
+        self.viewer.update()
+        self._remember_file(path)
+        self.statusBar().showMessage(f"Loaded {label} geometry ({len(syms)} atoms) from {os.path.basename(path)}", 4500)
+
+    def _load_gaussian_input_path(self, path: str):
+        """Parse a Gaussian (.gjf / .com) input deck and load its geometry (Cartesian or Z-matrix)."""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+
+            # Gaussian deck structure:
+            # [%link0 lines]
+            # # route section (may span lines until blank line)
+            # <blank line>
+            # Title section
+            # <blank line>
+            # Charge Multiplicity
+            # Coordinates block (Cartesian or Z-matrix)
+            lines = content.splitlines()
+            idx = 0
+            # Skip Link 0 (%) and comments
+            while idx < len(lines) and (not lines[idx].strip() or lines[idx].strip().startswith("%")):
+                idx += 1
+            # Skip Route (#) block until blank line
+            if idx < len(lines) and lines[idx].strip().startswith("#"):
+                while idx < len(lines) and lines[idx].strip():
+                    idx += 1
+            # Skip blank lines before Title
+            while idx < len(lines) and not lines[idx].strip():
+                idx += 1
+            # Skip Title block until blank line
+            while idx < len(lines) and lines[idx].strip():
+                idx += 1
+            # Skip blank lines before Charge/Multiplicity
+            while idx < len(lines) and not lines[idx].strip():
+                idx += 1
+            # Skip Charge & Multiplicity line (e.g. "0 1")
+            if idx < len(lines):
+                cm_toks = lines[idx].split()
+                if len(cm_toks) >= 2 and all(t.lstrip("+-").isdigit() for t in cm_toks[:2]):
+                    idx += 1
+
+            geom_lines = []
+            while idx < len(lines):
+                s = lines[idx].strip()
+                if not s:
+                    # Check if followed by Variables: block for Z-matrix
+                    rem = "\n".join(lines[idx + 1 :])
+                    if "variables:" in rem.lower() or any("=" in l for l in lines[idx + 1 : idx + 15]):
+                        geom_lines.append("")
+                        geom_lines.extend(lines[idx + 1 :])
+                    break
+                geom_lines.append(s)
+                idx += 1
+
+            # Determine if Cartesian (4 tokens per line: Symbol X Y Z) or Z-matrix
+            first_geom = [l for l in geom_lines if l.strip()]
+            is_cart = False
+            if first_geom:
+                p0 = first_geom[0].split()
+                if len(p0) == 4:
+                    try:
+                        float(p0[1]); float(p0[2]); float(p0[3])
+                        is_cart = True
+                    except ValueError:
+                        is_cart = False
+
+            if is_cart:
+                syms, crds = [], []
+                for l in first_geom:
+                    p = l.split()
+                    if len(p) >= 4 and normalize_symbol(p[0]) in ELEMENT_DATA:
+                        try:
+                            syms.append(normalize_symbol(p[0]))
+                            crds.append([float(p[1]), float(p[2]), float(p[3])])
+                        except ValueError:
+                            break
+                if syms:
+                    self._apply_imported_cartesian_molecule(syms, np.array(crds, dtype=np.float64), path, label="Gaussian")
+                    return
+
+            # Fallback to Z-Matrix parser
+            zatoms, vars_dict = parse_zmatrix_text("\n".join(geom_lines))
+            if zatoms:
+                self._push_undo_state()
+                self.cross_bonds = set()
+                self.strict_topology = False
+                self.variables = vars_dict
+                self.set_molecule_from_zatoms(zatoms)
+                self._remember_file(path)
+                self.statusBar().showMessage(f"Loaded Gaussian Z-Matrix ({len(zatoms)} atoms) from {os.path.basename(path)}", 4500)
+        except Exception as e:
+            log.exception("Error loading Gaussian input file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening Gaussian Input", str(e))
+
+    def _load_openlowdin_input_path(self, path: str):
+        """Parse an openLOWDIN (.lowdin) input file and load its molecular geometry."""
+        try:
+            import re
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+
+            dirac_matches = re.findall(
+                r'^\s*([A-Z][a-z]?)\s+dirac\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)',
+                text,
+                re.MULTILINE,
+            )
+            if not dirac_matches:
+                dirac_matches = re.findall(
+                    r'^\s*e-\(([A-Za-z]+)\)\s+\S+\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)',
+                    text,
+                    re.MULTILINE,
+                )
+            if dirac_matches:
+                syms = [normalize_symbol(m[0]) for m in dirac_matches]
+                crds = np.array([[float(m[1]), float(m[2]), float(m[3])] for m in dirac_matches], dtype=np.float64)
+                self._apply_imported_cartesian_molecule(syms, crds, path, label="openLOWDIN")
+            else:
+                raise ValueError(f"No GEOMETRY coordinates found in openLOWDIN file: {os.path.basename(path)}")
+        except Exception as e:
+            log.exception("Error loading openLOWDIN file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening openLOWDIN File", str(e))
+
+    def _load_pyscf_script_path(self, path: str):
+        """Extract molecular geometry from a PySCF Python script (.py) and load it into the viewer."""
+        try:
+            import re
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+
+            m_at = re.search(r'mol\.atom\s*=\s*(?:"""(.*?)"""|\'\'\'(.*?)\'\'\')', text, re.DOTALL)
+            if not m_at:
+                raise ValueError(f"Could not find 'mol.atom = \"\"\"...\"\"\"' geometry block in {os.path.basename(path)}")
+            blk = m_at.group(1) or m_at.group(2) or ""
+            syms, crds = [], []
+            for l in blk.replace(";", "\n").replace("'", "").replace('"', "").splitlines():
+                p = l.split()
+                if len(p) >= 4 and normalize_symbol(p[0]) in ELEMENT_DATA:
+                    try:
+                        syms.append(normalize_symbol(p[0]))
+                        crds.append([float(p[1]), float(p[2]), float(p[3])])
+                    except ValueError:
+                        pass
+            if not syms:
+                raise ValueError(f"No valid atomic coordinates found in {os.path.basename(path)}")
+            self._apply_imported_cartesian_molecule(syms, np.array(crds, dtype=np.float64), path, label="PySCF")
+        except Exception as e:
+            log.exception("Error loading PySCF script")
+            QtWidgets.QMessageBox.critical(self, "Error Opening PySCF Script", str(e))
+
+    def _load_brorsen_inp_path(self, path: str):
+        """Directly parse and load a newBRORSEN, ORCA, or Q-Chem input file (*.inp / *.in) into AGYMolden."""
+        try:
+            import re
+            from .brorsen_builder.generator import BrorsenInputGenerator
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+
+            # 1. Check if this is a Q-Chem input file ($molecule ... $end)
+            if "$molecule" in content.lower() and "$rem" in content.lower():
+                m_mol = re.search(r'\$molecule\s*\n\s*[-+]?\d+\s+\d+\s*\n(.*?)\$end', content, re.DOTALL | re.IGNORECASE)
+                if m_mol:
+                    syms, crds = [], []
+                    for l in m_mol.group(1).strip().splitlines():
+                        p = l.split()
+                        if len(p) >= 4 and normalize_symbol(p[0]) in ELEMENT_DATA:
+                            syms.append(normalize_symbol(p[0]))
+                            crds.append([float(p[1]), float(p[2]), float(p[3])])
+                    if syms:
+                        self._apply_imported_cartesian_molecule(syms, np.array(crds, dtype=np.float64), path, label="Q-Chem")
+                        return
+
+            # 2. Distinguish newBRORSEN vs ORCA .inp files:
+            # newBRORSEN bang lines contain sector keywords (ELECTRONIC, POSITRON, PROTON) or %jobname / %pos_basis
+            is_brorsen = bool(
+                re.search(r'^\s*!.*\b(?:ELECTRONIC|POSITRON|PROTON|SP_ENERGY)\b', content, re.MULTILINE | re.IGNORECASE)
+                or re.search(r'^\s*%(?:jobname|n_pos|pos_basis|nuc_basis|next)\b', content, re.MULTILINE | re.IGNORECASE)
+            )
+
+            gen = BrorsenInputGenerator()
+            stages, geom_info = gen.load_from_text(content)
+
+            # Check if there is geometry in the input file, update the canvas
+            if geom_info and geom_info.get("lines"):
+                lines = geom_info["lines"]
+                fmt = geom_info.get("format", "xyz")
+                if fmt == "zmat":
+                    from .zmatrix import parse_zmatrix_text
+                    zatoms, vars_dict = parse_zmatrix_text("\n".join(lines))
+                    if zatoms:
+                        self._push_undo_state()
+                        self.cross_bonds = set()
+                        self.strict_topology = False
+                        self.variables = vars_dict
+                        self.set_molecule_from_zatoms(zatoms)
+                else:
+                    from .zmatrix import parse_xyz, cartesian_to_zmatrix
+                    xyz_txt = f"{len(lines)}\nfrom inp\n" + "\n".join(lines)
+                    syms, crds = parse_xyz(xyz_txt, is_path=False)
+                    if syms and len(crds) == len(syms):
+                        self._push_undo_state()
+                        self.variables = {}
+                        self.cross_bonds = set()
+                        self.strict_topology = False
+                        bonds = detect_connectivity(syms, crds)
+                        bo = detect_bond_orders(syms, crds, bonds)
+                        zatoms = cartesian_to_zmatrix(syms, crds, user_bonds=bonds, strict_bonds=True)
+                        self.set_molecule_from_zatoms(zatoms, exact_coords=crds)
+                        self.viewer.bond_orders = bo
+                        self.viewer.update()
+
+            self._remember_file(path)
+            if is_brorsen:
+                # Launch the newBRORSEN input builder dialog
+                self._on_open_brorsen_input_file_direct(path)
+            else:
+                self.statusBar().showMessage(f"Loaded ORCA input geometry from {os.path.basename(path)}", 4500)
+        except Exception as e:
+            log.exception("Error loading input file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening Input File", str(e))
+
+    def _on_open_brorsen_input_file_direct(self, path: str):
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else []
+        coords = self.coords if hasattr(self, "coords") else None
+        dlg = BrorsenInputBuilderDialog(
+            self,
+            symbols=symbols,
+            coords=coords,
+            zatoms=self.zatoms,
+            variables=self.variables,
+        )
+        dlg.load_input_file(path)
+        if dlg.zatoms and len(dlg.zatoms) > 0:
+            self._push_undo_state()
+            self.set_molecule_from_zatoms(dlg.zatoms, exact_coords=dlg.coords)
+            bonds = detect_connectivity(dlg.symbols, dlg.coords)
+            self.viewer.bond_orders = detect_bond_orders(dlg.symbols, dlg.coords, bonds)
+            self.viewer.update()
+        self._remember_file(path)
+        dlg.exec()
+
     def _on_open_brorsen_input_file(self):
         """Open a newBRORSEN *.inp input file into AGYMolden and the Input Builder."""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -442,7 +715,7 @@ class FileIOMixin:
             self.viewer.bond_orders = detect_bond_orders(dlg.symbols, dlg.coords, bonds)
             self.viewer.update()
 
-        self._remember_last_dir(path)
+        self._remember_file(path)
         dlg.exec()
 
     def _on_import_qm_log(self):
@@ -510,6 +783,7 @@ class FileIOMixin:
             if hasattr(self, "grp_trajectory"):
                 if n_steps > 1:
                     is_irc = getattr(res, "is_irc", False)
+                    init_step = n_steps - 1
                     if is_irc:
                         self.grp_trajectory.setTitle("⚛️ Intrinsic Reaction Coordinate (IRC Pathway Player)")
                         if hasattr(self, "combo_traj_mode"):
@@ -517,16 +791,26 @@ class FileIOMixin:
                             idx_bounce = self.combo_traj_mode.findData("bounce")
                             if idx_bounce >= 0:
                                 self.combo_traj_mode.setCurrentIndex(idx_bounce)
+                        if hasattr(self, "btn_irc_sweeper"):
+                            self.btn_irc_sweeper.setStyleSheet(
+                                "background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold; border: 1.5px solid #a5b4fc;"
+                            )
+                        if getattr(res, "irc_pathway", None) and hasattr(res.irc_pathway, "ts_index"):
+                            init_step = res.irc_pathway.ts_index
                     else:
                         self.grp_trajectory.setTitle("Trajectory Player (Optimization Steps / MD)")
+                        if hasattr(self, "btn_irc_sweeper"):
+                            self.btn_irc_sweeper.setStyleSheet(
+                                "background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold;"
+                            )
                     self.grp_trajectory.setVisible(True)
                     self.slider_trajectory.blockSignals(True)
                     self.slider_trajectory.setRange(0, n_steps - 1)
-                    self.slider_trajectory.setValue(n_steps - 1)
+                    self.slider_trajectory.setValue(init_step)
                     self.slider_trajectory.blockSignals(False)
-                    self.lbl_trajectory_step.setText(f"Step {n_steps}/{n_steps}")
+                    self.lbl_trajectory_step.setText(f"Step {init_step + 1}/{n_steps}")
                     if res.trajectory_energies and len(res.trajectory_energies) == n_steps:
-                        e_val = res.trajectory_energies[-1]
+                        e_val = res.trajectory_energies[init_step]
                         self.lbl_trajectory_energy.setText(f"E = {e_val:.6f} eV")
                     else:
                         self.lbl_trajectory_energy.setText("")
@@ -543,6 +827,12 @@ class FileIOMixin:
                 if hasattr(self, "tabs_spectra"):
                     self.tabs_spectra.setCurrentIndex(1)
 
+            # Apply NMR chemical shieldings if present in the log file
+            if getattr(res, "nmr_shieldings", None) and hasattr(self, "nmr_widget"):
+                self.nmr_widget.set_nmr_data(res.nmr_shieldings)
+                if hasattr(self, "tabs_spectra") and not (res.vibrational_analysis and res.vibrational_analysis.n_modes > 0):
+                    self.tabs_spectra.setCurrentIndex(2)
+
             # Apply Molecular Orbitals & Energy Diagram directly from the QM Log if present
             if getattr(res, "orbitals", None) and hasattr(self, "set_orbitals_from_data"):
                 from .volumetric import MoldenFileData
@@ -558,7 +848,7 @@ class FileIOMixin:
                 # automatically check for companion .molden in the same folder and populate MO table & ladder
                 q_dir = os.path.dirname(path)
                 q_base = os.path.splitext(os.path.basename(path))[0]
-                for cand_ext in ("_hf_electrons.molden", "_electrons.molden", ".molden", ".molden.input", ".molf"):
+                for cand_ext in ("_hf_electrons.molden", "_electrons.molden", ".molden", ".molden.input", ".e-.molden", ".E-.molden", ".E-ALPHA.molden", ".molf"):
                     cand_m = os.path.join(q_dir, q_base + cand_ext)
                     if os.path.isfile(cand_m):
                         try:
@@ -781,15 +1071,25 @@ class FileIOMixin:
         # Pre-populate with current trajectory energies if available
         if hasattr(self, "trajectory_energies") and self.trajectory_energies:
             e_ha = [e / 27.211386245988 for e in self.trajectory_energies]
-            is_irc = getattr(getattr(self, "_last_qm_res", None), "is_irc", False)
-            irc_pts = getattr(getattr(self, "_last_qm_res", None), "irc_path_points", None)
+            qm_res = getattr(self, "_last_qm_res", None)
+            is_irc = getattr(qm_res, "is_irc", False)
+            irc_pts = getattr(qm_res, "irc_path_points", None)
+            max_f = getattr(qm_res, "trajectory_max_forces", None)
+            rms_f = getattr(qm_res, "trajectory_rms_forces", None)
             if is_irc and irc_pts and len(irc_pts) == len(e_ha):
                 coords_pts = irc_pts
                 c_lbl = "Reaction Coordinate s (amu½·Bohr)"
             else:
                 coords_pts = [float(i + 1) for i in range(len(e_ha))]
                 c_lbl = "Reaction / Optimization Step"
-            dlg.load_scan_data(coords_pts, e_ha, coord_label=c_lbl)
+            dlg.load_scan_data(
+                coords_pts,
+                e_ha,
+                coord_label=c_lbl,
+                trajectory_coords=getattr(self, "trajectory_coords", None),
+                max_forces=max_f,
+                rms_forces=rms_f,
+            )
             if hasattr(self, "slider_trajectory"):
                 dlg.set_active_step(self.slider_trajectory.value())
 
@@ -806,6 +1106,34 @@ class FileIOMixin:
         """Jump immediately to final optimized geometry."""
         if hasattr(self, "slider_trajectory"):
             self.slider_trajectory.setValue(self.slider_trajectory.maximum())
+
+    def _on_adopt_trajectory_frame(self):
+        """Adopt the currently displayed trajectory frame into the editable Z-Matrix table (with Undo)."""
+        if not hasattr(self, "trajectory_coords") or not self.trajectory_coords:
+            return
+        step = self.slider_trajectory.value() if hasattr(self, "slider_trajectory") else 0
+        if not (0 <= step < len(self.trajectory_coords)):
+            return
+        frame_coords = np.array(self.trajectory_coords[step], dtype=np.float64, copy=True)
+        symbols = [a.symbol for a in self.zatoms]
+        if len(symbols) != len(frame_coords):
+            return
+        self._push_undo_state()
+        detected_bonds = detect_connectivity(symbols, frame_coords, strict=False)
+        detected_bo = detect_bond_orders(symbols, frame_coords, detected_bonds)
+        zatoms = cartesian_to_zmatrix(
+            symbols, frame_coords, existing_zatoms=self.zatoms, user_bonds=detected_bonds, strict_bonds=True
+        )
+        tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+        self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
+        self.strict_topology = True
+        self.set_molecule_from_zatoms(zatoms, exact_coords=frame_coords)
+        self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+        self.viewer.update()
+        self.statusBar().showMessage(
+            f"📌 Adopted trajectory frame {step + 1}/{len(self.trajectory_coords)} into active Z-Matrix (Ctrl+Z to undo).",
+            4500,
+        )
 
     def _on_traj_prev_step(self):
         if hasattr(self, "slider_trajectory"):
@@ -1006,6 +1334,40 @@ class FileIOMixin:
             self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
             self.viewer.update()
             self._remember_file(path)
+
+            # Check if this is a multi-frame XYZ or CREST conformer ensemble
+            try:
+                from .zmatrix import parse_multi_xyz
+                from .crest_explorer import extract_energy_from_comment
+                _, multi_frames = parse_multi_xyz(path, is_path=True)
+                if len(multi_frames) > 1:
+                    traj_energies = []
+                    for c_comm, _ in multi_frames:
+                        p_e = extract_energy_from_comment(c_comm)
+                        traj_energies.append(p_e[0] if p_e is not None else 0.0)
+                    self.trajectory_coords = [f[1] for f in multi_frames]
+                    self.trajectory_symbols = symbols
+                    self.trajectory_energies = traj_energies
+                    n_frames = len(multi_frames)
+                    is_crest = "crest" in os.path.basename(path).lower()
+                    if hasattr(self, "grp_trajectory"):
+                        title_lbl = "Conformer Ensemble" if is_crest else "Trajectory Player"
+                        self.grp_trajectory.setTitle(f"{title_lbl} ({n_frames} Frames)")
+                        self.grp_trajectory.setVisible(True)
+                        self.slider_trajectory.blockSignals(True)
+                        self.slider_trajectory.setRange(0, n_frames - 1)
+                        self.slider_trajectory.setValue(0)
+                        self.slider_trajectory.blockSignals(False)
+                        self.lbl_trajectory_step.setText(f"1/{n_frames}")
+                    if is_crest:
+                        self.statusBar().showMessage(
+                            f"Imported CREST Conformer Ensemble ({n_frames} conformers): {os.path.basename(path)}. Press Ctrl+Shift+E for Ensemble Explorer!",
+                            8000,
+                        )
+                        return
+            except Exception as e:
+                log.debug("Multi-XYZ trajectory/CREST detection error: %s", e)
+
             self.statusBar().showMessage(
                 f"Imported XYZ ({len(symbols)} atoms, {len(detected_bonds)} bonds) preserving exact 3D coordinates: {os.path.basename(path)}",
                 5000
@@ -1125,8 +1487,8 @@ class FileIOMixin:
 
             # Gather summary details if available
             qm_summary = {}
-            if hasattr(self, "_last_qm_result") and self._last_qm_result:
-                res = self._last_qm_result
+            res = getattr(self, "_last_qm_res", None) or getattr(self, "_last_qm_result", None)
+            if res:
                 if getattr(res, "program_name", ""):
                     qm_summary["program"] = res.program_name
                 if getattr(res, "trajectory_energies", None) and res.trajectory_energies:
@@ -1171,6 +1533,82 @@ class FileIOMixin:
         except Exception as e:
             log.exception("Unhandled error exporting HTML")
             QtWidgets.QMessageBox.critical(self, "Error Exporting HTML", str(e))
+
+    def _on_export_reproducibility_bundle(self):
+        """Export complete Supporting Information (SI) reproducibility bundle (.zip)."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(
+                self, "Export SI Bundle", "Please build or load a molecule before exporting a reproducibility bundle."
+            )
+            return
+
+        from .reproducibility import create_reproducibility_bundle
+
+        default_name = "reproducibility_bundle.zip"
+        loaded_path = getattr(self, "current_file_path", None)
+        if loaded_path:
+            stem = os.path.splitext(os.path.basename(loaded_path))[0]
+            default_name = f"{stem}_SI_bundle.zip"
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export SI Reproducibility Bundle",
+            os.path.join(self._last_dir(), default_name),
+            "ZIP Archives (*.zip);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            symbols = [a.symbol for a in self.zatoms]
+            coords = self.coords
+            res = getattr(self, "_last_qm_res", None) or getattr(self, "_last_qm_result", None)
+
+            input_path = None
+            log_path = None
+            if loaded_path and os.path.isfile(loaded_path):
+                ext = os.path.splitext(loaded_path)[1].lower()
+                if ext in (".com", ".gjf", ".inp", ".in", ".py", ".lowdin"):
+                    input_path = loaded_path
+                elif ext in (".log", ".out", ".fchk", ".fch", ".molden"):
+                    log_path = loaded_path
+                    stem = os.path.splitext(loaded_path)[0]
+                    for in_ext in (".com", ".gjf", ".inp", ".in"):
+                        cand = stem + in_ext
+                        if os.path.isfile(cand):
+                            input_path = cand
+                            break
+
+            title = f"{symbols[0] if symbols else 'Molecule'} System"
+            if hasattr(self, "title_override") and self.title_override:
+                title = self.title_override
+            elif loaded_path:
+                title = os.path.splitext(os.path.basename(loaded_path))[0]
+
+            out_zip = create_reproducibility_bundle(
+                output_archive_path=path,
+                symbols=symbols,
+                coords=coords,
+                log_result=res,
+                log_file_path=log_path,
+                input_file_path=input_path,
+                job_title=title,
+            )
+            self.statusBar().showMessage(f"Exported SI Reproducibility Bundle to {os.path.basename(out_zip)}", 5000)
+            QtWidgets.QMessageBox.information(
+                self,
+                "SI Bundle Exported",
+                f"Supporting Information Bundle successfully exported to:\n{out_zip}\n\nIncludes:\n"
+                f"• GEOMETRY.xyz (Cartesian coordinates)\n"
+                f"• GEOMETRY.zmat (Z-matrix coordinates)\n"
+                f"• CALCULATION_SUMMARY.json (Thermochemical & orbital properties)\n"
+                f"• COMPUTATIONAL_DETAILS.md (Publication-ready SI methods & tables)\n"
+                + (f"• Raw output log: {os.path.basename(log_path)}\n" if log_path else "")
+                + (f"• Raw input file: {os.path.basename(input_path)}\n" if input_path else "")
+            )
+        except Exception as e:
+            log.exception("Error exporting reproducibility bundle")
+            QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export reproducibility bundle:\n{e}")
 
     def export_image(self, path: str, transparent: bool = False, bg_mode: Optional[str] = None, scale: int = 2, clean_only: bool = True) -> QtGui.QImage:
         """Render and save a PNG image of the 3D molecule with customizable background (dark, white, or transparent)."""
@@ -1314,40 +1752,138 @@ class FileIOMixin:
             QtWidgets.QMessageBox.critical(self, "Error Exporting Image", str(e))
 
     def _on_show_shortcuts(self):
-        QtWidgets.QMessageBox.information(
-            self,
-            "Keyboard & Mouse Shortcuts",
-            "<h3>Keyboard & Mouse Shortcuts</h3>"
-            "<table cellpadding='4'>"
-            "<tr><td><b>Left-Click &amp; Drag (Empty Space)</b></td><td>Orbit / rotate 3D camera</td></tr>"
-            "<tr><td><b>Tab</b></td><td>Toggle <b>✏️ Build / Draw</b> vs <b>🔍 Inspect / Measure</b> mode</td></tr>"
-            "<tr><td><b>Left-Click &amp; Drag from Atom (Build Mode)</b></td><td>Sprout new bond / atom or close ring</td></tr>"
-            "<tr><td><b>Right-Click &amp; Drag</b></td><td>Pan camera</td></tr>"
-            "<tr><td><b>Wheel / Middle Drag</b></td><td>Zoom in / out</td></tr>"
-            "<tr><td><b>Space</b></td><td>Center / Reset 3D camera view</td></tr>"
-            "<tr><td><b>Esc</b></td><td>Clear active 3D orbital / isosurface or cancel picking</td></tr>"
-            "<tr><td><b>Shift + Click / Ctrl + Click Atoms</b></td><td>Toggle multi-selection &amp; measure distance / angle / dihedral</td></tr>"
-            "<tr><td><b>Shift + Drag / Ctrl + Drag (Empty Space)</b></td><td>Rubber-band box selection</td></tr>"
-            "<tr><td><b>Ctrl + Left-Drag Atom(s) (&ge; 6 px)</b></td><td>Translate selected atom(s) in camera plane</td></tr>"
-            "<tr><td><b>Alt + Left-Drag (with &ge; 2 atoms selected)</b></td><td>Rotate selected subgroup in 3D around its centroid</td></tr>"
-            "<tr><td><b>Alt + Left-Drag on Bond</b></td><td>Interactive 3D dihedral / rotamer torsion twist</td></tr>"
-            "<tr><td><b>Double-Click Canvas / Atom (Build Mode)</b></td><td>Paste current element or fragment</td></tr>"
-            "<tr><td><b>Double-Click Bond</b></td><td>Cycle bond order (Single / Double / Triple)</td></tr>"
-            "<tr><td><b>1 / 2 / 3 (with bond selected)</b></td><td>Set bond order to Single / Double / Triple</td></tr>"
-            "<tr><td><b>C, H, O, N, S, P, F, B, I, X</b></td><td>Select element brush (or mutate selected atom in Build mode)</td></tr>"
-            "<tr><td><b>Shift + C (Cl), Shift + S (Si), Shift + B (Br)</b></td><td>Select halogen / heavy atom brush</td></tr>"
-            "<tr><td><b>Alt + B / Alt + A / Alt + D</b></td><td>Redefine bond / angle / dihedral references (Molden style)</td></tr>"
-            "<tr><td><b>Delete / Backspace</b></td><td>Delete all selected atom(s)</td></tr>"
-            "<tr><td><b>Ctrl+M / Ctrl+Shift+O</b></td><td>Quick Optimize Geometry (Force Field / xTB)</td></tr>"
-            "<tr><td><b>Ctrl+Z / Ctrl+Y</b></td><td>Undo / Redo</td></tr>"
-            "<tr><td><b>Ctrl+O / Ctrl+S</b></td><td>Universal Open File (newest first) / Save Z-Matrix</td></tr>"
-            "<tr><td><b>Ctrl+E / Ctrl+P</b></td><td>Export High-DPI 3D Image (PNG)</td></tr>"
-            "<tr><td><b>Ctrl+C / Ctrl+V</b></td><td>Copy selected atoms / molecule &amp; Paste into 3D space</td></tr>"
-            "<tr><td><b>Ctrl+K / Ctrl+Shift+X</b></td><td>Flush clipboard memory</td></tr>"
-            "<tr><td><b>F5</b></td><td>Toggle <b>Perspective / Orthographic</b> projection (VMD / GaussView)</td></tr>"
-            "<tr><td><b>F1 / F2</b></td><td>Open User Manual / View Calculation Output Log</td></tr>"
-            "</table>",
-        )
+        """Display an interactive dialog showing keyboard and mouse shortcuts with search filter."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("AgyMolden - Keyboard & Mouse Shortcuts")
+        dlg.resize(750, 560)
+        layout = QtWidgets.QVBoxLayout(dlg)
+
+        header = QtWidgets.QLabel("<h3>⌨️ Keyboard & Mouse Controls</h3><p style='color: #94a3b8;'>Search or browse shortcuts below:</p>")
+        layout.addWidget(header)
+
+        filter_edit = QtWidgets.QLineEdit()
+        filter_edit.setPlaceholderText("🔍 Type to filter shortcuts (e.g. bond, select, rotate, delete)...")
+        layout.addWidget(filter_edit)
+
+        table = QtWidgets.QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Key / Action", "Description", "Context / Category"])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        layout.addWidget(table)
+
+        shortcuts_data = [
+            ("Left-Click & Drag (Canvas)", "Orbit / rotate 3D camera", "3D Navigation"),
+            ("Right-Click & Drag", "Pan camera in screen plane", "3D Navigation"),
+            ("Scroll Wheel / Middle Drag", "Zoom in / out", "3D Navigation"),
+            ("Space", "Reset camera view & auto-center molecule", "3D Navigation"),
+            ("F5", "Toggle Perspective vs Orthographic projection", "3D Navigation"),
+            ("Tab", "Toggle ✏️ Build/Draw mode vs 🔍 Inspect/Measure mode", "Modes"),
+            ("Left-Drag from Atom (Build)", "Sprout new bond / atom or close ring to target atom", "Building"),
+            ("Double-Click Canvas / Atom", "Paste current element or fragment", "Building"),
+            ("Double-Click Bond", "Cycle bond order (Single -> Double -> Triple -> Aromatic)", "Building"),
+            ("1 / 2 / 3 (with bond selected)", "Set bond order to Single, Double, or Triple", "Building"),
+            ("C, H, O, N, S, P, F, B, I, X", "Select element brush (or mutate selected atom in Build mode)", "Building"),
+            ("Shift + C, Shift + S, Shift + B", "Select Cl (Chlorine), Si (Silicon), or Br (Bromine)", "Building"),
+            ("Delete / Backspace", "Delete all currently selected atoms / bonds", "Editing"),
+            ("Shift + Click / Ctrl + Click", "Multi-select atoms to measure Distance, Angle, or Dihedral", "Selection"),
+            ("Shift + Drag (Canvas)", "Rubber-band box selection", "Selection"),
+            ("Ctrl + Left-Drag Atom(s)", "Translate selected atom(s) in camera plane", "Manipulation"),
+            ("Alt + Left-Drag (>= 2 atoms)", "Rotate selected subgroup in 3D around its centroid", "Manipulation"),
+            ("Alt + Left-Drag on Bond", "Interactive 3D dihedral / rotamer torsion twist", "Manipulation"),
+            ("Ctrl+Z / Ctrl+Y", "Undo / Redo last geometry modification", "History"),
+            ("Ctrl+O", "Universal file opener (.out, .xyz, .molden, .cube, .zmat, .inp)", "File I/O"),
+            ("Ctrl+S", "Save Z-Matrix (.zmat)", "File I/O"),
+            ("Ctrl+C / Ctrl+V", "Copy selected atoms / Paste molecule into 3D space", "Clipboard"),
+            ("Ctrl+K", "Flush clipboard memory", "Clipboard"),
+            ("Ctrl+M / Ctrl+Shift+O", "Quick Optimize Geometry (Force Field / xTB)", "Tools"),
+            ("Ctrl+E", "Export high-resolution PNG image", "Export"),
+            ("F1", "Open this Keyboard & Mouse Shortcuts dialog", "Help"),
+            ("F2", "View and search active QM Calculation Output Log", "Help"),
+            ("F3", "View internal Diagnostic Log (agymolden.log)", "Help"),
+            ("Shift+F1", "Open complete User Manual (USER_MANUAL.md)", "Help"),
+            ("Esc", "Clear active 3D orbital/isosurface or cancel picking", "General"),
+        ]
+
+        def _populate(text=""):
+            q = text.strip().lower()
+            table.setRowCount(0)
+            for key, desc, cat in shortcuts_data:
+                if not q or (q in key.lower() or q in desc.lower() or q in cat.lower()):
+                    row = table.rowCount()
+                    table.insertRow(row)
+                    item_key = QtWidgets.QTableWidgetItem(key)
+                    item_key.setFont(QtGui.QFont("Monospace", 9, QtGui.QFont.Weight.Bold))
+                    table.setItem(row, 0, item_key)
+                    table.setItem(row, 1, QtWidgets.QTableWidgetItem(desc))
+                    table.setItem(row, 2, QtWidgets.QTableWidgetItem(cat))
+
+        _populate()
+        filter_edit.textChanged.connect(_populate)
+
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+        dlg.exec()
+
+    def _on_view_diagnostic_log(self):
+        """Open a dedicated dialog displaying the internal session log file (agymolden.log)."""
+        import os
+        from . import _log_file_path
+
+        log_path = _log_file_path()
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("AgyMolden - Diagnostic Log")
+        dlg.resize(800, 520)
+        layout = QtWidgets.QVBoxLayout(dlg)
+
+        header_lbl = QtWidgets.QLabel(f"<b>Session Log File:</b> <code>{log_path}</code>")
+        header_lbl.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(header_lbl)
+
+        txt_edit = QtWidgets.QPlainTextEdit()
+        txt_edit.setReadOnly(True)
+        txt_edit.setFont(QtGui.QFont("Monospace", 9))
+        layout.addWidget(txt_edit)
+
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    txt_edit.setPlainText(f.read())
+                txt_edit.verticalScrollBar().setValue(txt_edit.verticalScrollBar().maximum())
+            except Exception as e:
+                txt_edit.setPlainText(f"Error reading log file: {e}")
+        else:
+            txt_edit.setPlainText(f"Log file does not exist yet at:\n{log_path}\n(Logs will appear here once warnings or errors occur).")
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_refresh = QtWidgets.QPushButton("🔄 Refresh")
+        def _refresh():
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    txt_edit.setPlainText(f.read())
+                txt_edit.verticalScrollBar().setValue(txt_edit.verticalScrollBar().maximum())
+        btn_refresh.clicked.connect(_refresh)
+        btn_row.addWidget(btn_refresh)
+
+        btn_copy = QtWidgets.QPushButton("📋 Copy Full Log")
+        def _copy():
+            QtWidgets.QApplication.clipboard().setText(txt_edit.toPlainText())
+            QtWidgets.QMessageBox.information(dlg, "Copied", "Log contents copied to clipboard!")
+        btn_copy.clicked.connect(_copy)
+        btn_row.addWidget(btn_copy)
+
+        btn_row.addStretch()
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.reject)
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
 
     def _on_open_manual(self):
         """Open USER_MANUAL.md with the system's default viewer."""

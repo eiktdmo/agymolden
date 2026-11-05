@@ -29,7 +29,7 @@ class _Worker(QtCore.QThread):
 
 
 def run_in_background(
-    parent: QtWidgets.QWidget,
+    parent: Any,
     title: str,
     message: str,
     fn: Callable[[], Any],
@@ -51,20 +51,25 @@ def run_in_background(
             on_done(result)
         return
 
-    dlg = QtWidgets.QProgressDialog(message, "Cancel", 0, 0, parent)
+    widget_parent = parent if isinstance(parent, QtWidgets.QWidget) else None
+    dlg = QtWidgets.QProgressDialog(message, "Cancel", 0, 0, widget_parent)
     dlg.setWindowTitle(title)
-    dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+    dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal if widget_parent else QtCore.Qt.WindowModality.ApplicationModal)
     dlg.setMinimumDuration(300)  # no flicker for fast jobs
     dlg.setAutoClose(False)
     dlg.setAutoReset(False)
 
-    worker = _Worker(fn, parent)
+    worker = _Worker(fn, parent if isinstance(parent, QtCore.QObject) else None)
     state = {"cancelled": False, "finished": False}
 
     def close_dialog():
         dlg.reset()
         dlg.close()
         dlg.deleteLater()
+        # Ensure event loop processes the close immediately to avoid modal lock
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents()
 
     def finish(callback, payload):
         if state["finished"]:
@@ -84,8 +89,11 @@ def run_in_background(
     dlg.canceled.connect(cancel)
     # keep the QThread alive until it truly ends, then free it
     worker.finished.connect(worker.deleteLater)
-    parent._active_workers = getattr(parent, "_active_workers", [])
-    parent._active_workers.append(worker)
-    worker.finished.connect(lambda: parent._active_workers.remove(worker) if worker in parent._active_workers else None)
+    holder = parent if parent is not None else dlg
+    holder._active_workers = getattr(holder, "_active_workers", [])
+    holder._active_workers.append(worker)
+    worker.finished.connect(
+        lambda: holder._active_workers.remove(worker) if worker in getattr(holder, "_active_workers", []) else None
+    )
     worker.start()
     dlg.show()

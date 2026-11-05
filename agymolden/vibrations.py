@@ -1,11 +1,14 @@
 """Vibrational frequency calculation, normal modes analysis, and quantum chemistry import support."""
 
+import logging
 import math
 from typing import List, Tuple, Dict, Optional
 import numpy as np
 
 from .elements import get_cov_radius, estimate_bond_length, ELEMENT_DATA
 from .forcefield import detect_connectivity, optimize_geometry_force_field
+
+log = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -152,8 +155,8 @@ try:
                 for _k, _v in _loaded_factors.items():
                     if isinstance(_v, dict):
                         NIST_VIBRATIONAL_SCALE_FACTORS.setdefault(_k, {}).update(_v)
-except Exception:
-    pass
+except Exception as e:
+    log.debug("Could not load nist_scale_factors.json: %s", e)
 
 
 def get_nist_scale_factor(method: str, basis: str = "") -> Tuple[float, str]:
@@ -677,4 +680,167 @@ def compute_force_field_vibrations(
     )
 
     return eq_coords, analysis
+
+
+def assign_normal_mode_motion(
+    symbols: List[str],
+    coords: np.ndarray,
+    disp: np.ndarray,
+    freq_cm1: float = 1000.0,
+    bonds: Optional[List[Tuple[int, int]]] = None,
+) -> str:
+    """
+    Assign a concise PED-like (Potential Energy Distribution) internal coordinate motion
+    label to a normal mode displacement vector `disp` (shape (N, 3)):
+      - e.g. 'ν(O1–H2) Stretch' or 'δ(H2–O1–H3) Bend'
+    """
+    if abs(freq_cm1) <= 15.0:
+        return "Translation / Rotation"
+
+    coords_arr = np.asarray(coords, dtype=np.float64)
+    disp_arr = np.asarray(disp, dtype=np.float64)
+    n = len(symbols)
+    if n < 2 or coords_arr.shape != (n, 3) or disp_arr.shape != (n, 3):
+        return "Collective Mode"
+
+    if bonds is None:
+        bonds = detect_connectivity(symbols, coords_arr, strict=False)
+    if not bonds:
+        return "Lattice / Non-bonded Mode"
+
+    # 1. Evaluate bond stretch projections |u_ij . (d_j - d_i)|
+    best_stretch_val = 0.0
+    best_stretch_lbl = ""
+    for u, v in bonds:
+        if not (0 <= u < n and 0 <= v < n):
+            continue
+        vec = coords_arr[v] - coords_arr[u]
+        r = float(np.linalg.norm(vec))
+        if r < 1e-6:
+            continue
+        u_vec = vec / r
+        dr = abs(float(np.dot(u_vec, disp_arr[v] - disp_arr[u])))
+        if dr > best_stretch_val:
+            best_stretch_val = dr
+            best_stretch_lbl = f"ν({symbols[u]}{u + 1}–{symbols[v]}{v + 1}) Stretch"
+
+    # 2. Evaluate bond angle bend changes |d_theta| (in radians * 0.8 Angstrom weight)
+    nbrs: Dict[int, List[int]] = {i: [] for i in range(n)}
+    for u, v in bonds:
+        if 0 <= u < n and 0 <= v < n:
+            nbrs[u].append(v)
+            nbrs[v].append(u)
+
+    best_bend_val = 0.0
+    best_bend_lbl = ""
+    eps = 0.02
+    c_plus = coords_arr + eps * disp_arr
+    for c_idx, nb_list in nbrs.items():
+        if len(nb_list) < 2:
+            continue
+        for idx1 in range(len(nb_list)):
+            for idx2 in range(idx1 + 1, len(nb_list)):
+                a = nb_list[idx1]
+                b = nb_list[idx2]
+                v1 = coords_arr[a] - coords_arr[c_idx]
+                v2 = coords_arr[b] - coords_arr[c_idx]
+                n1, n2 = float(np.linalg.norm(v1)), float(np.linalg.norm(v2))
+                if n1 < 1e-6 or n2 < 1e-6:
+                    continue
+                th0 = math.acos(max(-1.0, min(1.0, float(np.dot(v1, v2)) / (n1 * n2))))
+
+                vp1 = c_plus[a] - c_plus[c_idx]
+                vp2 = c_plus[b] - c_plus[c_idx]
+                np1, np2 = float(np.linalg.norm(vp1)), float(np.linalg.norm(vp2))
+                if np1 < 1e-6 or np2 < 1e-6:
+                    continue
+                th1 = math.acos(max(-1.0, min(1.0, float(np.dot(vp1, vp2)) / (np1 * np2))))
+
+                d_th = abs(th1 - th0) / eps
+                weighted_bend = d_th * 0.75
+                if weighted_bend > best_bend_val:
+                    best_bend_val = weighted_bend
+                    best_bend_lbl = f"δ({symbols[a]}{a + 1}–{symbols[c_idx]}{c_idx + 1}–{symbols[b]}{b + 1}) Bend"
+
+    prefix = "TS " if freq_cm1 < -5.0 else ""
+    if best_stretch_val >= best_bend_val and best_stretch_lbl:
+        return prefix + best_stretch_lbl
+    if best_bend_lbl:
+        return prefix + best_bend_lbl
+    return (prefix + best_stretch_lbl) if best_stretch_lbl else "Collective Mode"
+
+
+# Common isotope masses (amu) for Isotopologue Vibrational Shift & KIE calculations
+COMMON_ISOTOPE_MASSES: Dict[str, List[Tuple[str, float]]] = {
+    "H": [("¹H (1.008)", 1.007825), ("²D Deuterium (2.014)", 2.014102), ("³T Tritium (3.016)", 3.016049)],
+    "C": [("¹²C (12.000)", 12.000000), ("¹³C (13.003)", 13.003355), ("¹⁴C (14.003)", 14.003242)],
+    "N": [("¹⁴N (14.003)", 14.003074), ("¹⁵N (15.000)", 15.000109)],
+    "O": [("¹⁶O (15.995)", 15.994915), ("¹⁷O (16.999)", 16.999132), ("¹⁸O (17.999)", 17.999161)],
+    "S": [("³²S (31.972)", 31.972071), ("³⁴S (33.968)", 33.967867)],
+    "Cl": [("³⁵Cl (34.969)", 34.968853), ("³⁷Cl (36.966)", 36.965903)],
+    "Br": [("⁷⁹Br (78.918)", 78.918338), ("⁸¹Br (80.916)", 80.916291)],
+}
+
+
+def compute_isotopologue_vibrational_shifts(
+    analysis: VibrationalAnalysis,
+    custom_masses: Dict[int, float],
+    temperature_k: float = 298.15,
+) -> Dict[str, object]:
+    """
+    Compute isotopologue vibrational frequencies (cm^-1), frequency shifts Delta_nu (cm^-1),
+    Zero-Point Energy shift Delta_ZPE (kcal/mol), and reduced isotopic partition function ratio
+    (Bigeleisen-Mayer RPFR / KIE estimate) by mass-reweighting each normal mode via the Rayleigh
+    quotient of the Born-Oppenheimer Cartesian Hessian.
+    """
+    symbols = analysis.symbols
+    n_atoms = len(symbols)
+    std_masses = np.array([float(ELEMENT_DATA.get(s, {}).get("mass", 12.0)) for s in symbols], dtype=np.float64)
+    iso_masses = std_masses.copy()
+    for idx, m_val in (custom_masses or {}).items():
+        if 0 <= idx < n_atoms and m_val > 0.1:
+            iso_masses[idx] = float(m_val)
+
+    new_freqs: List[float] = []
+    shifts: List[float] = []
+    for m_i, freq0 in enumerate(analysis.frequencies):
+        if m_i < len(analysis.displacements):
+            disp = np.asarray(analysis.displacements[m_i], dtype=np.float64)
+            # Cartesian displacement norm weighted by standard vs isotopic mass:
+            # Since q_mw = M^(1/2) dx, the effective reduced mass ratio is (sum m_std |dx_a|^2) / (sum m_iso |dx_a|^2)
+            atom_d2 = np.sum(disp ** 2, axis=1)
+            mu_std = float(np.sum(std_masses * atom_d2))
+            mu_iso = float(np.sum(iso_masses * atom_d2))
+            ratio = math.sqrt(mu_std / max(1e-12, mu_iso)) if mu_std > 1e-12 else 1.0
+        else:
+            ratio = 1.0
+        f_iso = float(freq0) * ratio
+        new_freqs.append(round(f_iso, 2))
+        shifts.append(round(f_iso - float(freq0), 2))
+
+    # ZPE in kcal/mol: ZPE = 0.5 * sum_{nu > 15} h c nu  (1 cm^-1 = 0.002859144 kcal/mol)
+    cm1_to_kcal = 0.002859144
+    zpe_std = 0.5 * sum(f for f in analysis.frequencies if f > 15.0) * cm1_to_kcal
+    zpe_iso = 0.5 * sum(f for f in new_freqs if f > 15.0) * cm1_to_kcal
+    delta_zpe = zpe_iso - zpe_std
+
+    # If an imaginary TS mode (< -15 cm^-1) is present, compute semiclassical Eyring/Bell ZPE KIE k_light / k_heavy
+    rt_kcal = 0.001987204 * max(10.0, float(temperature_k))
+    kie_zpe = math.exp(-delta_zpe / rt_kcal)
+    imag_std = [abs(f) for f in analysis.frequencies if f < -15.0]
+    imag_iso = [abs(f) for f in new_freqs if f < -15.0]
+    if imag_std and imag_iso:
+        kie_tunnel_factor = imag_std[0] / max(1.0, imag_iso[0])
+    else:
+        kie_tunnel_factor = 1.0
+
+    return {
+        "std_frequencies": [round(float(f), 2) for f in analysis.frequencies],
+        "iso_frequencies": new_freqs,
+        "shifts_cm1": shifts,
+        "zpe_std_kcal": round(zpe_std, 4),
+        "zpe_iso_kcal": round(zpe_iso, 4),
+        "delta_zpe_kcal": round(delta_zpe, 4),
+        "kie_estimate": round(kie_tunnel_factor * kie_zpe, 3),
+    }
 

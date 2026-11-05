@@ -336,14 +336,22 @@ class CalculationsMixin:
             item_irrep.setForeground(QtGui.QBrush(QtGui.QColor("#f59e0b" if irrep_label != "-" else "#64748b")))
             item_irrep.setFont(QtGui.QFont("Monospace", 9, QtGui.QFont.Weight.Bold))
 
+            motion_label = ""
+            if row < len(analysis.displacements):
+                try:
+                    from .vibrations import assign_normal_mode_motion
+                    motion_label = assign_normal_mode_motion(symbols, self.coords, analysis.displacements[row], freq_cm1=freq)
+                except Exception:
+                    motion_label = ""
+
             if freq < -5.0:
-                status_text = "Imaginary / Transition State"
+                status_text = f"TS Imaginary ({motion_label})" if motion_label else "Imaginary / Transition State"
                 color_status = "#f87171"  # red
             elif abs(freq) <= 15.0:
                 status_text = "Translation / Rotation"
                 color_status = "#94a3b8"  # slate
             else:
-                status_text = "Genuine Vibration"
+                status_text = motion_label if motion_label else "Genuine Vibration"
                 color_status = "#4ade80"  # green
 
             item_status = QtWidgets.QTableWidgetItem(status_text)
@@ -390,6 +398,161 @@ class CalculationsMixin:
             f"Calculated {analysis.n_modes} normal modes ({analysis.source}). Select a mode to simulate.", 5000
         )
 
+    def _on_open_isotopologue_dialog(self):
+        """
+        Open the GaussView / Chemcraft-style Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Dialog.
+        """
+        if not getattr(self, "vibrational_analysis", None) or not self.vibrational_analysis.frequencies:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Isotopologue & KIE Calculator",
+                "Please calculate or load vibrational frequencies first.",
+            )
+            return
+
+        from .vibrations import COMMON_ISOTOPE_MASSES, compute_isotopologue_vibrational_shifts
+        from .elements import ELEMENT_DATA
+
+        analysis = self.vibrational_analysis
+        symbols = analysis.symbols
+        n_atoms = len(symbols)
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("⚗️ Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Calculator")
+        dlg.resize(680, 520)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        top_bar = QtWidgets.QHBoxLayout()
+        btn_deuterate_all = QtWidgets.QPushButton("💧 Deuterate All H → ²D")
+        btn_deuterate_all.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 4px 10px;")
+        top_bar.addWidget(btn_deuterate_all)
+
+        btn_c13_all = QtWidgets.QPushButton("⚛️ Label All ¹²C → ¹³C")
+        btn_c13_all.setStyleSheet("background-color: #7c3aed; color: white; font-weight: bold; padding: 4px 10px;")
+        top_bar.addWidget(btn_c13_all)
+
+        btn_reset_iso = QtWidgets.QPushButton("↩️ Reset Standard Masses")
+        top_bar.addWidget(btn_reset_iso)
+
+        top_bar.addWidget(QtWidgets.QLabel("Temp (K):"))
+        spin_temp = QtWidgets.QDoubleSpinBox()
+        spin_temp.setRange(50.0, 1500.0)
+        spin_temp.setValue(298.15)
+        spin_temp.setDecimals(2)
+        top_bar.addWidget(spin_temp)
+        top_bar.addStretch()
+        layout.addLayout(top_bar)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+
+        # Left: Atom mass table
+        tbl_atoms = QtWidgets.QTableWidget(n_atoms, 3)
+        tbl_atoms.setHorizontalHeaderLabels(["Atom", "Isotope Preset", "Mass (amu)"])
+        tbl_atoms.horizontalHeader().setStretchLastSection(True)
+        tbl_atoms.verticalHeader().setVisible(False)
+        mass_spins: List[QtWidgets.QDoubleSpinBox] = []
+
+        for i, sym in enumerate(symbols):
+            std_m = float(ELEMENT_DATA.get(sym, {}).get("mass", 12.0))
+            it_a = QtWidgets.QTableWidgetItem(f"{sym}{i + 1}")
+            it_a.setFlags(it_a.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+            tbl_atoms.setItem(i, 0, it_a)
+
+            combo_iso = QtWidgets.QComboBox()
+            presets = COMMON_ISOTOPE_MASSES.get(sym, [(f"Standard {sym} ({std_m:.3f})", std_m)])
+            for lbl, m_val in presets:
+                combo_iso.addItem(lbl, m_val)
+            tbl_atoms.setCellWidget(i, 1, combo_iso)
+
+            sp_m = QtWidgets.QDoubleSpinBox()
+            sp_m.setRange(0.5, 300.0)
+            sp_m.setDecimals(5)
+            sp_m.setValue(std_m)
+            mass_spins.append(sp_m)
+            tbl_atoms.setCellWidget(i, 2, sp_m)
+
+            def _make_combo_cb(spin_widget, combo_widget):
+                def _cb(_idx):
+                    val = combo_widget.currentData()
+                    if val is not None:
+                        spin_widget.setValue(float(val))
+                return _cb
+
+            combo_iso.currentIndexChanged.connect(_make_combo_cb(sp_m, combo_iso))
+
+        splitter.addWidget(tbl_atoms)
+
+        # Right: Frequency Shift & KIE Summary
+        right_w = QtWidgets.QWidget()
+        r_lay = QtWidgets.QVBoxLayout(right_w)
+        r_lay.setContentsMargins(0, 0, 0, 0)
+        lbl_summary = QtWidgets.QLabel("")
+        lbl_summary.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold; padding: 8px; border-radius: 4px;")
+        lbl_summary.setWordWrap(True)
+        r_lay.addWidget(lbl_summary)
+
+        tbl_shifts = QtWidgets.QTableWidget(len(analysis.frequencies), 4)
+        tbl_shifts.setHorizontalHeaderLabels(["Mode #", "Standard (cm⁻¹)", "Isotopologue (cm⁻¹)", "Shift Δν (cm⁻¹)"])
+        tbl_shifts.horizontalHeader().setStretchLastSection(True)
+        tbl_shifts.verticalHeader().setVisible(False)
+        tbl_shifts.setAlternatingRowColors(True)
+        r_lay.addWidget(tbl_shifts, stretch=1)
+        splitter.addWidget(right_w)
+        splitter.setSizes([290, 380])
+        layout.addWidget(splitter, stretch=1)
+
+        def _recalc():
+            custom = {i: sp.value() for i, sp in enumerate(mass_spins)}
+            res = compute_isotopologue_vibrational_shifts(analysis, custom, temperature_k=spin_temp.value())
+            lbl_summary.setText(
+                f"ZPE (Standard): {res['zpe_std_kcal']:.3f} kcal/mol  |  "
+                f"ZPE (Isotopologue): {res['zpe_iso_kcal']:.3f} kcal/mol<br>"
+                f"<b>ΔZPE = {res['delta_zpe_kcal']:+.4f} kcal/mol</b>  |  "
+                f"<b>Estimated KIE (k_std / k_iso) at {spin_temp.value():.1f} K = {res['kie_estimate']:.3f}</b>"
+            )
+            for r_i, (f_std, f_iso, df) in enumerate(zip(res["std_frequencies"], res["iso_frequencies"], res["shifts_cm1"])):
+                tbl_shifts.setItem(r_i, 0, QtWidgets.QTableWidgetItem(str(r_i + 1)))
+                tbl_shifts.setItem(r_i, 1, QtWidgets.QTableWidgetItem(f"{f_std:.2f}"))
+                tbl_shifts.setItem(r_i, 2, QtWidgets.QTableWidgetItem(f"{f_iso:.2f}"))
+                it_df = QtWidgets.QTableWidgetItem(f"{df:+.2f}")
+                if abs(df) >= 1.0:
+                    it_df.setForeground(QtGui.QBrush(QtGui.QColor("#f59e0b")))
+                tbl_shifts.setItem(r_i, 3, it_df)
+
+        for sp in mass_spins:
+            sp.valueChanged.connect(lambda _v: _recalc())
+        spin_temp.valueChanged.connect(lambda _v: _recalc())
+
+        def _set_element_mass(elem: str, target_mass: float):
+            for i, sym in enumerate(symbols):
+                if sym == elem:
+                    mass_spins[i].blockSignals(True)
+                    mass_spins[i].setValue(target_mass)
+                    mass_spins[i].blockSignals(False)
+            _recalc()
+
+        btn_deuterate_all.clicked.connect(lambda: _set_element_mass("H", 2.014102))
+        btn_c13_all.clicked.connect(lambda: _set_element_mass("C", 13.003355))
+        def _reset_all():
+            for i, sym in enumerate(symbols):
+                std_m = float(ELEMENT_DATA.get(sym, {}).get("mass", 12.0))
+                mass_spins[i].blockSignals(True)
+                mass_spins[i].setValue(std_m)
+                mass_spins[i].blockSignals(False)
+            _recalc()
+        btn_reset_iso.clicked.connect(_reset_all)
+
+        _recalc()
+
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        b_row = QtWidgets.QHBoxLayout()
+        b_row.addStretch()
+        b_row.addWidget(btn_close)
+        layout.addLayout(b_row)
+        dlg.exec()
+
     def _on_spectrum_scale_changed(self, scale_fac: float):
         """Update the Scaled Frequency column in table_vibrations when NIST scale factor changes."""
         if not self.vibrational_analysis:
@@ -427,6 +590,21 @@ class CalculationsMixin:
                 self.statusBar().showMessage(
                     f"Animating Mode #{mode_idx + 1}: {freq:.1f} cm⁻¹{ir_int}", 4000
                 )
+
+    def _on_nmr_atom_clicked(self, atom_idx: int):
+        """Highlight the clicked NMR nucleus in the 3D viewport and Z-Matrix table."""
+        if 0 <= atom_idx < len(self.zatoms):
+            self.viewer.selected_atom_idx = atom_idx
+            self.viewer.multi_selected = [atom_idx]
+            self.viewer.update()
+            sym = self.zatoms[atom_idx].symbol
+            self.statusBar().showMessage(f"🧲 Selected NMR nucleus: {sym}{atom_idx + 1}", 3500)
+
+    def _on_dos_orbital_clicked(self, mo_idx: int):
+        """Select and render the clicked Molecular Orbital from the Density of States (DOS) plot."""
+        if hasattr(self, "table_orbitals") and 0 <= mo_idx < self.table_orbitals.rowCount():
+            self.table_orbitals.selectRow(mo_idx)
+            self._render_mo_orbital(mo_idx)
 
     def _on_vibration_mode_selected(self):
         """Called when a mode row is selected in the vibrations table."""
@@ -529,6 +707,30 @@ class CalculationsMixin:
 
     def _on_toggle_vib_vectors(self, checked: bool):
         self.viewer.set_vibration_show_vectors(checked)
+
+    def _on_vib_scrub_changed(self, val: int):
+        """Interactively deform the molecule along the selected normal mode coordinate."""
+        frac = val / 100.0  # -1.0 to +1.0
+        if hasattr(self, "lbl_vib_scrub"):
+            self.lbl_vib_scrub.setText(f"{frac:+.2f}×")
+
+        if not getattr(self, "vibrational_analysis", None) or self.viewer.vib_displacements is None:
+            return
+
+        # If continuous simulation is active, stop it so manual scrubbing takes direct control
+        if getattr(self.viewer, "vibrating", False):
+            self.viewer.stop_vibration()
+            if hasattr(self, "btn_play_vibration"):
+                self.btn_play_vibration.setText("▶ Start Simulation")
+                self.btn_play_vibration.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+
+        amp = (self.slider_vib_amp.value() / 100.0) if hasattr(self, "slider_vib_amp") else 0.50
+        disp = np.asarray(self.viewer.vib_displacements, dtype=np.float64)
+        if len(disp) == len(self.coords):
+            # Compute shifted phase such that sin(vib_phase) == frac
+            self.viewer.vib_phase = math.asin(np.clip(frac, -1.0, 1.0))
+            self.viewer.vib_amplitude = amp
+            self.viewer.update()
 
     def _on_adopt_vibrational_displacement(self, sign: float = 1.0):
         """
@@ -1457,8 +1659,8 @@ class CalculationsMixin:
                     jn = m_jn.group(1).strip()
                     if jn and jn not in candidate_stems:
                         candidate_stems.append(jn)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing %%jobname from %s: %s", input_file, e)
 
         if os.path.isfile(out_path):
             try:
@@ -1485,12 +1687,16 @@ class CalculationsMixin:
                     os.path.join(s_dir, f"{c_stem}_electrons.molden"),
                     os.path.join(s_dir, f"{c_stem}.molden.input"),
                     os.path.join(s_dir, f"{c_stem}.molden"),
+                    os.path.join(s_dir, f"{c_stem}.e-.molden"),
+                    os.path.join(s_dir, f"{c_stem}.E-.molden"),
+                    os.path.join(s_dir, f"{c_stem}.E-ALPHA.molden"),
                     os.path.join(s_dir, f"{c_stem}_hf_positrons.molden"),
                     os.path.join(s_dir, f"{c_stem}_positrons.molden"),
                     os.path.join(s_dir, f"{c_stem}_hf_positron.molden"),
                     os.path.join(s_dir, f"{c_stem}_positron.molden"),
                     os.path.join(s_dir, f"{c_stem}.POSITRON.molden"),
-                    os.path.join(s_dir, f"{c_stem}.E-ALPHA.molden"),
+                    os.path.join(s_dir, f"{c_stem}.e+.molden"),
+                    os.path.join(s_dir, f"{c_stem}.E+.molden"),
                     os.path.join(s_dir, f"{c_stem}.gbw"),
                 ])
         molden_cand.append(os.path.join(base_dir, "orbitals.molden"))
@@ -1766,6 +1972,8 @@ class CalculationsMixin:
 
         if hasattr(self, "mo_ladder_widget"):
             self.mo_ladder_widget.set_orbitals(data.orbitals, homo_idx=homo_idx)
+        if hasattr(self, "dos_widget"):
+            self.dos_widget.set_orbitals(data.orbitals, homo_idx=homo_idx)
 
         # Update HOMO-LUMO Gap Summary Badge (Chemcraft style) with Electronic Term Symbol
         if hasattr(self, "lbl_mo_gap_badge"):
@@ -1794,8 +2002,8 @@ class CalculationsMixin:
                     term = determine_electronic_term_symbol(pt_grp, data.orbitals)
                     if term:
                         term_str = f"  |  <b>State: {term}</b> ({pt_grp})"
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Failed determining electronic term symbol: %s", e)
 
                 self.lbl_mo_gap_badge.setText(
                     f"⚡ HOMO: {e_homo:+.2f} eV  |  LUMO: {e_lumo:+.2f} eV  |  "
@@ -1833,6 +2041,14 @@ class CalculationsMixin:
         row = self.table_orbitals.row(selected[0])
         if hasattr(self, "mo_ladder_widget"):
             self.mo_ladder_widget.set_selected_orbital(row)
+        try:
+            from .volumetric import compute_molden_mo_atom_contributions
+            comp_str = compute_molden_mo_atom_contributions(self._active_molden_path, row)
+            if comp_str and hasattr(self, "lbl_mo_status"):
+                mo_type = self.table_orbitals.item(row, 1).text() if self.table_orbitals.item(row, 1) else f"MO #{row + 1}"
+                self.lbl_mo_status.setText(f"🧬 <b>MO #{row + 1} ({mo_type}) Composition:</b> {comp_str}")
+        except Exception as e:
+            log.debug("Failed computing MO atom contributions: %s", e)
         self._render_mo_orbital(row)
 
     def _render_mo_orbital(self, mo_index: int):
@@ -1963,6 +2179,169 @@ class CalculationsMixin:
             self._render_mo_orbital(lumo_idx)
         else:
             self._on_open_volumetric_dialog()
+
+    def _on_quick_view_spin_density(self):
+        """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
+        from .volumetric import compute_molden_spin_density_grid, generate_orbital_surfaces
+        molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path or not os.path.isfile(molden_path):
+            self._on_open_volumetric_dialog()
+            return
+
+        isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.005
+        opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.80
+        n_pts = int(self.combo_quick_grid.currentData() or 40) if hasattr(self, "combo_quick_grid") else 40
+        margin_b = float(self.spin_quick_margin.value()) if hasattr(self, "spin_quick_margin") else 3.0
+
+        self.statusBar().showMessage(f"Computing 3D spin density Δρ = ρ_α − ρ_β ({n_pts}³ grid)...", 3000)
+
+        def _compute():
+            vol = compute_molden_spin_density_grid(molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
+            if not vol:
+                return [], isovalue, None
+            max_abs = float(np.max(np.abs(vol.grid_data)))
+            eff_iso = min(isovalue, 0.01) if isovalue >= 0.025 else isovalue
+            if eff_iso >= max_abs and max_abs > 1e-6:
+                eff_iso = round(max_abs * 0.35, 5)
+            if max_abs <= 1e-6:
+                return [], eff_iso, vol
+            pos_c, neg_c = (0.14, 0.65, 0.95), (0.95, 0.55, 0.12)  # Cyan-blue (excess alpha) / Amber-orange (excess beta)
+            meshes = generate_orbital_surfaces(vol, isovalue=max(1e-5, eff_iso), pos_color=pos_c, neg_color=neg_c)
+            return meshes, eff_iso, vol
+
+        def _on_done(res_tuple):
+            meshes, eff_iso, vol = res_tuple
+            if vol is None:
+                self.statusBar().showMessage("Could not evaluate spin density from the active Molden file.", 4000)
+                return
+            max_abs = float(np.max(np.abs(vol.grid_data)))
+            if max_abs <= 1e-6 or not meshes:
+                self.statusBar().showMessage(
+                    "Spin density Δρ(r) is zero everywhere (closed-shell singlet wavefunction).", 5000
+                )
+                return
+            self._current_rendered_mo_vol = vol
+            self.viewer.active_isosurfaces = meshes
+            self.viewer.surface_opacity = opacity
+            self.viewer.update()
+            self.statusBar().showMessage(
+                f"Rendered Spin Density Δρ = ρ_α − ρ_β (Isovalue={eff_iso:.4f}, max |Δρ|={max_abs:.4f} e/a₀³)", 5000
+            )
+
+        def _on_error(e):
+            log.warning(f"Error computing spin density: {e}")
+
+        run_in_background(
+            self,
+            "Computing Spin Density",
+            "Evaluating open-shell spin density Δρ = ρ_α − ρ_β on 3D grid...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
+    def _on_quick_view_esp_map(self):
+        """1-Click Electrostatic Potential (ESP) mapped onto Total Electron Density isosurface."""
+        from .volumetric import compute_molden_esp_mapped_density
+        molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path or not os.path.isfile(molden_path):
+            self._on_open_volumetric_dialog()
+            return
+
+        opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.85
+        n_pts = int(self.combo_quick_grid.currentData() or 40) if hasattr(self, "combo_quick_grid") else 40
+        margin_b = max(3.5, float(self.spin_quick_margin.value())) if hasattr(self, "spin_quick_margin") else 3.5
+
+        self.statusBar().showMessage(f"Computing 3D ESP-mapped electron density surface ({n_pts}³ grid)...", 3000)
+
+        def _compute():
+            mesh = compute_molden_esp_mapped_density(
+                molden_path,
+                density_isovalue=0.002,
+                nx=n_pts,
+                ny=n_pts,
+                nz=n_pts,
+                margin_bohr=margin_b,
+            )
+            return mesh
+
+        def _on_done(mesh):
+            if mesh is None:
+                self.statusBar().showMessage("Could not evaluate ESP-mapped density from the active Molden file.", 4000)
+                return
+            self.viewer.active_isosurfaces = [mesh]
+            self.viewer.surface_opacity = opacity
+            self.viewer.update()
+            e_rng = getattr(mesh, "esp_range", (-0.05, 0.05))
+            self.statusBar().showMessage(
+                f"Rendered ESP-Mapped Electron Density (ρ = 0.002 e/a₀³, V_ESP ∈ [{e_rng[0]:+.3f}, {e_rng[1]:+.3f}] a.u.)",
+                5000,
+            )
+
+        def _on_error(e):
+            log.warning(f"Error computing ESP-mapped density: {e}")
+
+        run_in_background(
+            self,
+            "Computing ESP Map",
+            "Evaluating Total Electron Density & Electrostatic Potential V_ESP(r)...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
+    def _on_localize_orbitals(self, method: str = "pipek-mezey"):
+        """1-Click PySCF orbital localization (Pipek-Mezey or Foster-Boys) from the active Molden file."""
+        from .volumetric import localize_molden_orbitals
+        molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path or not os.path.isfile(molden_path):
+            self._on_open_volumetric_dialog()
+            return
+
+        # Remember original canonical Molden file so user can switch back with 1 click
+        if "_localized_" not in os.path.basename(molden_path):
+            self._canonical_molden_path = molden_path
+        src_path = getattr(self, "_canonical_molden_path", None) or molden_path
+
+        label = "Foster-Boys" if "boys" in method.lower() else "Pipek-Mezey"
+        self.statusBar().showMessage(f"Localizing occupied orbitals via PySCF {label}...", 3000)
+
+        def _compute():
+            return localize_molden_orbitals(src_path, method=method, localize_virtuals=False)
+
+        def _on_done(loc_path):
+            if not loc_path or not os.path.isfile(loc_path):
+                self.statusBar().showMessage(f"Could not localize orbitals from {os.path.basename(src_path)}.", 4000)
+                return
+            self.load_orbitals_from_molden(loc_path, auto_render=True)
+            self.statusBar().showMessage(
+                f"🧲 Loaded {label} Localized Molecular Orbitals (LMOs) from {os.path.basename(loc_path)}",
+                5000,
+            )
+
+        def _on_error(e):
+            log.warning(f"Error localizing orbitals ({label}): {e}")
+            self.statusBar().showMessage(f"Orbital localization error: {e}", 5000)
+
+        run_in_background(
+            self,
+            f"Localizing Orbitals ({label})",
+            f"Running PySCF {label} unitary orbital localization...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
+    def _on_restore_canonical_orbitals(self):
+        """Restore the original canonical delocalized MOs after viewing Localized Molecular Orbitals."""
+        canon_path = getattr(self, "_canonical_molden_path", None)
+        if canon_path and os.path.isfile(canon_path):
+            self.load_orbitals_from_molden(canon_path, auto_render=True)
+            self.statusBar().showMessage(
+                f"↩️ Restored canonical delocalized MOs from {os.path.basename(canon_path)}", 4000
+            )
+        else:
+            self.statusBar().showMessage("Canonical MOs are already active.", 3000)
 
     def _on_clear_orbital_surface(self):
         self.viewer.active_isosurfaces = []
@@ -2108,6 +2487,56 @@ class CalculationsMixin:
         from .dialog_orbital_gallery import OrbitalSnapshotDialog
         dlg = OrbitalSnapshotDialog(self, molden_path, molden_data.orbitals, homo_idx=homo_idx)
         dlg.exec()
+
+    def _on_open_benchmark_dialog(self):
+        """Open Cross-Engine Benchmark & Calculation Comparison dialog (Ctrl+Shift+M)."""
+        from .dialog_benchmark import BenchmarkComparisonDialog
+
+        initial_files = []
+        last_log = getattr(self, "_last_loaded_qm_log_path", None)
+        if last_log and os.path.isfile(last_log):
+            initial_files.append(last_log)
+
+        dlg = BenchmarkComparisonDialog(parent=self, initial_files=initial_files)
+
+        def _on_structure_selected(syms, coords, label):
+            from .zmatrix import cartesian_to_zmatrix
+            zatoms = cartesian_to_zmatrix(syms, coords)
+            self.set_molecule_from_zatoms(zatoms)
+            self.statusBar().showMessage(f"Loaded benchmark structure: {label}", 4000)
+
+        dlg.structure_selected.connect(_on_structure_selected)
+        dlg.exec()
+
+    def _on_open_nbo_dialog(self):
+        """Open NBO Donor-Acceptor Perturbation Visualizer (Ctrl+Shift+N)."""
+        from .dialog_nbo import NBODonorAcceptorDialog
+
+        last_log = getattr(self, "_last_loaded_qm_log_path", None)
+        sel_atoms = getattr(self, "selected_atoms", [])
+
+        dlg = NBODonorAcceptorDialog(
+            parent=self,
+            log_filepath_or_text=last_log,
+            is_path=True,
+            selected_atoms=sel_atoms,
+        )
+
+        def _on_interaction_highlighted(d_atoms, a_atoms, e2, label):
+            all_involved = list(set(d_atoms + a_atoms))
+            if hasattr(self, "viewer") and hasattr(self.viewer, "set_selected_atoms"):
+                self.viewer.set_selected_atoms(all_involved)
+            self.statusBar().showMessage(f"NBO Interaction: {label}", 5000)
+
+        dlg.interaction_highlighted.connect(_on_interaction_highlighted)
+        dlg.exec()
+
+    def _on_open_script_runner(self):
+        """Open custom Python Script and Plugin Runner dialog (Ctrl+Shift+Y)."""
+        from .plugins import PythonScriptRunnerDialog
+        dlg = PythonScriptRunnerDialog(self)
+        dlg.exec()
+
 
 
 

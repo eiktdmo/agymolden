@@ -44,17 +44,31 @@ def _probe_paths(key: str) -> List[str]:
             "C:/orca*/orca.exe", "C:/Program Files/orca*/orca.exe",
         )
     if key == "gaussian":
-        return [shutil.which("g16") or "", shutil.which("g09") or ""] + _glob_candidates(
+        return [
+            shutil.which("g16") or "",
+            shutil.which("g16.exe") or "",
+            shutil.which("g09") or "",
+            shutil.which("g09.exe") or "",
+            shutil.which("g03") or "",
+            shutil.which("g03.exe") or "",
+        ] + _glob_candidates(
             "~/g16/g16", "~/g09/g09", "~/programs/g16*/g16", "~/programs/gaussian*/g16*/g16",
             "/opt/g16/g16", "/opt/g09/g09", "/usr/local/g16/g16", "/usr/local/g09/g09",
+            "C:/G16W/g16.exe", "C:/G09W/g09.exe", "C:/G03W/g03.exe",
+            "C:/Program Files/G16W/g16.exe", "C:/Program Files (x86)/G16W/g16.exe",
+            "C:/Program Files/G09W/g09.exe", "C:/Program Files (x86)/G09W/g09.exe",
+            "C:/gaussian*/g*.exe", "D:/G16W/g16.exe", "D:/G09W/g09.exe",
         )
     if key == "pyscf":
-        envs = _glob_candidates(
-            "~/miniconda3/envs/*/bin/python", "~/anaconda3/envs/*/bin/python",
-            "~/mambaforge/envs/*/bin/python", "~/miniforge3/envs/*/bin/python",
-            "~/micromamba/envs/*/bin/python", "~/.venv/bin/python",
-        )
-        return [shutil.which("python3") or "", shutil.which("python") or "", sys.executable] + envs
+        local_venvs = [
+            sys.executable,
+            os.path.abspath(".venv/bin/python"),
+            os.path.abspath("venv/bin/python"),
+            shutil.which("python3") or "",
+            shutil.which("python") or "",
+        ]
+        envs = _glob_candidates("~/.venv/bin/python")
+        return [p for p in local_venvs + envs if p]
     if key == "openlowdin":
         return [shutil.which("openlowdin") or "", shutil.which("lowdin") or ""] + _glob_candidates(
             "~/programs/openlowdin*/openlowdin", "/opt/openlowdin*/bin/openlowdin",
@@ -71,7 +85,14 @@ def _probe_paths(key: str) -> List[str]:
 
 
 def _check_binary(path: str) -> bool:
-    return bool(path and os.path.isfile(path) and os.access(path, os.X_OK))
+    if not (path and os.path.isfile(path)):
+        return False
+    if os.name == "nt":
+        # On Windows, any existing .exe, .bat, or .cmd file is runnable
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".exe", ".bat", ".cmd", ""):
+            return True
+    return bool(os.access(path, os.X_OK))
 
 
 def _check_python_pyscf(python_path: str) -> Tuple[bool, str]:

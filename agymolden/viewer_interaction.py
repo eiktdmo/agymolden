@@ -740,7 +740,7 @@ class ViewerInteractionMixin:
             sum_cov = get_cov_radius(self.symbols[a]) + get_cov_radius(self.symbols[b])
             sum_vdw = get_vdw_radius(self.symbols[a]) + get_vdw_radius(self.symbols[b])
             bond_state = "Bonded" if d <= sum_cov * 1.25 else ("Non-covalent/VdW" if d <= sum_vdw else "Separated")
-            msg = f"Distance ({self.symbols[a]}{a+1} - {self.symbols[b]}{b+1}): {d:.4f} Å [{bond_state}, Σr_cov={sum_cov:.2f} Å, Σr_vdw={sum_vdw:.2f} Å]"
+            msg = f"Distance ({self.symbols[a]}{a+1} - {self.symbols[b]}{b+1}): {d:.4f} Å [{bond_state}, Σr_cov={sum_cov:.2f} Å, Σr_vdw={sum_vdw:.2f} Å] [Selected: {atoms_str}]"
         elif k == 3:
             a, b, c = self.multi_selected
             v1 = self.coords[a] - self.coords[b]

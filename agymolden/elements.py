@@ -102,9 +102,28 @@ def get_vdw_radius(symbol: str) -> float:
     norm = normalize_symbol(symbol)
     return ELEMENT_DATA.get(norm, {}).get("vdw_radius", 1.50)
 
-def get_color(symbol: str) -> Tuple[float, float, float]:
+def get_color(symbol: str, bg_mode: str = "dark") -> Tuple[float, float, float]:
+    """Return RGB (0.0 - 1.0) for an element, optimized for dark or white viewport backgrounds."""
     norm = normalize_symbol(symbol)
-    return ELEMENT_DATA.get(norm, {}).get("color", (0.7, 0.7, 0.7))
+    base = ELEMENT_DATA.get(norm, {}).get("color", (0.7, 0.7, 0.7))
+    if bg_mode == "white":
+        if norm == "H":
+            # Silver/platinum grey with subtle tint so hydrogen has crisp contrast against pure white
+            return (0.84, 0.86, 0.88)
+        elif norm == "C":
+            # Deeper obsidian slate grey for rich contrast against white
+            return (0.32, 0.34, 0.36)
+        elif norm == "S":
+            # Deeper golden amber so yellow doesn't get washed out on white
+            return (0.82, 0.72, 0.10)
+    else:  # dark background
+        if norm == "H":
+            # Crisp luminous white/ivory
+            return (0.95, 0.95, 0.97)
+        elif norm == "C":
+            # Modern balanced graphite/charcoal
+            return (0.48, 0.50, 0.53)
+    return base
 
 def get_mass(symbol: str) -> float:
     norm = normalize_symbol(symbol)

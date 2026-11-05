@@ -65,9 +65,13 @@ def detect_conda_environments(force_refresh: bool = False) -> List[Tuple[str, st
 
     # 3. Known virtual environments in common software / user directories
     custom_patterns = [
+        os.path.join(home, "programs", "*", "andres-venv", "bin", "python"),
+        os.path.join(home, "program", "*", "andres-venv", "bin", "python"),
         os.path.join(home, "programs", "*", "bin", "python"),
         os.path.join(home, "programs", "*", "Scripts", "python.exe"),
         os.path.join(home, "programs", "*", "*", "bin", "python"),
+        os.path.join(home, "program", "*", "*", "bin", "python"),
+        os.path.join(home, "*", "andres-venv", "bin", "python"),
         os.path.join(home, ".venv", "bin", "python"),
         os.path.join(home, "venv", "bin", "python"),
     ]

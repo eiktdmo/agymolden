@@ -135,6 +135,24 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         self.spn_charge.valueChanged.connect(self._validate_charge_multiplicity)
         self.spn_mult.valueChanged.connect(self._validate_charge_multiplicity)
+        self.txt_route.textChanged.connect(self._validate_charge_multiplicity)
+
+        # Solvent & Dispersion Environment
+        solv_disp_row = QtWidgets.QHBoxLayout()
+        self.combo_solvent = QtWidgets.QComboBox()
+        self.combo_solvent.addItems([
+            "None (Gas Phase)", "Water (CPCM)", "Acetonitrile (CPCM)",
+            "Dichloromethane (CPCM)", "Chloroform (CPCM)", "DMSO (CPCM)",
+            "THF (CPCM)", "Toluene (CPCM)", "Ethanol (CPCM)", "Methanol (CPCM)"
+        ])
+        solv_disp_row.addWidget(QtWidgets.QLabel("Solvent:"))
+        solv_disp_row.addWidget(self.combo_solvent, stretch=1)
+
+        self.combo_dispersion = QtWidgets.QComboBox()
+        self.combo_dispersion.addItems(["None / In Route", "D3BJ", "D4"])
+        solv_disp_row.addWidget(QtWidgets.QLabel("Dispersion:"))
+        solv_disp_row.addWidget(self.combo_dispersion)
+        m_form.addRow("Environment:", solv_disp_row)
 
         # Processors and memory
         hw_row = QtWidgets.QHBoxLayout()
@@ -190,40 +208,55 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         # Validate charge and spin multiplicity at start
         self._validate_charge_multiplicity()
 
+    def _run_preflight_sanity(self) -> dict:
+        """Run chemistry_checker pre-flight sanity checks on current molecule, charge, multiplicity, and route."""
+        from .chemistry_checker import check_calculation_sanity
+        symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
+        coords_arr = self.coords
+        if coords_arr is None or len(coords_arr) != len(symbols):
+            from .zmatrix import zmatrix_to_cartesian
+            try:
+                coords_arr = zmatrix_to_cartesian(self.zatoms)
+            except Exception:
+                coords_arr = np.zeros((len(symbols), 3))
+        route_str = self.txt_route.text().strip() if hasattr(self, "txt_route") else ""
+        return check_calculation_sanity(
+            symbols=symbols,
+            coords=coords_arr,
+            charge=self.spn_charge.value(),
+            multiplicity=self.spn_mult.value(),
+            basis_set=route_str,
+            qm_package="ORCA",
+        )
+
     def _validate_charge_multiplicity(self):
-        """Validates that electron count parity matches the selected spin multiplicity."""
+        """Validates electron count parity, interatomic clashes, and basis suitability."""
         if not self.zatoms:
             self.lbl_parity_warning.setText("<span style='color: #64748b;'>No molecule loaded</span>")
             return
 
-        from .elements import ELEMENT_DATA
-        total_atomic_number = 0
-        for a in self.zatoms:
-            sym = getattr(a, "symbol", "") or ""
-            data = ELEMENT_DATA.get(sym.capitalize(), {})
-            z_num = data.get("atomic_number", 0)
-            total_atomic_number += z_num
+        res = self._run_preflight_sanity()
+        info = res["info"]
+        num_electrons = info["n_electrons"]
+        mult = info["multiplicity"]
 
-        charge = self.spn_charge.value()
-        mult = self.spn_mult.value()
-        num_electrons = total_atomic_number - charge
-
-        # Spin parity rule:
-        # If N_electrons is even, (mult - 1) must be even -> mult must be odd (Singlet, Triplet, ...)
-        # If N_electrons is odd, (mult - 1) must be odd -> mult must be even (Doublet, Quartet, ...)
-        is_even_e = (num_electrons % 2 == 0)
-        is_even_mult = (mult % 2 == 0)
-
-        if (is_even_e and is_even_mult) or (not is_even_e and not is_even_mult):
-            expected = "odd (Singlet=1, Triplet=3, ...)" if is_even_e else "even (Doublet=2, Quartet=4, ...)"
+        if res["errors"]:
+            err_msg = res["errors"][0]
+            prefix = "⚠️ Spin mismatch / Pre-flight Error:" if "Spin state" in err_msg else "⚠️ Pre-flight Error:"
             self.lbl_parity_warning.setText(
-                f"<span style='color: #dc2626; font-weight: bold;'>⚠️ Spin mismatch:</span> "
-                f"<span style='color: #dc2626;'>{num_electrons} e⁻ requires {expected}. ORCA will fail.</span>"
+                f"<span style='color: #dc2626; font-weight: bold;'>{prefix}</span> "
+                f"<span style='color: #dc2626;'>{err_msg}</span>"
+            )
+        elif res["warnings"]:
+            warn_msg = res["warnings"][0]
+            self.lbl_parity_warning.setText(
+                f"<span style='color: #d97706; font-weight: bold;'>⚠️ Advisory ({num_electrons} e⁻, mult={mult}):</span> "
+                f"<span style='color: #d97706;'>{warn_msg}</span>"
             )
         else:
             self.lbl_parity_warning.setText(
                 f"<span style='color: #16a34a; font-weight: bold;'>✓ Valid state</span> "
-                f"<span style='color: #16a34a;'>({num_electrons} e⁻, mult={mult})</span>"
+                f"<span style='color: #16a34a;'>({info['formula']}, {num_electrons} e⁻, mult={mult})</span>"
             )
 
     def _on_preset_changed(self, idx: int):
@@ -242,9 +275,39 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Molecule", "Please build or load a molecule first before running ORCA.")
             return
 
+        sanity = self._run_preflight_sanity()
+        issues = list(sanity.get("errors", [])) + list(sanity.get("warnings", []))
+        if issues:
+            ans = QtWidgets.QMessageBox.warning(
+                self,
+                "Pre-Flight Chemistry Sanity Check",
+                "The following potential issues were detected in your ORCA setup:\n\n• "
+                + "\n• ".join(issues)
+                + "\n\nDo you want to launch the ORCA calculation anyway?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if ans != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+
         route_line = self.txt_route.text().strip()
         if not route_line.startswith("!"):
             route_line = "! " + route_line
+
+        # Append dispersion if selected and not already in route
+        if hasattr(self, "combo_dispersion"):
+            disp = self.combo_dispersion.currentText()
+            if disp in ("D3BJ", "D4") and disp.lower() not in route_line.lower():
+                route_line += f" {disp}"
+
+        # Append solvent if selected and not already in route
+        if hasattr(self, "combo_solvent"):
+            solv = self.combo_solvent.currentText()
+            if solv != "None (Gas Phase)" and "cpcm" not in route_line.lower() and "smd" not in route_line.lower():
+                solv_name = solv.split()[0]
+                if solv_name == "Dichloromethane":
+                    solv_name = "CH2Cl2"
+                route_line += f" CPCM({solv_name})"
 
         fname = self.txt_filename.text().strip()
         if not fname.endswith(".inp"):

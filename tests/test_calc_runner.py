@@ -160,3 +160,47 @@ def test_dialog_launch_remote_actions(qapp):
     assert hasattr(dlg, "btn_check_remote_env")
     assert hasattr(dlg, "btn_upload_wrapper")
     assert hasattr(dlg, "txt_ssh_password")
+
+
+def test_generic_qm_runner_gaussian_live(qapp, tmp_path):
+    from agymolden.qm_detect import detect_qm_executable
+    info = detect_qm_executable("gaussian")
+    if not info.found:
+        pytest.skip("Gaussian executable not available")
+
+    inp = tmp_path / "h2.com"
+    inp.write_text("""%mem=2GB
+%nprocshared=2
+#P HF/STO-3G
+
+H2 test
+
+0 1
+H 0.0 0.0 0.0
+H 0.0 0.0 0.74
+
+""")
+
+    runner = GenericQMRunner(code_key="gaussian")
+    finished_box = []
+    runner.finished.connect(lambda ok, msg: finished_box.append((ok, msg)))
+
+    ok = runner.start_job(str(inp), work_dir=str(tmp_path))
+    assert ok is True
+
+    # Process events until finished
+    for _ in range(120):
+        if finished_box:
+            break
+        QtCore.QCoreApplication.processEvents()
+        QtCore.QThread.msleep(100)
+
+    assert finished_box, "Gaussian job timed out"
+    success, msg = finished_box[0]
+    assert success is True
+    assert (tmp_path / "h2.log").exists()
+    log_text = (tmp_path / "h2.log").read_text()
+    assert "Normal termination" in log_text
+    assert len(runner.steps) >= 1
+    assert runner.steps[-1].energy is not None
+

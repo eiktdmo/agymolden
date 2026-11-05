@@ -181,6 +181,16 @@ class UIMixin(UIInspectorTabsMixin):
         btn_axes.clicked.connect(lambda: self.viewer.align_to_principal_axes())
         view_ctrls.addWidget(btn_axes)
 
+        self.btn_orient_sym = QtWidgets.QPushButton("📐 Orient")
+        self.btn_orient_sym.setStyleSheet("font-weight: 600; padding: 2px 6px; background-color: #0d9488; color: #ffffff;")
+        self.btn_orient_sym.setToolTip(
+            "Universal Symmetry Orientation (Alt+S):\n"
+            "Align molecule coordinates to standard Schoenflies/IUPAC convention for ANY point group\n"
+            "(e.g. C2v water in XZ plane with C2 along Z, D2h, C3v, etc.) and center COM at (0,0,0)."
+        )
+        self.btn_orient_sym.clicked.connect(self._on_align_symmetry)
+        view_ctrls.addWidget(self.btn_orient_sym)
+
         self.btn_camera_proj = QtWidgets.QPushButton("Persp")
         self.btn_camera_proj.setFixedWidth(42)
         self.btn_camera_proj.setToolTip("Toggle between Perspective and Orthographic parallel projection (VMD / GaussView style) (F5)")
@@ -227,6 +237,19 @@ class UIMixin(UIInspectorTabsMixin):
         self.chk_indices.toggled.connect(self._on_toggle_indices)
         display_layout.addWidget(self.chk_indices)
 
+        self.chk_bond_lengths = QtWidgets.QCheckBox("Bond Lengths (Å)")
+        self.chk_bond_lengths.setChecked(False)
+        self.chk_bond_lengths.setToolTip("Chemcraft style: Overlay exact bond lengths (Å) at the midpoint of every covalent bond")
+        def _on_chk_bond_lengths(checked: bool):
+            self.viewer.show_bond_lengths = bool(checked)
+            if hasattr(self, "act_all_bond_lengths"):
+                self.act_all_bond_lengths.blockSignals(True)
+                self.act_all_bond_lengths.setChecked(bool(checked))
+                self.act_all_bond_lengths.blockSignals(False)
+            self.viewer.update()
+        self.chk_bond_lengths.toggled.connect(_on_chk_bond_lengths)
+        display_layout.addWidget(self.chk_bond_lengths)
+
         self.chk_dipole = QtWidgets.QCheckBox("Dipole Vector (μ)")
         self.chk_dipole.setToolTip("Display 3D molecular electric dipole moment vector (Debye)")
         self.chk_dipole.toggled.connect(self._on_toggle_dipole)
@@ -255,6 +278,33 @@ class UIMixin(UIInspectorTabsMixin):
         )
         self.chk_gizmo.toggled.connect(lambda chk: setattr(self.viewer, "show_manipulator_gizmo", chk) or self.viewer.update())
         display_layout.addWidget(self.chk_gizmo)
+
+        self.chk_pub_outlines = QtWidgets.QCheckBox("🎨 Publication Outlines")
+        self.chk_pub_outlines.setChecked(False)
+        self.chk_pub_outlines.setToolTip(
+            "IboView / QuteMol style: Render crisp dark silhouette ink outlines and soft hemisphere lighting\n"
+            "for high-contrast, journal-cover ready molecular figures."
+        )
+        self.chk_pub_outlines.toggled.connect(
+            lambda chk: setattr(self.viewer, "show_publication_outlines", bool(chk)) or self.viewer.update()
+        )
+        display_layout.addWidget(self.chk_pub_outlines)
+
+        self.chk_axis_triad = QtWidgets.QCheckBox("🧭 Corner Axis Triad")
+        self.chk_axis_triad.setChecked(True)
+        self.chk_axis_triad.setToolTip("Show 3D X/Y/Z orientation triad in the bottom-right corner of the viewport")
+        self.chk_axis_triad.toggled.connect(
+            lambda chk: setattr(self.viewer, "show_axis_triad", bool(chk)) or self.viewer.update()
+        )
+        display_layout.addWidget(self.chk_axis_triad)
+
+        self.chk_scale_bar = QtWidgets.QCheckBox("📏 Scale Bar (Å)")
+        self.chk_scale_bar.setChecked(False)
+        self.chk_scale_bar.setToolTip("Show calibrated physical length scale bar (Å) in the bottom-right corner")
+        self.chk_scale_bar.toggled.connect(
+            lambda chk: setattr(self.viewer, "show_scale_bar", bool(chk)) or self.viewer.update()
+        )
+        display_layout.addWidget(self.chk_scale_bar)
 
         self.btn_clear_surface_ribbon = QtWidgets.QPushButton("✖ Clear Surface (Esc)")
         self.btn_clear_surface_ribbon.setToolTip("Clear any displayed 3D Molecular Orbital / ESP / Density surface (Shortcut: Esc)")
@@ -468,6 +518,14 @@ class UIMixin(UIInspectorTabsMixin):
 
         row2_layout.addStretch()
 
+        self.btn_adopt_traj_frame = QtWidgets.QPushButton("📌 Adopt Frame")
+        self.btn_adopt_traj_frame.setStyleSheet("background-color: #059669; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_adopt_traj_frame.setToolTip(
+            "Chemcraft style: Adopt the currently displayed trajectory/IRC/conformer frame into the editable Z-Matrix table (with Undo)"
+        )
+        self.btn_adopt_traj_frame.clicked.connect(self._on_adopt_trajectory_frame)
+        row2_layout.addWidget(self.btn_adopt_traj_frame)
+
         self.btn_export_traj_movie = QtWidgets.QPushButton("🎬 Export Movie...")
         self.btn_export_traj_movie.setStyleSheet("background-color: #7c3aed; color: #ffffff; padding: 2px 8px; font-weight: bold;")
         self.btn_export_traj_movie.setToolTip("Export molecular optimization or MD trajectory as an animated GIF or MP4/WebM video")
@@ -479,6 +537,18 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_pes_plot.setToolTip("GaussView / newBRORSEN style: Open interactive Potential Energy Surface (PES) Scan & Morse Fit plot")
         self.btn_pes_plot.clicked.connect(self._on_open_pes_plot)
         row2_layout.addWidget(self.btn_pes_plot)
+
+        self.btn_crest_explorer = QtWidgets.QPushButton("🧬 CREST Ensemble...")
+        self.btn_crest_explorer.setStyleSheet("background-color: #0d9488; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_crest_explorer.setToolTip("Open CREST & Conformer Ensemble Explorer (Boltzmann populations, RMSDs, duplicate pruning) (Ctrl+Shift+E)")
+        self.btn_crest_explorer.clicked.connect(self._on_open_crest_explorer)
+        row2_layout.addWidget(self.btn_crest_explorer)
+
+        self.btn_irc_sweeper = QtWidgets.QPushButton("⚛️ IRC Sweeper...")
+        self.btn_irc_sweeper.setStyleSheet("background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_irc_sweeper.setToolTip("Open Interactive IRC Reaction Sweeper & Energy Profile (MEP, activation barriers, landmark jumps) (Ctrl+Shift+I)")
+        self.btn_irc_sweeper.clicked.connect(self._on_open_irc_sweeper)
+        row2_layout.addWidget(self.btn_irc_sweeper)
 
         self.btn_view_loaded_log = QtWidgets.QPushButton("📄 View Log...")
         self.btn_view_loaded_log.setStyleSheet("background-color: #334155; color: #ffffff; padding: 2px 8px; font-weight: bold;")
@@ -720,9 +790,44 @@ class UIMixin(UIInspectorTabsMixin):
         # Tab 2: Raw Text Z-Matrix / Gaussian Format
         tab_raw = QtWidgets.QWidget()
         tab_raw_layout = QtWidgets.QVBoxLayout(tab_raw)
-        self.text_raw_zmat = QtWidgets.QPlainTextEdit()
-        tab_raw_layout.addWidget(QtWidgets.QLabel("Direct Z-Matrix Text (Molden / Gaussian format):"))
+        
+        # Custom subclass or event filter can handle Ctrl+Enter / Shift+Enter
+        class RawZMatPlainTextEdit(QtWidgets.QPlainTextEdit):
+            def __init__(self, main_win, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.main_win = main_win
+
+            def keyPressEvent(self, event: QtGui.QKeyEvent):
+                if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+                    # If Ctrl+Enter, Shift+Enter, or Alt+Enter is pressed, trigger immediate apply!
+                    if event.modifiers() & (
+                        QtCore.Qt.KeyboardModifier.ControlModifier
+                        | QtCore.Qt.KeyboardModifier.ShiftModifier
+                        | QtCore.Qt.KeyboardModifier.AltModifier
+                    ):
+                        self.main_win._on_apply_text_zmat()
+                        event.accept()
+                        return
+                super().keyPressEvent(event)
+
+        self.text_raw_zmat = RawZMatPlainTextEdit(self)
+        self.text_raw_zmat.setPlaceholderText("Enter Z-matrix coordinates or variables...\nPress Ctrl+Enter or Shift+Enter to immediately apply changes.")
+        
+        raw_header_layout = QtWidgets.QHBoxLayout()
+        raw_header_layout.addWidget(QtWidgets.QLabel("Direct Z-Matrix Text (Molden / Gaussian format):"))
+        self.chk_auto_apply_raw = QtWidgets.QCheckBox("Auto-apply changes as you type")
+        self.chk_auto_apply_raw.setChecked(True)
+        self.chk_auto_apply_raw.setToolTip("When checked, valid Z-matrix text changes update the 3D model automatically without having to press any buttons.")
+        raw_header_layout.addWidget(self.chk_auto_apply_raw, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        tab_raw_layout.addLayout(raw_header_layout)
         tab_raw_layout.addWidget(self.text_raw_zmat, stretch=1)
+
+        # Debounced live update timer (e.g. 350ms after user pauses typing)
+        self._raw_zmat_timer = QtCore.QTimer(self)
+        self._raw_zmat_timer.setSingleShot(True)
+        self._raw_zmat_timer.setInterval(350)
+        self._raw_zmat_timer.timeout.connect(self._on_auto_apply_text_zmat)
+        self.text_raw_zmat.textChanged.connect(self._on_raw_zmat_text_changed)
 
         raw_vars_layout = QtWidgets.QHBoxLayout()
         raw_vars_layout.setSpacing(6)
@@ -752,7 +857,9 @@ class UIMixin(UIInspectorTabsMixin):
         btn_save_raw = QtWidgets.QPushButton("💾 Save ZMAT File...")
         btn_save_raw.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
         btn_save_raw.clicked.connect(self._on_save_zmat)
-        btn_apply_raw = QtWidgets.QPushButton("Apply Text Z-Matrix to 3D Model")
+        btn_apply_raw = QtWidgets.QPushButton("⚡ Apply Text Z-Matrix (Ctrl+Enter)")
+        btn_apply_raw.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
+        btn_apply_raw.setToolTip("Apply the raw Z-matrix text to the 3D model and table (Shortcut: Ctrl+Enter or Shift+Enter)")
         btn_apply_raw.clicked.connect(self._on_apply_text_zmat)
         raw_btn_layout.addWidget(btn_open_raw)
         raw_btn_layout.addWidget(btn_save_raw)
@@ -1002,8 +1109,9 @@ class UIMixin(UIInspectorTabsMixin):
         act_open_inp.triggered.connect(self._on_open_brorsen_input_file)
         menu_file.addAction(act_open_inp)
 
-        act_open_smiles = QtGui.QAction("Open from &SMILES / InChI...", self)
-        act_open_smiles.setToolTip("Input a SMILES string (e.g. c1ccccc1) or InChI string to build a 3D structure automatically")
+        act_open_smiles = QtGui.QAction("Build from &Name / SMILES / InChI...", self)
+        act_open_smiles.setShortcut("Ctrl+Shift+B")
+        act_open_smiles.setToolTip("Type a chemical name (e.g. aspirin, caffeine), SMILES (e.g. c1ccccc1), or InChI to build a 3D structure automatically (Ctrl+Shift+B)")
         act_open_smiles.triggered.connect(self._on_prompt_smiles_or_inchi)
         menu_file.addAction(act_open_smiles)
 
@@ -1075,6 +1183,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_export_html.triggered.connect(self._on_export_html)
         menu_file.addAction(act_export_html)
 
+        act_export_bundle = QtGui.QAction("📦 Export Reproducibility Bundle (&ZIP)...", self)
+        act_export_bundle.setShortcut("Ctrl+Shift+S")
+        act_export_bundle.setToolTip("Export complete Supporting Information (SI) package: XYZ, ZMAT, Summary JSON, Methods Markdown, and calculation logs (Ctrl+Shift+S)")
+        act_export_bundle.triggered.connect(self._on_export_reproducibility_bundle)
+        menu_file.addAction(act_export_bundle)
+
         menu_file.addSeparator()
 
         act_prefs = QtGui.QAction("⚙️ &Preferences...", self)
@@ -1128,11 +1242,17 @@ class UIMixin(UIInspectorTabsMixin):
 
         # Copy Identifiers submenu
         menu_copy = menu_edit.addMenu("📋 Copy &Identifier...")
-        act_cp_xyz = QtGui.QAction("Copy as &Cartesian XYZ", self)
-        act_cp_xyz.setShortcut("Ctrl+Shift+C")
-        act_cp_xyz.setToolTip("Copy molecule in standard Cartesian XYZ format to clipboard")
+        act_cp_xyz = QtGui.QAction("Copy as &Cartesian XYZ (with header)", self)
+        act_cp_xyz.setShortcut("Ctrl+Alt+C")
+        act_cp_xyz.setToolTip("Copy molecule in standard Cartesian XYZ format to clipboard (Ctrl+Alt+C)")
         act_cp_xyz.triggered.connect(self._on_copy_as_xyz)
         menu_copy.addAction(act_cp_xyz)
+
+        act_cp_block = QtGui.QAction("Copy &Coordinates Block (No Header — ORCA/Gaussian)", self)
+        act_cp_block.setShortcut("Ctrl+Alt+X")
+        act_cp_block.setToolTip("Copy headerless 'Element X Y Z' coordinates block ready to paste directly into ORCA or Gaussian input files (Ctrl+Alt+X)")
+        act_cp_block.triggered.connect(self._on_copy_coords_block)
+        menu_copy.addAction(act_cp_block)
 
         act_cp_smiles = QtGui.QAction("Copy as &SMILES", self)
         act_cp_smiles.setToolTip("Generate and copy canonical/isomeric SMILES string to clipboard")
@@ -1149,6 +1269,24 @@ class UIMixin(UIInspectorTabsMixin):
         act_cp_inchikey.triggered.connect(self._on_copy_as_inchikey)
         menu_copy.addAction(act_cp_inchikey)
 
+        menu_copy.addSeparator()
+
+        act_cp_si_acs = QtGui.QAction("📑 Copy &Supporting Information (SI — ACS/RSC Block)", self)
+        act_cp_si_acs.setShortcut("Ctrl+Alt+S")
+        act_cp_si_acs.setToolTip("Copy publication-ready Supporting Information block (Formula, Point Group, Energies, N_imag, Coordinates) in ACS/RSC format (Ctrl+Alt+S)")
+        act_cp_si_acs.triggered.connect(lambda: self._on_copy_supporting_info("acs"))
+        menu_copy.addAction(act_cp_si_acs)
+
+        act_cp_si_ltx = QtGui.QAction("📑 Copy Supporting Information (&LaTeX Table)", self)
+        act_cp_si_ltx.setToolTip("Copy publication-ready Supporting Information table in LaTeX format")
+        act_cp_si_ltx.triggered.connect(lambda: self._on_copy_supporting_info("latex"))
+        menu_copy.addAction(act_cp_si_ltx)
+
+        act_cp_si_md = QtGui.QAction("📑 Copy Supporting Information (&Markdown Block)", self)
+        act_cp_si_md.setToolTip("Copy publication-ready Supporting Information entry in Markdown format")
+        act_cp_si_md.triggered.connect(lambda: self._on_copy_supporting_info("markdown"))
+        menu_copy.addAction(act_cp_si_md)
+
         menu_edit.addSeparator()
 
         act_add_line = QtGui.QAction("&Add Atom Line", self)
@@ -1160,8 +1298,8 @@ class UIMixin(UIInspectorTabsMixin):
         menu_edit.addAction(act_del)
 
         act_reorder = QtGui.QAction("&Reorder Z-Matrix (Full)", self)
-        act_reorder.setShortcut("Ctrl+R")
-        act_reorder.setToolTip("Reorder entire Z-Matrix sequentially (Molden ZMEORD)")
+        act_reorder.setShortcut("Ctrl+Shift+R")
+        act_reorder.setToolTip("Reorder entire Z-Matrix sequentially (Molden ZMEORD) (Ctrl+Shift+R)")
         act_reorder.triggered.connect(self._on_reorder_zmat_clicked)
         menu_edit.addAction(act_reorder)
 
@@ -1190,6 +1328,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_add_h.triggered.connect(self._on_add_hydrogens)
         menu_edit.addAction(act_add_h)
 
+        act_cycle_welder = QtGui.QAction("💍 &Weld / Fuse Molecular Rings...", self)
+        act_cycle_welder.setShortcut("Ctrl+Shift+W")
+        act_cycle_welder.setToolTip("Fuse aromatic or saturated rings onto selected bonds, or create bicyclic bridgeheads (Ctrl+Shift+W)")
+        act_cycle_welder.triggered.connect(self._on_open_cycle_welder)
+        menu_edit.addAction(act_cycle_welder)
+
         menu_origin = menu_edit.addMenu("🎯 &Translate to Origin (0, 0, 0)...")
         act_orig_com = QtGui.QAction("Center of Mass to Origin", self)
         act_orig_com.setToolTip("Translate molecule so its center-of-mass is at Cartesian (0, 0, 0)")
@@ -1200,6 +1344,15 @@ class UIMixin(UIInspectorTabsMixin):
         act_orig_anchor.setToolTip("Translate molecule so the currently selected atom is at (0, 0, 0)")
         act_orig_anchor.triggered.connect(lambda: self._center_molecule_to_origin("anchor"))
         menu_origin.addAction(act_orig_anchor)
+
+        act_orient_sym = QtGui.QAction("📐 Orient to &Standard Symmetry Orientation (All Groups)", self)
+        act_orient_sym.setShortcut(QtGui.QKeySequence("Alt+S"))
+        act_orient_sym.setToolTip(
+            "Rigidly rotate and center molecule to standard IUPAC / Schoenflies orientation (Alt+S).\n"
+            "Aligns principal axis (highest Cn) along Z, mirror plane in XZ/XY, and centers COM at (0,0,0)."
+        )
+        act_orient_sym.triggered.connect(self._on_align_symmetry)
+        menu_edit.addAction(act_orient_sym)
 
         menu_invert = menu_edit.addMenu("🔄 &Chirality & Mirror Inversion...")
         act_inv_all = QtGui.QAction("Invert All Coordinates (Enantiomer, -r)", self)
@@ -1347,11 +1500,50 @@ class UIMixin(UIInspectorTabsMixin):
         act_clash.triggered.connect(self._check_and_highlight_steric_clashes)
         menu_tools.addAction(act_clash)
 
+        act_steric_desc = QtGui.QAction("🛡️ Catalysis &Steric && Coordination Descriptors (%V_bur, Sterimol, τ₄/τ₅)...", self)
+        act_steric_desc.setToolTip("Compute SambVca / SEQCROW Percent Buried Volume (%V_bur), Verloop Sterimol (L, B1, B5), Tolman Cone Angle, and Coordination Geometry Indices (τ₄, τ₄', τ₅, Σ)")
+        act_steric_desc.triggered.connect(self._on_open_steric_descriptors_dialog)
+        menu_tools.addAction(act_steric_desc)
+
+        act_ring_homa = QtGui.QAction("💍 &Ring Aromaticity (HOMA Index) && Planarity Inspector...", self)
+        act_ring_homa.setToolTip("Compute Kruszewski–Krygowski HOMA aromaticity index, Hückel π-electron count, and ring planarity RMSD for all rings")
+        act_ring_homa.triggered.connect(self._on_open_ring_aromaticity_dialog)
+        menu_tools.addAction(act_ring_homa)
+
+        act_iso_kie = QtGui.QAction("⚗️ &Isotopologue Vibrational Shift && KIE Calculator...", self)
+        act_iso_kie.setToolTip("Substitute isotopes (H→D, ¹²C→¹³C, ¹⁶O→¹⁸O) and compute frequency shifts Δν, ΔZPE, and Kinetic Isotope Effects (k_H/k_D)")
+        act_iso_kie.triggered.connect(self._on_open_isotopologue_dialog)
+        menu_tools.addAction(act_iso_kie)
+
         act_overlay = QtGui.QAction("🔬 &Compare & Align Structures (RMSD Overlay)...", self)
         act_overlay.setShortcut("Ctrl+Shift+A")
         act_overlay.setToolTip("Superimpose two structures with Kabsch SVD alignment and calculate all-atom/heavy-atom RMSD")
         act_overlay.triggered.connect(self._on_open_structure_overlay)
         menu_tools.addAction(act_overlay)
+
+        act_benchmark = QtGui.QAction("⚖️ Cross-Engine &Benchmark & Result Comparison...", self)
+        act_benchmark.setShortcut("Ctrl+Shift+M")
+        act_benchmark.setToolTip("Compare multiple calculation logs side-by-side across Gaussian, ORCA, PySCF, and xTB (energetics, ΔE, frontier gap, and Kabsch SVD RMSD matrix) (Ctrl+Shift+M)")
+        act_benchmark.triggered.connect(self._on_open_benchmark_dialog)
+        menu_tools.addAction(act_benchmark)
+
+        act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
+        act_ts_builder.setShortcut("Ctrl+Shift+T")
+        act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
+        act_ts_builder.triggered.connect(self._on_open_reaction_path_dialog)
+        menu_tools.addAction(act_ts_builder)
+
+        act_crest_explorer = QtGui.QAction("🧬 &CREST && Conformer Ensemble Explorer (Boltzmann, RMSD, Overlays)...", self)
+        act_crest_explorer.setShortcut("Ctrl+Shift+E")
+        act_crest_explorer.setToolTip("Explore, rank, and analyze conformer ensembles with Boltzmann populations, Kabsch RMSDs, duplicate pruning, and batch QM generation (Ctrl+Shift+E)")
+        act_crest_explorer.triggered.connect(self._on_open_crest_explorer)
+        menu_tools.addAction(act_crest_explorer)
+
+        act_irc_sweeper = QtGui.QAction("⚛️ Interactive &IRC Reaction Sweeper & Energy Profile (MEP)...", self)
+        act_irc_sweeper.setShortcut("Ctrl+Shift+I")
+        act_irc_sweeper.setToolTip("Explore, scrub, and analyze Intrinsic Reaction Coordinate (IRC) Minimum Energy Pathways (MEP) with activation barriers, landmark jumps, and live 3D sync (Ctrl+Shift+I)")
+        act_irc_sweeper.triggered.connect(self._on_open_irc_sweeper)
+        menu_tools.addAction(act_irc_sweeper)
 
         act_esp_2d = QtGui.QAction("2D Electrostatic &Potential (ESP) Slicer...", self)
         act_esp_2d.setToolTip("Open Molden file and plot 2D ESP slice contour maps on XY, XZ, or YZ planes")
@@ -1367,6 +1559,20 @@ class UIMixin(UIInspectorTabsMixin):
         act_multiwfn.setToolTip("Run Multiwfn Mayer/Wiberg bond orders, Conceptual DFT Fukui indices, QTAIM critical points, and CM5 charges")
         act_multiwfn.triggered.connect(self._on_open_multiwfn_dialog)
         menu_tools.addAction(act_multiwfn)
+
+        act_nbo = QtGui.QAction("🧪 &NBO Donor–Acceptor Interaction Analyzer...", self)
+        act_nbo.setShortcut("Ctrl+Shift+N")
+        act_nbo.setToolTip("Inspect Natural Bond Orbital (NBO) second-order perturbation donor-acceptor interactions (E(2), n→σ*, hyperconjugation) (Ctrl+Shift+N)")
+        act_nbo.triggered.connect(self._on_open_nbo_dialog)
+        menu_tools.addAction(act_nbo)
+
+        menu_tools.addSeparator()
+
+        act_plugins = QtGui.QAction("🐍 &Python Script & Plugin Runner...", self)
+        act_plugins.setShortcut("Ctrl+Shift+Y")
+        act_plugins.setToolTip("Run custom Python scripts or load user plugins from ~/.agymolden/plugins/ (Ctrl+Shift+Y)")
+        act_plugins.triggered.connect(self._on_open_script_runner)
+        menu_tools.addAction(act_plugins)
 
         # View Menu
         menu_view = menubar.addMenu("&View")
@@ -1392,36 +1598,157 @@ class UIMixin(UIInspectorTabsMixin):
         act_toggle_measure = QtGui.QAction("📏 Show 3D &Measurement Overlays", self)
         act_toggle_measure.setCheckable(True)
         act_toggle_measure.setChecked(True)
-        act_toggle_measure.setShortcut("Ctrl+M")
-        act_toggle_measure.setToolTip("Toggle 3D floating distance, angle, and dihedral measurements over selected atoms")
+        act_toggle_measure.setShortcut("Alt+M")
+        act_toggle_measure.setToolTip("Toggle 3D floating distance, angle, and dihedral measurements over selected atoms (Alt+M)")
         def _toggle_meas(checked):
             self.viewer.show_measurements = checked
             self.viewer.update()
         act_toggle_measure.triggered.connect(_toggle_meas)
         menu_view.addAction(act_toggle_measure)
 
-        act_reset_cam = QtGui.QAction("Reset Camera View", self)
+        self.act_all_bond_lengths = QtGui.QAction("📐 Show All &Bond Lengths (Chemcraft Style)", self)
+        self.act_all_bond_lengths.setCheckable(True)
+        self.act_all_bond_lengths.setChecked(False)
+        self.act_all_bond_lengths.setShortcut("Alt+Shift+B")
+        self.act_all_bond_lengths.setToolTip("Toggle 3D bond length overlays (Å) on all covalent bonds (Alt+Shift+B)")
+        def _toggle_all_bl(checked):
+            self.viewer.show_bond_lengths = bool(checked)
+            if hasattr(self, "chk_bond_lengths"):
+                self.chk_bond_lengths.blockSignals(True)
+                self.chk_bond_lengths.setChecked(bool(checked))
+                self.chk_bond_lengths.blockSignals(False)
+            self.viewer.update()
+        self.act_all_bond_lengths.triggered.connect(_toggle_all_bl)
+        menu_view.addAction(self.act_all_bond_lengths)
+
+        act_pub_outlines = QtGui.QAction("🎨 Publication Silhouette &Outlines (IboView / QuteMol Style)", self)
+        act_pub_outlines.setCheckable(True)
+        act_pub_outlines.setChecked(False)
+        act_pub_outlines.setToolTip("Render crisp ink silhouette outlines and hemisphere lighting for publication figures")
+        def _toggle_pub_out(checked):
+            self.viewer.show_publication_outlines = bool(checked)
+            if hasattr(self, "chk_pub_outlines"):
+                self.chk_pub_outlines.blockSignals(True)
+                self.chk_pub_outlines.setChecked(bool(checked))
+                self.chk_pub_outlines.blockSignals(False)
+            self.viewer.update()
+        act_pub_outlines.triggered.connect(_toggle_pub_out)
+        menu_view.addAction(act_pub_outlines)
+
+        menu_view.addSeparator()
+
+        # Journal Figure Presets Submenu
+        menu_journal = menu_view.addMenu("🎨 &Journal Figure Presets...")
+        act_pjacs = QtGui.QAction("📄 &JACS / ACS Pastel (Clean White, Ink Outlines)", self)
+        act_pjacs.setShortcut("Ctrl+Alt+1")
+        act_pjacs.setToolTip("Publication preset: clean white canvas, ink silhouette rim, soft diffuse shading (Ctrl+Alt+1)")
+        act_pjacs.triggered.connect(lambda: self.apply_journal_preset("jacs"))
+        menu_journal.addAction(act_pjacs)
+
+        act_pnature = QtGui.QAction("✨ &Nature / Wiley Glossy (Specular Phong, White BG)", self)
+        act_pnature.setShortcut("Ctrl+Alt+2")
+        act_pnature.setToolTip("Publication preset: white canvas, crisp specular Phong highlights (Ctrl+Alt+2)")
+        act_pnature.triggered.connect(lambda: self.apply_journal_preset("nature"))
+        menu_journal.addAction(act_pnature)
+
+        act_pangew = QtGui.QAction("💎 &Angewandte Bold (High Contrast Outlines)", self)
+        act_pangew.setShortcut("Ctrl+Alt+3")
+        act_pangew.setToolTip("Publication preset: white canvas with bold silhouette outlines and vivid contrast (Ctrl+Alt+3)")
+        act_pangew.triggered.connect(lambda: self.apply_journal_preset("angewandte"))
+        menu_journal.addAction(act_pangew)
+
+        act_pmono = QtGui.QAction("🖨️ &Monochrome Print (Grayscale Manuscript)", self)
+        act_pmono.setShortcut("Ctrl+Alt+4")
+        act_pmono.setToolTip("Publication preset: white canvas, ink outlines for black & white print manuscripts (Ctrl+Alt+4)")
+        act_pmono.triggered.connect(lambda: self.apply_journal_preset("monochrome"))
+        menu_journal.addAction(act_pmono)
+
+        act_pdark = QtGui.QAction("🌙 &Dark Presentation (Modern Deep Slate)", self)
+        act_pdark.setShortcut("Ctrl+Alt+5")
+        act_pdark.setToolTip("Presentation preset: deep slate background with vibrant emissive atom colors (Ctrl+Alt+5)")
+        act_pdark.triggered.connect(lambda: self.apply_journal_preset("dark"))
+        menu_journal.addAction(act_pdark)
+
+        # Camera Projections Submenu
+        menu_projections = menu_view.addMenu("📷 &Camera Projections && Alignments...")
+        act_cam_xy = QtGui.QAction("Snap to &XY Plane (Top View, +Z)", self)
+        act_cam_xy.setShortcut("Ctrl+1")
+        act_cam_xy.setToolTip("Snap 3D camera to look directly onto the XY Cartesian plane (Ctrl+1)")
+        act_cam_xy.triggered.connect(lambda: self.viewer.set_camera_plane_view("XY"))
+        menu_projections.addAction(act_cam_xy)
+
+        act_cam_xz = QtGui.QAction("Snap to &XZ Plane (Front View, +Y)", self)
+        act_cam_xz.setShortcut("Ctrl+2")
+        act_cam_xz.setToolTip("Snap 3D camera to look directly onto the XZ Cartesian plane (Ctrl+2)")
+        act_cam_xz.triggered.connect(lambda: self.viewer.set_camera_plane_view("XZ"))
+        menu_projections.addAction(act_cam_xz)
+
+        act_cam_yz = QtGui.QAction("Snap to &YZ Plane (Side View, +X)", self)
+        act_cam_yz.setShortcut("Ctrl+3")
+        act_cam_yz.setToolTip("Snap 3D camera to look directly onto the YZ Cartesian plane (Ctrl+3)")
+        act_cam_yz.triggered.connect(lambda: self.viewer.set_camera_plane_view("YZ"))
+        menu_projections.addAction(act_cam_yz)
+
+        menu_projections.addSeparator()
+
+        act_cam_axes = QtGui.QAction("Align to &Principal Inertial Axes", self)
+        act_cam_axes.setShortcut("Alt+I")
+        act_cam_axes.setToolTip("Align camera view to look along the molecule's Principal Inertial Axes (Alt+I)")
+        act_cam_axes.triggered.connect(self.viewer.align_to_principal_axes)
+        menu_projections.addAction(act_cam_axes)
+
+        act_cam_flip = QtGui.QAction("&Flip Camera 180° (Opposite Face)", self)
+        act_cam_flip.setShortcut("Alt+F")
+        act_cam_flip.setToolTip("Flip 3D camera 180 degrees horizontally to view opposite side (Alt+F)")
+        act_cam_flip.triggered.connect(self.viewer.flip_camera_180)
+        menu_projections.addAction(act_cam_flip)
+
+        act_cam_ortho = QtGui.QAction("Toggle &Perspective / Orthographic Projection", self)
+        act_cam_ortho.setShortcut("Alt+P")
+        act_cam_ortho.setToolTip("Switch between perspective and orthographic (parallel) projection (Alt+P)")
+        act_cam_ortho.triggered.connect(self.viewer.toggle_orthographic)
+        menu_projections.addAction(act_cam_ortho)
+
+        act_reset_cam = QtGui.QAction("&Reset Camera View", self)
         act_reset_cam.setShortcut("Space")
         act_reset_cam.triggered.connect(self.viewer.auto_center)
+        menu_projections.addAction(act_reset_cam)
         menu_view.addAction(act_reset_cam)
 
         # Help Menu
         menu_help = menubar.addMenu("&Help")
+
+        self.act_command_palette = QtGui.QAction("🚀 Quick &Command Palette...", self)
+        self.act_command_palette.setShortcut("Ctrl+Shift+P")
+        self.act_command_palette.setToolTip("Instant searchable command palette for all 60+ AgyMolden tools and actions (Ctrl+Shift+P)")
+        self.act_command_palette.triggered.connect(self._on_open_command_palette)
+        menu_help.addAction(self.act_command_palette)
+        menu_help.addSeparator()
+
         act_about = QtGui.QAction("&About AgyMolden", self)
         act_about.triggered.connect(self._on_about)
         menu_help.addAction(act_about)
 
-        act_shortcuts = QtGui.QAction("&Keyboard && Mouse Shortcuts", self)
+        act_shortcuts = QtGui.QAction("⌨️ &Keyboard && Mouse Shortcuts", self)
+        act_shortcuts.setShortcut("F1")
+        act_shortcuts.setToolTip("Show searchable cheat sheet of all keyboard and mouse shortcuts (F1 / ?)")
         act_shortcuts.triggered.connect(self._on_show_shortcuts)
         menu_help.addAction(act_shortcuts)
 
-        act_manual = QtGui.QAction("Open User &Manual", self)
-        act_manual.setShortcut("F1")
+        act_view_log = QtGui.QAction("📋 View Diagnostic &Log (agymolden.log)...", self)
+        act_view_log.setShortcut("F3")
+        act_view_log.setToolTip("Inspect internal session log file for troubleshooting and error reporting (F3)")
+        act_view_log.triggered.connect(self._on_view_diagnostic_log)
+        menu_help.addAction(act_view_log)
+
+        act_manual = QtGui.QAction("📖 Open Full User &Manual...", self)
+        act_manual.setShortcut("Shift+F1")
         act_manual.triggered.connect(self._on_open_manual)
         menu_help.addAction(act_manual)
 
     def _create_toolbar(self):
         toolbar = QtWidgets.QToolBar("Main Controls")
+        toolbar.setObjectName("MainControlsToolbar")
         toolbar.setIconSize(QtCore.QSize(18, 18))
         self.addToolBar(toolbar)
 
@@ -1537,5 +1864,96 @@ class UIMixin(UIInspectorTabsMixin):
         self.lbl_chem_summary = QtWidgets.QLabel("Empty Molecule")
         self.lbl_chem_summary.setStyleSheet("color: #38bdf8; font-weight: bold; padding: 0 10px;")
         self.statusBar().addPermanentWidget(self.lbl_chem_summary)
+
+    def _collect_command_palette_actions(self) -> List[Tuple[str, str, QtGui.QAction]]:
+        """Collect all menu actions as (clean_label, shortcut_str, QAction) tuples for the Command Palette."""
+        items: List[Tuple[str, str, QtGui.QAction]] = []
+        seen = set()
+        for act in self.findChildren(QtGui.QAction):
+            if act.isSeparator() or act.menu() is not None:
+                continue
+            raw_txt = act.text() or ""
+            clean_txt = raw_txt.replace("&&", "\x00").replace("&", "").replace("\x00", "&").strip()
+            if not clean_txt or clean_txt.startswith("(No recent") or clean_txt in seen:
+                continue
+            seen.add(clean_txt)
+            sc = act.shortcut().toString() if not act.shortcut().isEmpty() else ""
+            items.append((clean_txt, sc, act))
+        return items
+
+    def _on_open_command_palette(self):
+        """Open a fast, searchable Quick Command Palette (Ctrl+Shift+P) to trigger any AgyMolden tool or action."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("🚀 Quick Command Palette (Ctrl+Shift+P)")
+        dlg.resize(560, 400)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        search_edit = QtWidgets.QLineEdit()
+        search_edit.setPlaceholderText("🔍 Type a command (e.g. 'orca', 'symmetry', 'smiles', 'esp', 'outline', 'copy')...")
+        layout.addWidget(search_edit)
+
+        list_widget = QtWidgets.QListWidget()
+        list_widget.setAlternatingRowColors(True)
+        layout.addWidget(list_widget, stretch=1)
+
+        all_items = self._collect_command_palette_actions()
+
+        def _populate(query: str = ""):
+            q_tokens = query.strip().lower().split()
+            list_widget.clear()
+            for label, sc, act in all_items:
+                tip = (act.toolTip() or "").lower()
+                haystack = f"{label.lower()} {sc.lower()} {tip}"
+                if all(tok in haystack for tok in q_tokens):
+                    disp = f"{label}   [{sc}]" if sc else label
+                    item = QtWidgets.QListWidgetItem(disp)
+                    if act.toolTip():
+                        item.setToolTip(act.toolTip())
+                    item.setData(QtCore.Qt.ItemDataRole.UserRole, act)
+                    if not act.isEnabled():
+                        item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
+                    list_widget.addItem(item)
+            if list_widget.count() > 0:
+                list_widget.setCurrentRow(0)
+
+        def _trigger_selected():
+            cur = list_widget.currentItem()
+            if cur is None:
+                return
+            act = cur.data(QtCore.Qt.ItemDataRole.UserRole)
+            if isinstance(act, QtGui.QAction) and act.isEnabled():
+                dlg.accept()
+                QtCore.QTimer.singleShot(0, act.trigger)
+
+        class SearchKeyFilter(QtCore.QObject):
+            def eventFilter(self, obj, ev):
+                if ev.type() == QtCore.QEvent.Type.KeyPress:
+                    if ev.key() == QtCore.Qt.Key.Key_Down:
+                        c_row = list_widget.currentRow()
+                        if c_row < list_widget.count() - 1:
+                            list_widget.setCurrentRow(c_row + 1)
+                        return True
+                    elif ev.key() == QtCore.Qt.Key.Key_Up:
+                        c_row = list_widget.currentRow()
+                        if c_row > 0:
+                            list_widget.setCurrentRow(c_row - 1)
+                        return True
+                    elif ev.key() == QtCore.Qt.Key.Key_Escape:
+                        dlg.reject()
+                        return True
+                return super().eventFilter(obj, ev)
+
+        search_key_filter = SearchKeyFilter(search_edit)
+        search_edit.installEventFilter(search_key_filter)
+
+        search_edit.textChanged.connect(_populate)
+        search_edit.returnPressed.connect(_trigger_selected)
+        list_widget.itemActivated.connect(lambda _item: _trigger_selected())
+
+        _populate()
+        search_edit.setFocus()
+        dlg.exec()
 
     # Core logic

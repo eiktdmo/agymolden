@@ -127,6 +127,13 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
         # 3. Bottom Action Buttons
         bot_bar = QtWidgets.QHBoxLayout()
+
+        self.btn_doctor = QtWidgets.QPushButton("🩺 QC Doctor Diagnose & Fix")
+        self.btn_doctor.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
+        self.btn_doctor.setToolTip("Scan this output log with QC Doctor to detect convergence failures, errors, and remedies.")
+        self.btn_doctor.clicked.connect(self._on_qc_doctor_clicked)
+        bot_bar.addWidget(self.btn_doctor)
+
         btn_copy = QtWidgets.QPushButton("📋 Copy All to Clipboard")
         btn_copy.clicked.connect(self._on_copy_all)
         bot_bar.addWidget(btn_copy)
@@ -317,6 +324,32 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
     def _on_copy_all(self):
         QtWidgets.QApplication.clipboard().setText(self.txt_viewer.toPlainText())
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied entire output log to clipboard!", self)
+
+    def _on_qc_doctor_clicked(self):
+        """Analyze the current output file with QC Doctor."""
+        from agymolden.calc_runner.diagnostics import diagnose_qm_error
+        raw_text = self.txt_viewer.toPlainText()
+        if not raw_text.strip():
+            QtWidgets.QMessageBox.information(self, "QC Doctor", "No log output is loaded to analyze.")
+            return
+
+        diag = diagnose_qm_error(raw_text)
+        if diag:
+            msg_box = QtWidgets.QMessageBox(self)
+            msg_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            msg_box.setWindowTitle(f"QC Doctor: {diag.title}")
+            msg_box.setText(f"<b>🩺 QC Doctor Diagnosis:</b><br><h3>{diag.title}</h3><p>{diag.summary}</p>")
+            msg_box.setInformativeText(f"<b>Recommended Fix / Recovery Strategy:</b>\n{diag.remedy}")
+            msg_box.setDetailedText(raw_text[-2500:] if len(raw_text) > 2500 else raw_text)
+            msg_box.exec()
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                "QC Doctor",
+                "<b>🩺 QC Doctor Diagnosis:</b><br><br>"
+                "No critical convergence failures, allocation crashes, or fatal syntax errors detected.<br>"
+                "The calculation appears normal or healthy!"
+            )
 
     def _on_open_external(self):
         if self.file_path and os.path.isfile(self.file_path):

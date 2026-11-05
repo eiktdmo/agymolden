@@ -68,9 +68,17 @@ class OrcaRunner(BaseCalcRunner):
             self._out_fh = None
 
         # Parse route command (allows user-specified custom binary or wrapper such as mpirun)
+        # Note: ORCA requires its full absolute path when running parallel (%pal nprocs N) jobs!
         route_cmd = (self.orca_bin or "orca").split()
         exec_bin = route_cmd[0]
-        extra_args = route_cmd[1:]
+        if not os.path.isabs(exec_bin):
+            resolved = shutil.which(exec_bin)
+            if resolved:
+                exec_bin = os.path.abspath(resolved)
+        extra_args = [
+            (os.path.abspath(shutil.which(tok)) if (tok.endswith("orca") and not os.path.isabs(tok) and shutil.which(tok)) else tok)
+            for tok in route_cmd[1:]
+        ]
         args = extra_args + [self.input_file]
         self._setup_process(exec_bin, args, self.work_dir)
         self._set_status(JobStatus.RUNNING, f"Running ORCA on {os.path.basename(input_file)}...")

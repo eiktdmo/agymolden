@@ -39,7 +39,8 @@ class ESP2DContourDialog(QtWidgets.QDialog):
                 self._load_wavefunction()
             except ImportError as exc:
                 from .multiwfn_analysis import friendly_error_text
-                QtWidgets.QMessageBox.warning(parent, "PySCF Required", friendly_error_text(exc))
+                if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("QT_QPA_PLATFORM") == "offscreen"):
+                    QtWidgets.QMessageBox.warning(parent, "PySCF Required", friendly_error_text(exc))
                 self.molden_path = None
         self._init_ui()
         self._recompute_and_plot()

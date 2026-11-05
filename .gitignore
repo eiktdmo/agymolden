@@ -23,6 +23,8 @@ dist/
 # Large calculation output files & scratch
 *.cube
 *.out
+*.chk
+*.zip
 *profile.txt
 *summary.txt
 *_checkpoint.xyz

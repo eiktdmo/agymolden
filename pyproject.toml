@@ -5,10 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agymolden"
 dynamic = ["version"]
-description = "AgyMolden - Molden-inspired 3D Z-Matrix molecular builder"
+description = "AgyMolden - Molden-inspired 3D Z-Matrix molecular builder & quantum chemistry suite"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = { text = "MIT" }
+authors = [
+    { name = "AgyMolden Developers" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 dependencies = [
     "PyQt6>=6.4",
     "PyOpenGL>=3.1",
@@ -23,6 +38,7 @@ dependencies = [
 all = [
     "rdkit>=2022.03",
     "basis_set_exchange>=0.9",
+    "pyscf>=2.0; sys_platform != 'win32'",
 ]
 qm = [
     "pyscf>=2.0; sys_platform != 'win32'",
@@ -36,6 +52,7 @@ agymolden = "agymolden:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["agymolden*"]
+exclude = ["*.pyc", "__pycache__*", "tests*", "dist*", "build*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "agymolden.__version__" }

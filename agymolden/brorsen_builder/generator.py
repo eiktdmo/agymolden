@@ -292,8 +292,9 @@ class BrorsenInputGenerator:
         Parse .inp file text into BrorsenStage list and extracted geometry.
         Returns (stages, geom_info).
         """
+        # Split on %next, %newjob, or tolerant Latin keyboard Shift+5 mistype '5next' / '5newjob'
         raw_blocks = re.split(
-            r'^\s*(?:%(?:next|newjob)\b|#\s*Stage\s+\d+\s*:[^\n]*)',
+            r'^\s*(?:%(?:next|newjob)\b|5(?:next|newjob)\b|#\s*Stage\s+\d+\s*:[^\n]*)',
             text,
             flags=re.MULTILINE | re.IGNORECASE,
         )

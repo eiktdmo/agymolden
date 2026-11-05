@@ -73,3 +73,45 @@ def test_parse_smiles_and_inchi_to_3d():
     assert "O" in syms_eth
     assert coords_eth.shape == (9, 3)
 
+
+def test_chemical_name_to_3d():
+    from agymolden.chem_identifiers import parse_smiles_or_inchi_to_3d
+    # Test resolving chemical names (works both online and offline via fallback dictionary)
+    syms, coords, bonds, bo = parse_smiles_or_inchi_to_3d("aspirin")
+    assert len(syms) == 21
+    assert "C" in syms and "O" in syms and "H" in syms
+    assert coords.shape == (21, 3)
+    assert len(bonds) >= 20
+
+
+def test_uv_vis_spectrum_multi_units(qapp):
+    from agymolden.spectrum_widget import calculate_uv_vis_spectrum, UVVisSpectrumWidget
+    wls = [340.0, 420.0, 510.0]
+    oscs = [0.15, 0.45, 0.08]
+
+    # 1. Wavelength (nm)
+    x_nm, c_nm = calculate_uv_vis_spectrum(wls, oscs, fwhm=25.0, unit="nm", profile="gaussian")
+    assert len(x_nm) == 1200
+    assert float(np.max(c_nm)) > 0.0
+
+    # 2. Energy (eV) + Lorentzian
+    x_ev, c_ev = calculate_uv_vis_spectrum(wls, oscs, fwhm=0.25, unit="eV", profile="lorentzian")
+    assert len(x_ev) == 1200
+    assert float(np.max(c_ev)) > 0.0
+
+    # 3. Wavenumbers (cm^-1)
+    x_cm, c_cm = calculate_uv_vis_spectrum(wls, oscs, fwhm=2000.0, unit="cm-1", profile="gaussian")
+    assert len(x_cm) == 1200
+    assert float(np.max(c_cm)) > 0.0
+
+    # 4. Widget headless operations
+    w = UVVisSpectrumWidget()
+    w.set_uv_vis_data(wls, oscs)
+    assert len(w.wavelengths) == 3
+    w._on_unit_changed(1) # eV
+    assert w.current_unit == "eV"
+    w._on_profile_changed(1) # Lorentzian
+    assert w.current_profile == "lorentzian"
+    csv = w.get_csv_string()
+    assert "X_eV" in csv
+

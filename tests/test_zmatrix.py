@@ -19,6 +19,8 @@ from agymolden.topology import form_single_bond
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples")
+from agymolden import workers
+workers.SYNCHRONOUS = True
 
 
 class TestZMatrix(unittest.TestCase):

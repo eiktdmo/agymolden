@@ -112,6 +112,7 @@ H 3 1 0.000000 -1.437500 -0.887000
 
 
 def test_evaluate_molden_orbital_grid_symmetry():
+    pytest.importorskip("pyscf")
     import os
     from agymolden.volumetric import evaluate_molden_orbital_grid, extract_isosurface
 
@@ -141,6 +142,7 @@ def test_evaluate_molden_orbital_grid_symmetry():
 
 def test_advanced_wavefunction_analyses():
     """Verify ESP with extrema, NCI/RDG, ALIE, and MO decomposition."""
+    pytest.importorskip("pyscf")
     import os
     from agymolden.volumetric import (
         compute_molden_esp_mapped_density,
@@ -177,5 +179,74 @@ def test_advanced_wavefunction_analyses():
     decomp = compute_molden_orbital_decomposition(sample, orbital_index=12)
     assert len(decomp) > 0
     assert decomp[0]["percentage"] > 0.0
+
+
+def test_unrestricted_beta_orbital_evaluation_and_decomposition():
+    """Verify UHF/UKS Molden files with Alpha and Beta spin channels select mo_coeff[1] for Beta orbitals."""
+    pytest.importorskip("pyscf")
+    from agymolden.volumetric import (
+        evaluate_molden_orbital_grid,
+        compute_molden_orbital_decomposition,
+    )
+
+    uhf_molden = """[Molden Format]
+[Title]
+UHF H2 Test
+[Atoms] (AU)
+H 1 1 0.000000 0.000000 -0.700000
+H 2 1 0.000000 0.000000  0.700000
+[GTO]
+  1 0
+ s    1 1.00
+      0.5000000000D+00  0.1000000000D+01
+
+  2 0
+ s    1 1.00
+      0.5000000000D+00  0.1000000000D+01
+
+[MO]
+ Sym= 1a
+ Ene= -0.5000
+ Spin= Alpha
+ Occup= 1.000000
+   1   1.000000
+   2   0.000000
+ Sym= 2a
+ Ene= 0.2000
+ Spin= Alpha
+ Occup= 0.000000
+   1   0.000000
+   2   1.000000
+ Sym= 1b
+ Ene= -0.4500
+ Spin= Beta
+ Occup= 1.000000
+   1   0.000000
+   2   1.000000
+ Sym= 2b
+ Ene= 0.2500
+ Spin= Beta
+ Occup= 0.000000
+   1   1.000000
+   2   0.000000
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".molden", delete=False) as f:
+        f.write(uhf_molden)
+        path = f.name
+
+    # Orbital 0 (Alpha #1) is localized on Atom 1 (z < 0); Orbital 2 (Beta #1) is localized on Atom 2 (z > 0)
+    vol_alpha = evaluate_molden_orbital_grid(path, orbital_index=0, nx=12, ny=12, nz=12)
+    vol_beta = evaluate_molden_orbital_grid(path, orbital_index=2, nx=12, ny=12, nz=12)
+    assert vol_alpha is not None and vol_beta is not None
+    assert "[Alpha]" in vol_alpha.title
+    assert "[Beta]" in vol_beta.title
+    assert not np.allclose(vol_alpha.grid_data, vol_beta.grid_data)
+
+    decomp_alpha = compute_molden_orbital_decomposition(path, orbital_index=0)
+    decomp_beta = compute_molden_orbital_decomposition(path, orbital_index=2)
+    assert len(decomp_alpha) == 2 and len(decomp_beta) == 2
+    assert decomp_alpha[0]["atom_idx"] == 0
+    assert decomp_beta[0]["atom_idx"] == 1
+
 
 

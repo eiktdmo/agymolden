@@ -192,3 +192,113 @@ def find_delocalized_bonds(
             for o in t_oxy:
                 out.setdefault(_norm(c, o), None)
     return out
+
+
+# Kruszewski-Krygowski HOMA (Harmonic Oscillator Model of Aromaticity) parameters:
+# Pair -> (R_opt in Angstrom, normalization alpha in Angstrom^-2)
+# Ref: Krygowski, J. Chem. Inf. Comput. Sci. 1993, 33, 70-78.
+HOMA_PARAMETERS: Dict[Tuple[str, str], Tuple[float, float]] = {
+    ("C", "C"): (1.388, 257.7),
+    ("C", "N"): (1.334, 93.52),
+    ("C", "O"): (1.265, 157.38),
+    ("C", "P"): (1.698, 118.91),
+    ("C", "S"): (1.677, 94.09),
+    ("N", "N"): (1.309, 130.33),
+    ("N", "O"): (1.248, 57.21),
+}
+
+
+def compute_ring_homa_and_planarity(
+    symbols: List[str],
+    coords: np.ndarray,
+    bonds: Iterable[Bond],
+    bond_orders: Optional[Dict[Bond, int]] = None,
+) -> List[Dict[str, object]]:
+    """
+    Analyze all rings (3 to 8 atoms) in the molecule and compute:
+      - Kruszewski-Krygowski HOMA aromaticity index: HOMA = 1 - (1/n) * sum_i alpha_i * (R_opt,i - R_i)^2
+        (HOMA ~ 1.00 for ideal benzene, ~ 0.0 for non-aromatic, < 0.0 for anti-aromatic)
+      - RMSD and Max out-of-plane deviation (Å) from the least-squares ring plane
+      - Hückel pi-electron count and classification ('Aromatic', 'Moderately Aromatic', 'Non-Aromatic', 'Anti-Aromatic')
+    """
+    n = len(symbols)
+    if n < 3 or len(coords) != n:
+        return []
+    coords_arr = np.asarray(coords, dtype=np.float64)
+    norm_bonds = [_norm(u, v) for u, v in bonds]
+    orders = {_norm(*k): v for k, v in (bond_orders or {}).items()}
+    nbrs: Dict[int, Set[int]] = {i: set() for i in range(n)}
+    for u, v in norm_bonds:
+        nbrs[u].add(v)
+        nbrs[v].add(u)
+
+    all_rings = find_rings(n, norm_bonds, max_size=8)
+    arom_set = {frozenset(r) for r in find_aromatic_rings(symbols, coords_arr, norm_bonds, bond_orders)}
+
+    results: List[Dict[str, object]] = []
+    for ring_idx, ring in enumerate(all_rings):
+        m = len(ring)
+        pts = coords_arr[list(ring)]
+        centered = pts - pts.mean(axis=0)
+        _, _, vt = np.linalg.svd(centered, full_matrices=False)
+        devs = np.abs(centered @ vt[-1])
+        rmsd_plane = float(np.sqrt(np.mean(devs ** 2)))
+        max_dev = float(np.max(devs))
+
+        # Bond lengths around the cycle and HOMA sum
+        bond_lengths: List[float] = []
+        homa_terms: List[float] = []
+        valid_homa = True
+        for k in range(m):
+            u = ring[k]
+            v = ring[(k + 1) % m]
+            r_uv = float(np.linalg.norm(coords_arr[u] - coords_arr[v]))
+            bond_lengths.append(r_uv)
+            pair = (symbols[u], symbols[v]) if symbols[u] <= symbols[v] else (symbols[v], symbols[u])
+            if pair in HOMA_PARAMETERS:
+                r_opt, alpha = HOMA_PARAMETERS[pair]
+                homa_terms.append(alpha * ((r_opt - r_uv) ** 2))
+            else:
+                valid_homa = False
+
+        homa_val: Optional[float] = None
+        if valid_homa and homa_terms:
+            homa_val = round(float(1.0 - (sum(homa_terms) / len(homa_terms))), 4)
+
+        # Pi electron count
+        rset = set(ring)
+        pi_sum = 0
+        pi_ok = True
+        for a in ring:
+            e = _pi_electrons(a, symbols[a], nbrs[a], symbols, rset, orders)
+            if e is None:
+                pi_ok = False
+                break
+            pi_sum += e
+
+        is_huckel = frozenset(ring) in arom_set
+        if homa_val is not None and homa_val >= 0.75 and max_dev <= 0.25:
+            status = "Strongly Aromatic (Hückel/HOMA)"
+        elif is_huckel or (homa_val is not None and homa_val >= 0.40 and max_dev <= 0.30):
+            status = "Aromatic / Delocalized"
+        elif homa_val is not None and homa_val < -0.20:
+            status = "Anti-Aromatic / Bond-Alternating"
+        else:
+            status = "Aliphatic / Non-Aromatic"
+
+        ring_label = "-".join(f"{symbols[a]}{a + 1}" for a in ring)
+        results.append({
+            "ring_index": ring_idx + 1,
+            "atoms": ring,
+            "size": m,
+            "label": ring_label,
+            "homa": homa_val,
+            "mean_bond_ang": round(float(np.mean(bond_lengths)), 4),
+            "bond_diff_max_ang": round(float(max(bond_lengths) - min(bond_lengths)), 4),
+            "planarity_rmsd_ang": round(rmsd_plane, 4),
+            "max_oop_ang": round(max_dev, 4),
+            "pi_electrons": pi_sum if pi_ok else None,
+            "status": status,
+        })
+
+    return results

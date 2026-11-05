@@ -3,10 +3,13 @@ GUI Dialog for newBRORSEN calculations within AGYMolden.
 Supports multi-stage pipelines, reactive options, and direct input generation.
 """
 
+import logging
 import os
 from typing import List, Optional, Dict, Any
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
+
+log = logging.getLogger(__name__)
 
 from agymolden.zmatrix import ZAtom
 from agymolden.elements import ELEMENT_DATA
@@ -704,6 +707,12 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
         btn_add_stage.setToolTip("Add a calculation stage that continues from the current one")
         btn_add_stage.clicked.connect(self._on_add_stage)
         stage_layout.addWidget(btn_add_stage)
+
+        btn_add_pos_stage = QtWidgets.QPushButton("✨ + Positron Stage (%next)")
+        btn_add_pos_stage.setStyleSheet("font-weight: bold; color: #38bdf8;")
+        btn_add_pos_stage.setToolTip("Add a chained Stage 2 configured for Positron Hartree-Fock / DFT / CC calculation")
+        btn_add_pos_stage.clicked.connect(self._on_add_positron_stage)
+        stage_layout.addWidget(btn_add_pos_stage)
 
         btn_remove_stage = QtWidgets.QPushButton("➖ Remove Stage")
         btn_remove_stage.setToolTip("Remove selected calculation stage")
@@ -1429,12 +1438,37 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
     def _on_add_stage(self):
         self._save_ui_into_stage(self.current_stage_idx)
         st = self.generator.add_stage()
+        # Disambiguate jobname if it duplicates an existing stage
+        existing_names = {s.jobname for s in self.generator.stages[:-1]}
+        if st.jobname in existing_names:
+            st.jobname = f"{st.jobname}_stage{st.number}"
         self.current_stage_idx = len(self.generator.stages) - 1
         self._update_stage_combo()
         self._load_stage_into_ui(self.current_stage_idx)
         self._update_multiplicities()
         self._update_jobname_if_auto()
         self._refresh_preview()
+
+    def _on_add_positron_stage(self):
+        """1-click convenience to append a positronic calculation continuing from Stage 1."""
+        self._save_ui_into_stage(self.current_stage_idx)
+        st = self.generator.add_stage()
+        st.sector = "POSITRON"
+        st.n_pos = 1
+        st.pos_basis = "PSX-TZ"
+        st.pos_mult = 1
+        st.molden = True
+        self.current_stage_idx = len(self.generator.stages) - 1
+        self._user_edited_jobname = False
+        new_jname = self._auto_construct_jobname()
+        st.jobname = new_jname
+        self._update_stage_combo()
+        self._load_stage_into_ui(self.current_stage_idx)
+        self._update_multiplicities()
+        self._refresh_preview()
+        # Switch to Positron tab (index 2: Bang=0, Electronic=1, Positron=2)
+        if self.tabs.count() > 2:
+            self.tabs.setCurrentIndex(2)
 
     def _on_remove_stage(self):
         if len(self.generator.stages) <= 1:
@@ -1675,7 +1709,12 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
         # Clean up basis_tag for safe filename
         safe_basis = basis_tag.replace("/", "-").replace(" ", "")
         
-        return f"{prefix}_{run_tag}_{method_tag}_{safe_basis}"
+        base_name = f"{prefix}_{run_tag}_{method_tag}_{safe_basis}"
+        # If this name is already taken by another stage in this pipeline, differentiate by stage number
+        for i, other in enumerate(self.generator.stages):
+            if i != self.current_stage_idx and other.jobname == base_name:
+                return f"{base_name}_s{st.number}"
+        return base_name
 
     def _on_jobname_user_edited(self, text: str):
         self._user_edited_jobname = bool(text.strip())
@@ -1813,6 +1852,24 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
         # Constraints & Equivalences (only active during OPT run_type)
         is_opt = (run_type == "OPT")
         self.grp_constraints.setEnabled(is_opt)
+
+        # Density map options: reactively adapt options to Electronic vs Positronic sector
+        has_pos = (sector == "POSITRON")
+        current_map_type = self.combo_map_type.currentData()
+        self.combo_map_type.blockSignals(True)
+        self.combo_map_type.clear()
+        if has_pos:
+            self.combo_map_type.addItem("both (Electron & Positron)", "both")
+            self.combo_map_type.addItem("esp (Electrostatic Potential)", "esp")
+            self.combo_map_type.addItem("electron (Electron Density)", "electron")
+            self.combo_map_type.addItem("positron (Positron Density)", "positron")
+            target_type = current_map_type if current_map_type in ("both", "esp", "electron", "positron") else "both"
+        else:
+            self.combo_map_type.addItem("esp (Electrostatic Potential)", "esp")
+            self.combo_map_type.addItem("electron (Electron Density)", "electron")
+            target_type = current_map_type if current_map_type in ("esp", "electron") else "esp"
+        self._set_combo_by_data(self.combo_map_type, target_type)
+        self.combo_map_type.blockSignals(False)
 
         # Scan fields
         scan_active = (run_type == "SCAN") or self.chk_scan.isChecked()
@@ -2095,6 +2152,28 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
         if not self.symbols:
             warnings.append("No atoms are present in the molecular structure.")
             return warnings
+
+        # Check geometry clashes via chemistry_checker (when non-degenerate 3D coordinates are provided)
+        try:
+            if self.coords is not None and len(self.coords) >= 2 and float(np.max(np.abs(self.coords))) > 1e-5:
+                from ..chemistry_checker import check_calculation_sanity
+                first_st = self.generator.stages[0] if self.generator.stages else None
+                geom_check = check_calculation_sanity(
+                    symbols=self.symbols,
+                    coords=self.coords,
+                    charge=getattr(first_st, "charge", 0),
+                    multiplicity=getattr(first_st, "mult", 1),
+                    basis_set=getattr(first_st, "basis", None),
+                    qm_package="newBRORSEN",
+                )
+                for err in geom_check.get("errors", []):
+                    if "Atomic clash" in err:
+                        warnings.append(err)
+                for wrn in geom_check.get("warnings", []):
+                    if "short interatomic" in wrn or "Heavy element" in wrn:
+                        warnings.append(wrn)
+        except Exception as e:
+            log.debug("Sanity geometry check error in newBRORSEN dialog: %s", e)
 
         z_tot = self._get_total_nuclear_charge()
         for idx, st in enumerate(self.generator.stages):

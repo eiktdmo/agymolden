@@ -100,6 +100,7 @@ layout(location = 2) in vec3 in_instance_pos;
 layout(location = 3) in float in_instance_radius;
 layout(location = 4) in vec3 in_instance_color;
 layout(location = 5) in float in_instance_hl;
+layout(location = 6) in vec3 in_instance_end;
 
 uniform mat4 u_model;
 uniform mat4 u_view;
@@ -118,6 +119,21 @@ void main() {
         vec3 scaled_pos = in_position * in_instance_radius + in_instance_pos;
         world_pos = vec4(scaled_pos, 1.0);
         v_normal = in_normal; // Unit sphere normal equals vertex position
+        v_inst_color = in_instance_color;
+        v_inst_hl = int(in_instance_hl + 0.5);
+    } else if (u_use_instancing == 2) {
+        vec3 delta = in_instance_end - in_instance_pos;
+        float len = length(delta);
+        vec3 u = (len > 1e-6) ? (delta / len) : vec3(0.0, 0.0, 1.0);
+        vec3 helper = (abs(u.z) < 0.999) ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+        vec3 t = normalize(cross(helper, u));
+        vec3 b = cross(u, t);
+        vec3 local_pos = (t * (in_position.x * in_instance_radius))
+                       + (b * (in_position.y * in_instance_radius))
+                       + (u * (in_position.z * len))
+                       + in_instance_pos;
+        world_pos = vec4(local_pos, 1.0);
+        v_normal = normalize(t * in_normal.x + b * in_normal.y + u * in_normal.z);
         v_inst_color = in_instance_color;
         v_inst_hl = int(in_instance_hl + 0.5);
     } else {
@@ -143,6 +159,7 @@ uniform vec3 u_light_pos;
 uniform vec3 u_view_pos;
 uniform int u_is_highlighted;
 uniform int u_use_instancing;
+uniform int u_publication_outline;
 
 out vec4 frag_color;
 
@@ -150,24 +167,40 @@ void main() {
     vec3 base_col = (u_use_instancing == 1) ? v_inst_color : u_color;
     int hl_flag = (u_use_instancing == 1) ? v_inst_hl : u_is_highlighted;
 
-    // Ambient
-    float ambient_strength = 0.35;
-    vec3 ambient = ambient_strength * base_col;
-
-    // Diffuse
     vec3 norm = normalize(v_normal);
     vec3 light_dir = normalize(u_light_pos - v_frag_pos);
-    float diff = max(dot(norm, light_dir), 0.0);
-    vec3 diffuse = diff * base_col * 0.75;
-
-    // Specular
-    float specular_strength = 0.45;
     vec3 view_dir = normalize(u_view_pos - v_frag_pos);
-    vec3 reflect_dir = reflect(-light_dir, norm);
-    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
-    vec3 specular = specular_strength * spec * vec3(1.0, 1.0, 1.0);
 
-    vec3 result = ambient + diffuse + specular;
+    vec3 result;
+    if (u_publication_outline == 1) {
+        // IboView / QuteMol style hemisphere lighting + crisp ink silhouette rim
+        float hemi = 0.5 * norm.y + 0.5;
+        vec3 ambient = mix(0.28 * base_col, 0.45 * base_col, hemi);
+        float diff = max(dot(norm, light_dir), 0.0);
+        // Slightly cel/soft-stepped diffuse for crisp figure illustration look
+        float soft_diff = smoothstep(0.0, 0.85, diff);
+        vec3 diffuse = soft_diff * base_col * 0.72;
+        vec3 half_dir = normalize(light_dir + view_dir);
+        float spec = pow(max(dot(norm, half_dir), 0.0), 48.0);
+        vec3 specular = 0.38 * spec * vec3(1.0, 1.0, 1.0);
+        result = ambient + diffuse + specular;
+    } else {
+        // Ambient
+        float ambient_strength = 0.35;
+        vec3 ambient = ambient_strength * base_col;
+
+        // Diffuse
+        float diff = max(dot(norm, light_dir), 0.0);
+        vec3 diffuse = diff * base_col * 0.75;
+
+        // Specular
+        float specular_strength = 0.45;
+        vec3 reflect_dir = reflect(-light_dir, norm);
+        float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
+        vec3 specular = specular_strength * spec * vec3(1.0, 1.0, 1.0);
+
+        result = ambient + diffuse + specular;
+    }
     // Tiny ordered noise (dither) removes visible 8-bit banding rings on smooth spheres
     float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
     result += vec3(dither / 255.0);
@@ -193,6 +226,12 @@ void main() {
     } else if (hl_flag == 7) {
         // Dihedral reference atom (bright orange)
         result = mix(result, vec3(1.0, 0.5, 0.1), 0.65);
+    }
+
+    if (u_publication_outline == 1) {
+        float ndotv = abs(dot(norm, view_dir));
+        float edge = smoothstep(0.24, 0.34, ndotv);
+        result = mix(vec3(0.06, 0.08, 0.12), result, edge);
     }
 
     frag_color = vec4(result, 1.0);
@@ -244,16 +283,29 @@ void main() {
 
     vec3 base_col = (u_use_vertex_color == 1) ? v_color : u_color;
 
+    // Key light (primary directional source)
     vec3 light_dir = normalize(u_light_pos - v_frag_pos);
-    float diff = max(dot(norm, light_dir), 0.0);
-    vec3 diffuse = diff * base_col * 0.75;
-    vec3 ambient = 0.35 * base_col;
+    float diff1 = max(dot(norm, light_dir), 0.0);
+    vec3 diffuse1 = diff1 * base_col * 0.70;
 
-    vec3 reflect_dir = reflect(-light_dir, norm);
-    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 24);
-    vec3 specular = 0.40 * spec * vec3(1.0, 1.0, 1.0);
+    // Fill light from opposite quadrant to soften shadows and reveal 3D curvature
+    vec3 fill_dir = normalize(vec3(-light_dir.x, -light_dir.y * 0.5, light_dir.z));
+    float diff2 = max(dot(norm, fill_dir), 0.0);
+    vec3 diffuse2 = diff2 * base_col * 0.25;
 
-    vec3 result = ambient + diffuse + specular;
+    // Subtle hemisphere ambient
+    vec3 ambient = 0.32 * base_col;
+
+    // Blinn-Phong specular highlight for realistic glossy surface sheen
+    vec3 half_dir = normalize(light_dir + view_dir);
+    float spec = pow(max(dot(norm, half_dir), 0.0), 32.0);
+    vec3 specular = 0.35 * spec * vec3(1.0, 1.0, 1.0);
+
+    // Fresnel rim-lighting edge enhancement (subtle translucent depth)
+    float fresnel = pow(1.0 - max(dot(norm, view_dir), 0.0), 3.0);
+    vec3 rim = 0.18 * fresnel * base_col;
+
+    vec3 result = ambient + diffuse1 + diffuse2 + specular + rim;
     frag_color = vec4(result, u_opacity);
 }
 """

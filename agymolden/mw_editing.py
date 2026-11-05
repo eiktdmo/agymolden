@@ -373,8 +373,8 @@ class EditingMixin:
             # === Dragging to add Atom from memory ===
             elem = getattr(self.viewer, "brush_element", None) or getattr(self, "last_added_element", None) or "C"
             sym_res = self._get_active_imposed_symmetry()
-            if sym_res is not None and anchor_sym == "H" and adj[anchor_idx]:
-                # Symmetric substitution of H orbit by elem
+            if sym_res is not None and anchor_sym in ("H", "F", "Cl", "Br", "I") and len(adj[anchor_idx]) == 1:
+                # Symmetric substitution of H / halogen orbit by elem
                 atom_frag = {"name": elem, "symbols": [elem], "coords": [(0.0, 0.0, 0.0)], "connect_idx": 0}
                 n_sites = self._attach_fragment_to_atom_or_orbit(
                     anchor_idx, atom_frag, conn_idx=0, custom_dir_u=None, relax_iters=90
@@ -387,7 +387,7 @@ class EditingMixin:
             remove = set()
             attach_to: List[int] = []
 
-            if anchor_sym == "H" and adj[anchor_idx]:
+            if anchor_sym in ("H", "F", "Cl", "Br", "I") and len(adj[anchor_idx]) == 1:
                 parent = adj[anchor_idx][0]
                 bond_len = estimate_bond_length(elem, symbols[parent])
                 p_new = coords[parent] + dir_u * bond_len
@@ -577,7 +577,9 @@ class EditingMixin:
         remove_seed: Optional[int] = None
         parent_seed: int = anchor_idx
 
-        if anchor_sym == "H" and adj[anchor_idx]:
+        # Monovalent terminal atoms (H, F, Cl, Br, I) bonded to a parent atom are REPLACED
+        # when a substituent or element is attached/substituted onto them (e.g. replacing Cl or H by Phenyl).
+        if anchor_sym in ("H", "F", "Cl", "Br", "I") and len(adj[anchor_idx]) == 1:
             parent_seed = adj[anchor_idx][0]
             if custom_dir_u is not None:
                 dir_u = custom_dir_u
@@ -592,14 +594,33 @@ class EditingMixin:
             parent_seed = anchor_idx
             heavy_nbs = [j for j in adj[anchor_idx] if symbols[j] != "H"]
             h_nbs = [j for j in adj[anchor_idx] if symbols[j] == "H"]
+            mono_nbs = [j for j in adj[anchor_idx] if symbols[j] in ("F", "Cl", "Br", "I") and len(adj[j]) == 1]
             val = DEFAULT_VALENCES.get(anchor_sym, 4)
+
+            # Detect if anchor_idx is an aromatic or sp2 center whose valence is already satisfied at 3 sigma bonds
+            is_aromatic_or_sp2_satisfied = False
+            if anchor_sym in ("C", "N") and len(adj[anchor_idx]) == 3:
+                # Check if any neighbor bond is in aromatic / sp2 range (< 1.44 A) or has explicit bo >= 2
+                for nb in adj[anchor_idx]:
+                    if bo.get(norm_bond(anchor_idx, nb), 1) >= 2:
+                        is_aromatic_or_sp2_satisfied = True
+                        break
+                    if symbols[nb] in ("C", "N", "O", "S") and float(np.linalg.norm(coords[anchor_idx] - coords[nb])) < 1.44:
+                        is_aromatic_or_sp2_satisfied = True
+                        break
+
             tot_b = sum(bo.get(norm_bond(anchor_idx, j), 1) for j in adj[anchor_idx])
+            if is_aromatic_or_sp2_satisfied and tot_b < val:
+                tot_b = val
 
             if custom_dir_u is not None:
                 dir_u = custom_dir_u
                 if (tot_b >= val or auto_h) and h_nbs:
                     h_nbs.sort(key=lambda h: float(np.dot(coords[h] - anchor_pos, dir_u)), reverse=True)
                     remove_seed = h_nbs[0]
+                elif (tot_b >= val or auto_h) and mono_nbs:
+                    mono_nbs.sort(key=lambda m: float(np.dot(coords[m] - anchor_pos, dir_u)), reverse=True)
+                    remove_seed = mono_nbs[0]
             elif h_nbs:
                 h_idx = h_nbs[0]
                 v_h = coords[h_idx] - anchor_pos
@@ -607,6 +628,12 @@ class EditingMixin:
                 dir_u = v_h / nv if nv > 1e-6 else np.array([0.0, 0.0, 1.0])
                 if tot_b >= val or auto_h:
                     remove_seed = h_idx
+            elif (tot_b >= val or auto_h) and mono_nbs:
+                m_idx = mono_nbs[0]
+                v_m = coords[m_idx] - anchor_pos
+                nv = float(np.linalg.norm(v_m))
+                dir_u = v_m / nv if nv > 1e-6 else np.array([0.0, 0.0, 1.0])
+                remove_seed = m_idx
             elif heavy_nbs:
                 v_d = anchor_pos - np.mean(coords[heavy_nbs], axis=0)
                 nd = float(np.linalg.norm(v_d))
@@ -719,6 +746,10 @@ class EditingMixin:
             except Exception:
                 log.warning("Pre-relaxation failed; continuing without it", exc_info=True)
         symbols, coords, bonds, bo, o2n = bfs_reorder(symbols, coords, bonds, bo)
+        if getattr(self, "frozen_atoms", None):
+            self.frozen_atoms = {o2n[i] for i in self.frozen_atoms if i in o2n}
+            if hasattr(self, "_update_frozen_buttons_ui"):
+                self._update_frozen_buttons_ui()
         new_zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
         tree = {norm_bond(a.ref1, i) for i, a in enumerate(new_zatoms) if a.ref1 is not None}
         self.cross_bonds = {b for b in bonds if b not in tree}
@@ -914,13 +945,13 @@ class EditingMixin:
 
         sym_res = self._get_active_imposed_symmetry()
         if sym_res is not None:
-            if anchor_sym == "H":
+            if anchor_sym in ("H", "F", "Cl", "Br", "I"):
                 atom_frag = {"name": elem, "symbols": [elem], "coords": [(0.0, 0.0, 0.0)], "connect_idx": 0}
                 n_sites = self._attach_fragment_to_atom_or_orbit(
                     anchor_idx, atom_frag, conn_idx=0, custom_dir_u=None, relax_iters=80
                 )
                 self.statusBar().showMessage(
-                    f"Double-click replaced {n_sites} symmetry-equivalent H atoms with {elem}", 4000
+                    f"Double-click replaced {n_sites} symmetry-equivalent {anchor_sym} atoms with {elem}", 4000
                 )
                 return
             else:
@@ -941,8 +972,8 @@ class EditingMixin:
         new_syms = list(symbols)
         new_coords = np.copy(coords)
         new_bonds = list(bonds)
-        if anchor_sym == "H":
-            # Hydrogen keeps its single bond; just becomes elem at a proper distance
+        if anchor_sym in ("H", "F", "Cl", "Br", "I"):
+            # Monovalent terminal atom (H / halogen) keeps its single bond; just becomes elem at a proper distance
             if adj[anchor_idx]:
                 parent = adj[anchor_idx][0]
                 v_dir = coords[anchor_idx] - coords[parent]
@@ -951,7 +982,7 @@ class EditingMixin:
                 new_coords[anchor_idx] = coords[parent] + v_dir * estimate_bond_length(elem, symbols[parent])
             new_syms[anchor_idx] = elem
             target_set = {anchor_idx} | set(adj[anchor_idx])
-            msg = f"Double-click replaced H with {elem}"
+            msg = f"Double-click replaced {anchor_sym} with {elem}"
         else:
             h_nbs = [j for j in adj[anchor_idx] if symbols[j] == "H"]
             if h_nbs:
@@ -1401,6 +1432,11 @@ class EditingMixin:
             rem_indices = [atom_idx]
 
         keep_mask = [i for i in range(len(symbols)) if i not in set(rem_indices)]
+        if getattr(self, "frozen_atoms", None):
+            o2n_keep = {old_i: new_i for new_i, old_i in enumerate(keep_mask)}
+            self.frozen_atoms = {o2n_keep[i] for i in self.frozen_atoms if i in o2n_keep}
+            if hasattr(self, "_update_frozen_buttons_ui"):
+                self._update_frozen_buttons_ui()
         if not keep_mask:
             self.set_molecule_from_zatoms([])
             self.statusBar().showMessage(f"{source_label} atom {del_label}. Molecule is now empty.", 3000)
@@ -1457,12 +1493,30 @@ class EditingMixin:
 
         # Attach Substituent Submenu
         menu_sub = menu.addMenu("🧪 Attach Functional Group")
-        popular_frags = ["Methyl", "Hydroxyl", "Amino", "Phenyl", "Nitro", "Carboxyl", "Cyano", "Trifluoromethyl"]
+        popular_frags = [
+            "Methyl (-CH3)",
+            "Ethyl (-C2H5)",
+            "Isopropyl (-CH(CH3)2)",
+            "tert-Butyl (-C(CH3)3)",
+            "Hydroxyl (-OH)",
+            "Methoxy (-OCH3)",
+            "Amino (-NH2)",
+            "Phenyl (-C6H5)",
+            "Pyridyl (-C5H4N)",
+            "Nitro (-NO2)",
+            "Carboxyl (-COOH)",
+            "Cyano (-CN)",
+            "Trifluoromethyl (-CF3)",
+            "Chlorine (-Cl)",
+            "Bromine (-Br)",
+            "Fluorine (-F)",
+        ]
         for f_name in popular_frags:
             if f_name in FRAGMENTS:
                 act_f = menu_sub.addAction(f_name)
                 act_f.triggered.connect(lambda _c=False, fn=f_name: self._attach_specific_fragment(atom_idx, fn))
 
+        menu_sub.addSeparator()
         act_all_frags = menu_sub.addAction("Browse All Fragments...")
         act_all_frags.triggered.connect(self._on_open_fragment_library)
 
@@ -1491,6 +1545,9 @@ class EditingMixin:
 
         act_copy_img = menu.addAction("📷 Copy 3D Image to Clipboard (Ctrl+Shift+C)")
         act_copy_img.triggered.connect(lambda: self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True))
+
+        act_copy_block = menu.addAction("📄 Copy Coordinates Block (ORCA/Gaussian, Ctrl+Alt+X)")
+        act_copy_block.triggered.connect(self._on_copy_coords_block)
 
         if bool(self.stored_fragment or self.last_added_fragment):
             frag = self.stored_fragment or self.last_added_fragment
@@ -1551,6 +1608,10 @@ class EditingMixin:
         act_stretch = menu.addAction("📏 Stretch Bond Length (Interactive Slider)...")
         act_stretch.triggered.connect(lambda: self._activate_bond_tweak_bar(u, v))
 
+        # Weld / Fuse Molecular Ring onto this Bond
+        act_weld = menu.addAction("💍 Weld / Fuse Ring onto this Bond (Ctrl+Shift+W)...")
+        act_weld.triggered.connect(lambda: self._on_open_cycle_welder_for_bond(u, v))
+
         menu.addSeparator()
 
         # Break / Delete Bond
@@ -1573,8 +1634,15 @@ class EditingMixin:
         act_add_h = menu.addAction("💧 Complete Valence with Hydrogens (Ctrl+H)")
         act_add_h.triggered.connect(self._on_add_hydrogens)
 
-        act_opt = menu.addAction("⚡ Optimize Geometry (Ctrl+Shift+O)")
+        act_opt = menu.addAction("⚡ Optimize Geometry (Ctrl+M)")
         act_opt.triggered.connect(self._on_optimize_geometry)
+
+        act_build_name = menu.addAction("🧪 Build from Name / SMILES / PubChem (Ctrl+Shift+B)...")
+        act_build_name.triggered.connect(self._on_prompt_smiles_or_inchi)
+
+        if len(self.zatoms) > 0:
+            act_copy_block = menu.addAction("📄 Copy Coordinates Block (ORCA/Gaussian, Ctrl+Alt+X)")
+            act_copy_block.triggered.connect(self._on_copy_coords_block)
 
         # Paste Action in Free Space
         has_pasteable = bool(self.stored_fragment or self.last_added_fragment)
@@ -1627,8 +1695,31 @@ class EditingMixin:
         for idx in mutate_indices:
             self.zatoms[idx].symbol = new_element
 
-        self.table_widget.load_zatoms(self.zatoms)
-        self.update_geometry_live()
+        # Update bond distances for newly mutated terminal atoms (or atoms with ref1) so C-Cl -> C-H / C-C etc.
+        for idx in mutate_indices:
+            ref1 = self.zatoms[idx].ref1
+            if ref1 is not None and 0 <= ref1 < len(self.zatoms):
+                parent_sym = self.zatoms[ref1].symbol
+                self.zatoms[idx].dist = estimate_bond_length(new_element, parent_sym)
+
+        auto_h = bool(getattr(self, "chk_auto_h", None) and self.chk_auto_h.isChecked())
+        if auto_h and new_element not in ("H", "X") and sym_res is None:
+            from .alignment import apply_rigid_frame
+            new_syms = [a.symbol for a in self.zatoms]
+            local_coords = zmatrix_to_cartesian(self.zatoms)
+            if getattr(self, "_rigid_frame", None) is not None and len(local_coords) > 0:
+                new_coords = apply_rigid_frame(local_coords, self._rigid_frame)
+            else:
+                new_coords = local_coords
+            curr_bonds = self._current_explicit_bonds()
+            curr_bo = self._current_bond_orders()
+            self._commit_explicit_structure(
+                new_syms, new_coords, curr_bonds, curr_bo,
+                relax_iters=80, add_h=True, fix_valence=True, target_indices=set(mutate_indices)
+            )
+        else:
+            self.table_widget.load_zatoms(self.zatoms)
+            self.update_geometry_live()
         if len(mutate_indices) > 1:
             self.statusBar().showMessage(
                 f"Mutated {len(mutate_indices)} symmetry-equivalent {old_sym} atoms ➔ {new_element}", 4000
@@ -1867,6 +1958,8 @@ class EditingMixin:
         else:
             self.frozen_atoms.add(atom_idx)
             self.statusBar().showMessage(f"Locked / Frozen atom #{atom_idx+1} for QM optimization", 3000)
+        if hasattr(self, "_update_frozen_buttons_ui"):
+            self._update_frozen_buttons_ui()
 
     def _on_delete_selected_atom(self):
         n = len(self.zatoms)
@@ -1878,7 +1971,11 @@ class EditingMixin:
             bonds = self._current_explicit_bonds()
             bo = self._current_bond_orders()
             rem_set = set(multi)
-            new_syms, new_coords, new_bonds, new_bo, _ = remove_atoms(symbols, coords, bonds, rem_set, bo)
+            new_syms, new_coords, new_bonds, new_bo, o2n_del = remove_atoms(symbols, coords, bonds, rem_set, bo)
+            if getattr(self, "frozen_atoms", None):
+                self.frozen_atoms = {o2n_del[i] for i in self.frozen_atoms if i in o2n_del}
+                if hasattr(self, "_update_frozen_buttons_ui"):
+                    self._update_frozen_buttons_ui()
             self.viewer.selected_atom_idx = None
             self.viewer.multi_selected = []
             if not new_syms:
@@ -1989,8 +2086,8 @@ class EditingMixin:
             from .chem_identifiers import format_xyz_string
             xyz_txt = format_xyz_string(symbols, self.coords[sel], comment=f"AgyMolden Selection ({len(sel)} atoms)")
             QtWidgets.QApplication.clipboard().setText(xyz_txt)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed copying selection XYZ to clipboard: %s", e)
 
         first_atom_label = f"{symbols[0]}{first_idx + 1}"
         self.statusBar().showMessage(
@@ -2051,6 +2148,21 @@ class EditingMixin:
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied Cartesian XYZ to clipboard!", self)
         self.statusBar().showMessage(f"Copied XYZ ({len(symbols)} atoms) to clipboard.", 3500)
 
+    def _on_copy_coords_block(self):
+        """Copy headerless 'Element X Y Z' block to clipboard (ready for ORCA / Gaussian / Q-Chem input files)."""
+        if len(self.zatoms) == 0:
+            self.statusBar().showMessage("Molecule is empty. Nothing to copy.", 3000)
+            return
+        from .chem_identifiers import format_coords_block_string
+        symbols = [a.symbol for a in self.zatoms]
+        block_txt = format_coords_block_string(symbols, self.coords)
+        QtWidgets.QApplication.clipboard().setText(block_txt)
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied ORCA/Gaussian coordinates block to clipboard!", self)
+        self.statusBar().showMessage(
+            f"Copied coordinates block ({len(symbols)} atoms, no header) to clipboard — ready to paste into ORCA/Gaussian!",
+            4000,
+        )
+
     def _on_copy_as_smiles(self):
         """Generate and copy SMILES string to clipboard."""
         if len(self.zatoms) == 0:
@@ -2104,6 +2216,263 @@ class EditingMixin:
         except Exception as e:
             log.exception("Failed to generate InChIKey")
             QtWidgets.QMessageBox.warning(self, "InChIKey Generation Error", f"Could not generate InChIKey:\n{str(e)}")
+
+    def _on_copy_supporting_info(self, style: str = "acs"):
+        """Format and copy a publication-ready Supporting Information (SI) entry (ACS, Markdown, or LaTeX) to clipboard."""
+        if len(self.zatoms) == 0:
+            self.statusBar().showMessage("Molecule is empty. Nothing to copy.", 3000)
+            return
+        from .chem_identifiers import format_supporting_information_entry
+        symbols = [a.symbol for a in self.zatoms]
+        pt_grp = getattr(self.viewer, "current_point_group_label", "") or "C1"
+        title = getattr(self, "title_override", "") or "Optimized Structure"
+        qm_res = getattr(self, "_last_qm_res", None)
+        e_ha = None
+        zpe_ha = None
+        h_ha = None
+        g_ha = None
+        dip = None
+        homo = None
+        lumo = None
+        n_imag = None
+        low_freq = None
+        if qm_res is not None:
+            if getattr(qm_res, "trajectory_energies", None):
+                e_ha = float(qm_res.trajectory_energies[-1]) / 27.211386245988
+            zpe_ha = getattr(qm_res, "zpe_ha", None)
+            h_ha = getattr(qm_res, "enthalpy_ha", None)
+            g_ha = getattr(qm_res, "gibbs_ha", None)
+            dip = getattr(qm_res, "dipole_debye", None)
+            homo = getattr(qm_res, "homo_ev", None)
+            lumo = getattr(qm_res, "lumo_ev", None)
+            vib = getattr(qm_res, "vibrational_analysis", None)
+            if vib and getattr(vib, "frequencies", None):
+                freqs = list(vib.frequencies)
+                n_imag = sum(1 for f in freqs if f < 0.0)
+                low_freq = float(min(freqs)) if freqs else None
+
+        si_text = format_supporting_information_entry(
+            symbols=symbols,
+            coords=self.coords,
+            title=title,
+            point_group=pt_grp,
+            energy_ha=e_ha,
+            zpe_ha=zpe_ha,
+            enthalpy_ha=h_ha,
+            gibbs_ha=g_ha,
+            dipole_debye=dip,
+            homo_ev=homo,
+            lumo_ev=lumo,
+            n_imag=n_imag,
+            lowest_freq_cm1=low_freq,
+            style=style,
+        )
+        QtWidgets.QApplication.clipboard().setText(si_text)
+        style_label = {"acs": "ACS/RSC Plain Text", "markdown": "Markdown", "latex": "LaTeX Table"}.get(style, style)
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), f"Copied Supporting Information ({style_label}) to clipboard!", self)
+        self.statusBar().showMessage(
+            f"📋 Copied Supporting Information ({style_label}, {len(symbols)} atoms) to clipboard!", 4500
+        )
+
+    def _on_open_steric_descriptors_dialog(self):
+        """
+        Open the Catalysis & Organometallic Steric Descriptors Inspector (SEQCROW / SambVca style):
+        Computes Percent Buried Volume (%V_bur) + 4-quadrant breakdown around the selected atom,
+        and Verloop Sterimol (L, B1, B5) + Tolman Cone Angle along a selected 2-atom bond vector.
+        """
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(
+                self, "Steric Descriptors", "Please load or build a molecule first."
+            )
+            return
+
+        from .coordination import (
+            compute_buried_volume,
+            compute_sterimol_and_cone_angle,
+            compute_coordination_geometry_indices,
+        )
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.array(self.coords, dtype=np.float64, copy=True)
+        sel = self._get_ordered_selection()
+        center_idx = sel[0] if len(sel) >= 1 else 0
+        attached_idx = sel[1] if len(sel) >= 2 else (1 if len(symbols) > 1 and center_idx == 0 else 0)
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("🛡️ Catalysis Steric & Coordination Descriptors (%V_bur, Sterimol, τ₄/τ₅)")
+        dlg.resize(620, 480)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        ctrl = QtWidgets.QGridLayout()
+        ctrl.addWidget(QtWidgets.QLabel("Central / Metal Atom:"), 0, 0)
+        combo_center = QtWidgets.QComboBox()
+        for i, s in enumerate(symbols):
+            combo_center.addItem(f"#{i + 1}: {s}", i)
+        combo_center.setCurrentIndex(center_idx)
+        ctrl.addWidget(combo_center, 0, 1)
+
+        ctrl.addWidget(QtWidgets.QLabel("Attached / Donor Atom (for Sterimol):"), 0, 2)
+        combo_att = QtWidgets.QComboBox()
+        for i, s in enumerate(symbols):
+            combo_att.addItem(f"#{i + 1}: {s}", i)
+        if 0 <= attached_idx < len(symbols):
+            combo_att.setCurrentIndex(attached_idx)
+        ctrl.addWidget(combo_att, 0, 3)
+
+        ctrl.addWidget(QtWidgets.QLabel("Sphere Radius R (Å):"), 1, 0)
+        spin_r = QtWidgets.QDoubleSpinBox()
+        spin_r.setRange(1.5, 8.0)
+        spin_r.setDecimals(2)
+        spin_r.setSingleStep(0.25)
+        spin_r.setValue(3.50)
+        ctrl.addWidget(spin_r, 1, 1)
+
+        chk_h = QtWidgets.QCheckBox("Include Hydrogens in %V_bur")
+        chk_h.setChecked(True)
+        ctrl.addWidget(chk_h, 1, 2, 1, 2)
+        layout.addLayout(ctrl)
+
+        txt_out = QtWidgets.QTextEdit()
+        txt_out.setReadOnly(True)
+        txt_out.setStyleSheet("font-family: monospace; font-size: 12px;")
+        layout.addWidget(txt_out, stretch=1)
+
+        def _recalc():
+            c_idx = int(combo_center.currentData() or 0)
+            a_idx = int(combo_att.currentData() or 0)
+            r_val = float(spin_r.value())
+            inc_h = bool(chk_h.isChecked())
+
+            vbur = compute_buried_volume(
+                symbols, coords, center_idx=c_idx, sphere_radius=r_val, include_hydrogens=inc_h
+            )
+            ster = compute_sterimol_and_cone_angle(
+                symbols, coords, primary_idx=c_idx, attached_idx=a_idx
+            )
+            geom_idx = compute_coordination_geometry_indices(symbols, coords, center_idx=c_idx)
+            q = vbur["quadrants"]
+            report = [
+                "=" * 68,
+                f"CATALYSIS STERIC & COORDINATION DESCRIPTORS  (SEQCROW / SambVca)",
+                "=" * 68,
+                f"Central Atom        : {symbols[c_idx]}{c_idx + 1}",
+                f"Coordination Index  : {geom_idx['summary']}",
+                f"Sphere Radius (R)   : {vbur['sphere_radius']:.2f} Å  (Bondi radii × 1.17, H={'ON' if inc_h else 'OFF'})",
+                "-" * 68,
+                f"  Percent Buried Volume (%V_bur) : {vbur['v_bur_pct']:6.2f} %",
+                f"  Percent Free Volume   (%V_free): {vbur['v_free_pct']:6.2f} %",
+                f"  Quadrant %V_bur Breakdown      : NW = {q['NW']:4.1f}% | NE = {q['NE']:4.1f}%",
+                f"                                   SW = {q['SW']:4.1f}% | SE = {q['SE']:4.1f}%",
+                "-" * 68,
+                f"Substituent Axis    : {symbols[c_idx]}{c_idx + 1} ──> {symbols[a_idx]}{a_idx + 1}",
+                f"  Verloop Sterimol L  (length)   : {ster['L']:6.2f} Å",
+                f"  Verloop Sterimol B1 (min width): {ster['B1']:6.2f} Å",
+                f"  Verloop Sterimol B5 (max width): {ster['B5']:6.2f} Å",
+                f"  Tolman Cone Angle   (θ)        : {ster['cone_angle_deg']:6.1f}°",
+                "=" * 68,
+            ]
+            txt_out.setPlainText("\n".join(report))
+
+        combo_center.currentIndexChanged.connect(lambda _i: _recalc())
+        combo_att.currentIndexChanged.connect(lambda _i: _recalc())
+        spin_r.valueChanged.connect(lambda _v: _recalc())
+        chk_h.toggled.connect(lambda _c: _recalc())
+        _recalc()
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_copy = QtWidgets.QPushButton("📋 Copy Report")
+        btn_copy.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 5px 12px;")
+        btn_copy.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(txt_out.toPlainText()))
+        btn_row.addWidget(btn_copy)
+        btn_row.addStretch()
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _on_open_ring_aromaticity_dialog(self):
+        """
+        Open the Ring Aromaticity (HOMA Index) & Planarity Inspector Dialog (Multiwfn / Krygowski style).
+        """
+        if len(self.zatoms) < 3:
+            QtWidgets.QMessageBox.information(
+                self, "Ring Aromaticity (HOMA)", "Please load or build a ring-containing molecule first."
+            )
+            return
+
+        from .aromatic import compute_ring_homa_and_planarity
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.array(self.coords, dtype=np.float64, copy=True)
+        bonds = self._current_explicit_bonds()
+        bo = self._current_bond_orders()
+        rings_info = compute_ring_homa_and_planarity(symbols, coords, bonds, bo)
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("💍 Ring Aromaticity (HOMA Index) & Planarity Inspector")
+        dlg.resize(700, 420)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        lbl_head = QtWidgets.QLabel(
+            "<b>Kruszewski–Krygowski HOMA Aromaticity Index & Ring Planarity</b><br>"
+            "<span style='color:#94a3b8; font-size:11px;'>"
+            "HOMA = 1 − (1/n) Σ α(R_opt − R_i)²  (1.00 = Ideal Benzene, ~0.00 = Non-Aromatic, &lt;0.00 = Anti-Aromatic). "
+            "Click any ring row to highlight its atoms in the 3D viewport."
+            "</span>"
+        )
+        lbl_head.setWordWrap(True)
+        layout.addWidget(lbl_head)
+
+        tbl = QtWidgets.QTableWidget(len(rings_info), 7)
+        tbl.setHorizontalHeaderLabels([
+            "Ring #", "Size", "Ring Atoms", "HOMA Index", "Mean R (Å)", "Planarity RMSD (Å)", "Classification"
+        ])
+        tbl.horizontalHeader().setStretchLastSection(True)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setAlternatingRowColors(True)
+
+        for r_i, info in enumerate(rings_info):
+            tbl.setItem(r_i, 0, QtWidgets.QTableWidgetItem(str(info["ring_index"])))
+            tbl.setItem(r_i, 1, QtWidgets.QTableWidgetItem(f"{info['size']}-ring"))
+            tbl.setItem(r_i, 2, QtWidgets.QTableWidgetItem(str(info["label"])))
+            h_str = f"{info['homa']:.4f}" if info["homa"] is not None else "N/A"
+            it_h = QtWidgets.QTableWidgetItem(h_str)
+            if info["homa"] is not None and info["homa"] >= 0.70:
+                it_h.setForeground(QtGui.QBrush(QtGui.QColor("#4ade80")))
+            tbl.setItem(r_i, 3, it_h)
+            tbl.setItem(r_i, 4, QtWidgets.QTableWidgetItem(f"{info['mean_bond_ang']:.4f}"))
+            tbl.setItem(r_i, 5, QtWidgets.QTableWidgetItem(f"{info['planarity_rmsd_ang']:.4f}"))
+            tbl.setItem(r_i, 6, QtWidgets.QTableWidgetItem(str(info["status"])))
+
+        def _on_row_clicked():
+            sel_items = tbl.selectedItems()
+            if not sel_items:
+                return
+            row = tbl.row(sel_items[0])
+            if 0 <= row < len(rings_info):
+                ring_atoms = list(rings_info[row]["atoms"])
+                self.viewer.multi_selected = ring_atoms
+                self.viewer.selected_atom_idx = ring_atoms[0] if ring_atoms else None
+                self.viewer.update()
+
+        tbl.itemSelectionChanged.connect(_on_row_clicked)
+        layout.addWidget(tbl, stretch=1)
+
+        if not rings_info:
+            lbl_empty = QtWidgets.QLabel("No 3- to 8-membered rings detected in the current molecular connectivity.")
+            lbl_empty.setStyleSheet("color: #f59e0b; font-style: italic;")
+            layout.addWidget(lbl_empty)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
+        dlg.exec()
 
     def _on_flush_memory(self):
         """
@@ -2268,6 +2637,103 @@ class EditingMixin:
         )
         dlg.exec()
 
+    def _on_open_reaction_path_dialog(self):
+        """Open Reaction Path & Transition State (TS) Guess Interpolator Dialog (IDPP / QST2 / NEB-TS)."""
+        from .dialog_reaction_path import ReactionPathDialog
+        from .zmatrix import cartesian_to_zmatrix
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords if len(self.coords) > 0 else None
+
+        dlg = ReactionPathDialog(
+            parent=self,
+            initial_symbols=symbols,
+            initial_coords=coords,
+        )
+
+        def _on_adopted(adopted_syms, adopted_coords):
+            self._push_undo_state()
+            curr_bonds = self._current_explicit_bonds() if hasattr(self, "_current_explicit_bonds") else None
+            new_zatoms = cartesian_to_zmatrix(adopted_syms, adopted_coords, user_bonds=curr_bonds, strict_bonds=True)
+            self.set_molecule_from_zatoms(new_zatoms, exact_coords=adopted_coords)
+            self.statusBar().showMessage("🎯 Adopted IDPP Transition State (TS) Guess into 3D Editor", 4000)
+
+        def _on_preview_traj(p_syms, p_frames):
+            if hasattr(self, "trajectory_coords"):
+                self.trajectory_coords = p_frames
+                self.trajectory_energies = [0.0] * len(p_frames)
+                if hasattr(self, "slider_trajectory"):
+                    self.slider_trajectory.setEnabled(True)
+                    self.slider_trajectory.setRange(0, len(p_frames) - 1)
+                    self.slider_trajectory.setValue(0)
+                if hasattr(self, "lbl_trajectory_step"):
+                    self.lbl_trajectory_step.setText(f"1/{len(p_frames)}")
+                if len(p_frames) > 0:
+                    self.viewer.set_molecule(p_syms, p_frames[0])
+            self.statusBar().showMessage(f"Loaded {len(p_frames)} reaction path frames into player", 4000)
+
+        dlg.path_adopted.connect(_on_adopted)
+        dlg.trajectory_preview.connect(_on_preview_traj)
+        dlg.exec()
+
+    def _on_open_crest_explorer(self, filepath: Optional[str] = None):
+        """Open CREST & Conformer Ensemble Explorer Dialog (Ctrl+Shift+E)."""
+        from .dialog_conformer_ensemble import ConformerEnsembleDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        traj_coords = getattr(self, "trajectory_coords", None)
+        traj_energies = getattr(self, "trajectory_energies", None)
+        orig_coords = np.array(self.coords, copy=True) if len(self.coords) > 0 else None
+
+        dlg = ConformerEnsembleDialog(
+            parent=self,
+            filepath=filepath,
+            symbols=symbols if traj_coords else None,
+            trajectory_coords=traj_coords,
+            trajectory_energies=traj_energies,
+        )
+
+        def _on_preview(p_syms, p_coords):
+            if hasattr(self, "viewer") and self.viewer and len(p_coords) > 0:
+                self.viewer.update_coords(p_coords)
+
+        dlg.conformer_preview.connect(_on_preview)
+        res = dlg.exec()
+        # If user closed or rejected dialog without adopting, restore original active coordinates
+        if res != QtWidgets.QDialog.DialogCode.Accepted and orig_coords is not None and hasattr(self, "viewer") and self.viewer:
+            self.viewer.update_coords(orig_coords)
+
+    def _on_open_irc_sweeper(self, pathway: Optional[Any] = None):
+        """Open Interactive IRC Reaction Sweeper & Energy Profile Dialog (Ctrl+Shift+I)."""
+        from .dialog_irc_sweeper import IRCReactionSweeperDialog
+        from .irc_sweeper import assemble_irc_pathway
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else getattr(self, "symbols", [])
+        traj_coords = getattr(self, "trajectory_coords", None)
+        traj_energies = getattr(self, "trajectory_energies", None)
+        qm_res = getattr(self, "_last_qm_res", None)
+
+        if pathway is None:
+            # Check if cached on last QM result
+            pathway = getattr(qm_res, "irc_pathway", None)
+
+        if pathway is None and traj_coords and len(traj_coords) > 1:
+            # Build pathway from currently loaded trajectory
+            e_ha = [e / 27.211386245988 for e in traj_energies] if traj_energies else [float(i) for i in range(len(traj_coords))]
+            irc_pts = getattr(qm_res, "irc_path_points", None)
+            pathway = assemble_irc_pathway(
+                symbols=symbols,
+                coords_list=traj_coords,
+                energies_ha=e_ha,
+                rxn_coords=irc_pts,
+            )
+
+        dlg = IRCReactionSweeperDialog(parent=self, viewer=self.viewer, pathway=pathway)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        self._irc_sweeper_dlg = dlg
+
     def _on_invert_chirality(self):
         if not self.zatoms:
             return
@@ -2382,9 +2848,13 @@ class EditingMixin:
         )
 
     def _update_frozen_buttons_ui(self):
-        n_f = len(getattr(self, "frozen_atoms", set()))
+        froz = set(getattr(self, "frozen_atoms", set()) or set())
+        n_f = len(froz)
         if hasattr(self, "btn_unfreeze_all"):
             self.btn_unfreeze_all.setText(f"🔥 Unfreeze All ({n_f} frozen)")
+        if hasattr(self, "viewer") and self.viewer is not None:
+            self.viewer.frozen_atoms = froz
+            self.viewer.update()
 
     def _on_freeze_selected_atoms(self):
         """Pin/freeze currently selected atoms during geometry optimization."""
@@ -2512,4 +2982,18 @@ class EditingMixin:
             self.statusBar().showMessage(f"Added {count_added} hydrogen(s) to selected atom(s) ({selected_labels})!", 4000)
         else:
             self.statusBar().showMessage(f"Completed valence: added {count_added} hydrogen atoms to molecule!", 4000)
+
+    def _on_open_cycle_welder(self):
+        """Open Molecular Cycle Welder & Ring Fusion Studio (Ctrl+Shift+W)."""
+        from .dialog_cycle_welder import CycleWelderDialog
+        dlg = CycleWelderDialog(self)
+        dlg.exec()
+
+    def _on_open_cycle_welder_for_bond(self, u: int, v: int):
+        """Select bond (u, v) and open Cycle Welder Dialog."""
+        self.selected_atoms = [u, v]
+        if hasattr(self, "viewer") and self.viewer:
+            self.viewer.selected_atoms = {u, v}
+            self.viewer.update()
+        self._on_open_cycle_welder()
 

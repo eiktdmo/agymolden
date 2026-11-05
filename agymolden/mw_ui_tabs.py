@@ -6,7 +6,7 @@ Keeps all widget attributes directly on `self` (MainWindow) so existing mixins
 """
 
 from PyQt6 import QtCore, QtWidgets
-from .spectrum_widget import IRSpectrumWidget, UVVisSpectrumWidget
+from .spectrum_widget import IRSpectrumWidget, UVVisSpectrumWidget, NMRSpectrumWidget, DOSSpectrumWidget
 from .mo_ladder_widget import MOEnergyLadderWidget
 
 
@@ -23,6 +23,16 @@ class UIInspectorTabsMixin:
         self.btn_calc_vibrations.setToolTip("Calculate Hessian and normal vibrational modes using universal force field")
         self.btn_calc_vibrations.clicked.connect(self._on_calculate_vibrations)
         vib_ctrl_top.addWidget(self.btn_calc_vibrations, stretch=1)
+
+        self.btn_isotope_shifts = QtWidgets.QPushButton("⚗️ Isotopologue && KIE...")
+        self.btn_isotope_shifts.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 6px 10px;")
+        self.btn_isotope_shifts.setToolTip(
+            "GaussView / Chemcraft style Isotopologue Calculator:\n"
+            "Substitute isotopes (H→D, ¹²C→¹³C, ¹⁶O→¹⁸O) and instantly inspect frequency shifts Δν,\n"
+            "Zero-Point Energy shift ΔZPE, and Kinetic Isotope Effects (k_H / k_D) without re-running DFT!"
+        )
+        self.btn_isotope_shifts.clicked.connect(self._on_open_isotopologue_dialog)
+        vib_ctrl_top.addWidget(self.btn_isotope_shifts)
         tab_vib_layout.addLayout(vib_ctrl_top)
 
         # Frequency Filter Bar
@@ -104,6 +114,25 @@ class UIInspectorTabsMixin:
         row_adopt.addWidget(self.btn_adopt_vib_neg, stretch=1)
         vib_anim_layout.addLayout(row_adopt)
 
+        # Interactive Mode Coordinate Scrubber (Smooth manual deformation along normal mode)
+        row_scrub = QtWidgets.QHBoxLayout()
+        row_scrub.addWidget(QtWidgets.QLabel("Manual Scrub:"))
+        self.slider_vib_scrub = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_vib_scrub.setRange(-100, 100)  # -1.0x to +1.0x of amplitude
+        self.slider_vib_scrub.setValue(0)
+        self.slider_vib_scrub.setToolTip("Interactively deform the molecule back and forth along the selected normal coordinate vector.")
+        self.slider_vib_scrub.valueChanged.connect(self._on_vib_scrub_changed)
+        row_scrub.addWidget(self.slider_vib_scrub, stretch=1)
+        self.lbl_vib_scrub = QtWidgets.QLabel("0.00×")
+        self.lbl_vib_scrub.setFixedWidth(40)
+        row_scrub.addWidget(self.lbl_vib_scrub)
+        btn_reset_scrub = QtWidgets.QPushButton("0")
+        btn_reset_scrub.setFixedWidth(24)
+        btn_reset_scrub.setToolTip("Reset manual displacement to equilibrium (0.00×)")
+        btn_reset_scrub.clicked.connect(lambda: self.slider_vib_scrub.setValue(0))
+        row_scrub.addWidget(btn_reset_scrub)
+        vib_anim_layout.addLayout(row_scrub)
+
         # Amplitude Slider
         row_amp = QtWidgets.QHBoxLayout()
         row_amp.addWidget(QtWidgets.QLabel("Amplitude:"))
@@ -163,6 +192,22 @@ class UIInspectorTabsMixin:
         self.uvvis_widget = UVVisSpectrumWidget()
         uvvis_layout.addWidget(self.uvvis_widget)
         self.tabs_spectra.addTab(grp_uvvis, "UV-Vis Spectrum")
+
+        grp_nmr = QtWidgets.QWidget()
+        nmr_layout = QtWidgets.QVBoxLayout(grp_nmr)
+        nmr_layout.setContentsMargins(4, 4, 4, 4)
+        self.nmr_widget = NMRSpectrumWidget()
+        self.nmr_widget.atom_clicked.connect(self._on_nmr_atom_clicked)
+        nmr_layout.addWidget(self.nmr_widget)
+        self.tabs_spectra.addTab(grp_nmr, "NMR Spectrum (ppm)")
+
+        grp_dos = QtWidgets.QWidget()
+        dos_layout = QtWidgets.QVBoxLayout(grp_dos)
+        dos_layout.setContentsMargins(4, 4, 4, 4)
+        self.dos_widget = DOSSpectrumWidget()
+        self.dos_widget.orbital_clicked.connect(self._on_dos_orbital_clicked)
+        dos_layout.addWidget(self.dos_widget)
+        self.tabs_spectra.addTab(grp_dos, "DOS Spectrum (eV)")
 
         tab_vib_layout.addWidget(self.tabs_spectra, stretch=1)
         self.tab_vibrations = tab_vibrations
@@ -408,6 +453,41 @@ class UIInspectorTabsMixin:
         self.btn_quick_lumo.setToolTip("Quickly evaluate and display the Lowest Unoccupied Molecular Orbital (LUMO)")
         self.btn_quick_lumo.clicked.connect(self._on_quick_view_lumo)
         mo_top_bar.addWidget(self.btn_quick_lumo)
+
+        self.btn_quick_spin_dens = QtWidgets.QPushButton("🌀 Spin Density")
+        self.btn_quick_spin_dens.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_quick_spin_dens.setToolTip(
+            "1-Click Open-Shell Spin Density (Δρ = ρ_α − ρ_β):\n"
+            "Evaluate and render excess α/β spin density lobes directly in the 3D viewport"
+        )
+        self.btn_quick_spin_dens.clicked.connect(self._on_quick_view_spin_density)
+        mo_top_bar.addWidget(self.btn_quick_spin_dens)
+
+        self.btn_quick_esp_map = QtWidgets.QPushButton("🌈 ESP Map")
+        self.btn_quick_esp_map.setStyleSheet("background-color: #db2777; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_quick_esp_map.setToolTip(
+            "1-Click Electrostatic Potential (ESP) Mapped Electron Density Surface:\n"
+            "Colors the electron density isosurface from Red (δ⁻ nucleophilic) to Blue (δ⁺ electrophilic)"
+        )
+        self.btn_quick_esp_map.clicked.connect(self._on_quick_view_esp_map)
+        mo_top_bar.addWidget(self.btn_quick_esp_map)
+
+        self.btn_localize_mos = QtWidgets.QPushButton("🧲 Localize (LMO) ▾")
+        self.btn_localize_mos.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_localize_mos.setToolTip(
+            "1-Click PySCF Unitary Orbital Localization (Pipek-Mezey or Foster-Boys):\n"
+            "Transforms canonical delocalized MOs into Localized Molecular Orbitals (LMOs: σ bonds, π bonds, lone pairs)"
+        )
+        menu_loc = QtWidgets.QMenu(self.btn_localize_mos)
+        act_loc_pm = menu_loc.addAction("🧲 Pipek-Mezey (PM — Preserves σ / π Separation)")
+        act_loc_pm.triggered.connect(lambda: self._on_localize_orbitals("pipek-mezey"))
+        act_loc_boys = menu_loc.addAction("🎯 Foster-Boys (Minimum Spatial Variance)")
+        act_loc_boys.triggered.connect(lambda: self._on_localize_orbitals("boys"))
+        menu_loc.addSeparator()
+        act_loc_canon = menu_loc.addAction("↩️ Restore Canonical MOs")
+        act_loc_canon.triggered.connect(self._on_restore_canonical_orbitals)
+        self.btn_localize_mos.setMenu(menu_loc)
+        mo_top_bar.addWidget(self.btn_localize_mos)
 
         self.btn_positron_overlay = QtWidgets.QPushButton("⚛️ +Positron MO")
         self.btn_positron_overlay.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px 8px;")

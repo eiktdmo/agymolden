@@ -973,22 +973,36 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
             if idx >= 0:
                 self.combo_conda.setCurrentIndex(idx)
         else:
+            # Prioritize andres-venv with latest Brorsen distribution first, then MCCC conda
             for i in range(self.combo_conda.count()):
                 text = self.combo_conda.itemText(i)
-                if "0926MCCC" in text or "MCCC" in text:
+                if "andres-venv" in text:
                     self.combo_conda.setCurrentIndex(i)
                     break
+            else:
+                for i in range(self.combo_conda.count()):
+                    text = self.combo_conda.itemText(i)
+                    if "0926MCCC" in text or "MCCC" in text:
+                        self.combo_conda.setCurrentIndex(i)
+                        break
 
         if saved_wrap:
             idx = self.combo_wrapper.findData(saved_wrap)
             if idx >= 0:
                 self.combo_wrapper.setCurrentIndex(idx)
         else:
+            # Default to v04.09 (matching andres-venv latest Brorsen distribution) or v04.08
             for i in range(self.combo_wrapper.count()):
                 text = self.combo_wrapper.itemText(i)
-                if "v04.08" in text or "v04.09" in text:
+                if "v04.09" in text:
                     self.combo_wrapper.setCurrentIndex(i)
                     break
+            else:
+                for i in range(self.combo_wrapper.count()):
+                    text = self.combo_wrapper.itemText(i)
+                    if "v04.08" in text:
+                        self.combo_wrapper.setCurrentIndex(i)
+                        break
 
         # Load last verified remote profile if exists
         rem_settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")

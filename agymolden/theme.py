@@ -10,6 +10,10 @@ RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resour
 ARROW_DARK_PATH = os.path.join(RESOURCES_DIR, "arrow_dark.svg").replace("\\", "/")
 ARROW_LIGHT_PATH = os.path.join(RESOURCES_DIR, "arrow_light.svg").replace("\\", "/")
 CHECKMARK_PATH = os.path.join(RESOURCES_DIR, "check_white.svg").replace("\\", "/")
+SPIN_UP_LIGHT_PATH = os.path.join(RESOURCES_DIR, "spin_up_light.svg").replace("\\", "/")
+SPIN_DOWN_LIGHT_PATH = os.path.join(RESOURCES_DIR, "spin_down_light.svg").replace("\\", "/")
+SPIN_UP_DARK_PATH = os.path.join(RESOURCES_DIR, "spin_up_dark.svg").replace("\\", "/")
+SPIN_DOWN_DARK_PATH = os.path.join(RESOURCES_DIR, "spin_down_dark.svg").replace("\\", "/")
 
 DARK_THEME_QSS = """
 QMainWindow, QDialog {
@@ -270,13 +274,47 @@ QComboBox::down-arrow {
     width: 10px;
     height: 6px;
 }
+QSpinBox, QDoubleSpinBox {
+    padding-right: 20px;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid #3d3d4c;
+    border-bottom: 1px solid #3d3d4c;
+    background-color: #2b2b36;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+    background-color: #3b82f6;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("__SPIN_UP_LIGHT_PATH__");
+    width: 8px;
+    height: 5px;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid #3d3d4c;
+    background-color: #2b2b36;
+}
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #3b82f6;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("__SPIN_DOWN_LIGHT_PATH__");
+    width: 8px;
+    height: 5px;
+}
 QStatusBar {
     background-color: #141418;
     color: #94a3b8;
     border-top: 1px solid #24242c;
     font-size: 12px;
 }
-""".replace("__ARROW_LIGHT_PATH__", ARROW_LIGHT_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH)
+""".replace("__ARROW_LIGHT_PATH__", ARROW_LIGHT_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH).replace("__SPIN_UP_LIGHT_PATH__", SPIN_UP_LIGHT_PATH).replace("__SPIN_DOWN_LIGHT_PATH__", SPIN_DOWN_LIGHT_PATH)
 
 LIGHT_THEME_QSS = """
 QMainWindow, QDialog {
@@ -539,10 +577,44 @@ QComboBox::down-arrow {
     width: 10px;
     height: 6px;
 }
+QSpinBox, QDoubleSpinBox {
+    padding-right: 20px;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+    background-color: #f1f5f9;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+    background-color: #e2e8f0;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("__SPIN_UP_DARK_PATH__");
+    width: 8px;
+    height: 5px;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 18px;
+    border-left: 1px solid #cbd5e1;
+    background-color: #f1f5f9;
+}
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #e2e8f0;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("__SPIN_DOWN_DARK_PATH__");
+    width: 8px;
+    height: 5px;
+}
 QStatusBar {
     background-color: #f1f5f9;
     color: #475569;
     border-top: 1px solid #cbd5e1;
     font-size: 12px;
 }
-""".replace("__ARROW_DARK_PATH__", ARROW_DARK_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH)
+""".replace("__ARROW_DARK_PATH__", ARROW_DARK_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH).replace("__SPIN_UP_DARK_PATH__", SPIN_UP_DARK_PATH).replace("__SPIN_DOWN_DARK_PATH__", SPIN_DOWN_DARK_PATH)

@@ -295,13 +295,17 @@ class JobMonitorDialog(QtWidgets.QDialog):
         self.btn_stage_handoff.setEnabled(False)
 
         if hasattr(self, "env_group"):
-            self.env_group.setVisible(runner_type == "brorsen")
+            self.env_group.setVisible(runner_type in ("brorsen", "pyscf"))
+            self.combo_wrapper.setEnabled(runner_type == "brorsen")
 
         # Use runner's existing configured python/wrapper if already set, otherwise fall back to UI
         if runner_type == "brorsen" and isinstance(self.runner, BrorsenRunner):
             py_bin = self.runner.python_bin or self.combo_conda.currentData() or sys.executable
             wrapper = self.runner.wrapper_path or self.combo_wrapper.currentData() or ""
             self.runner.configure(python_bin=py_bin, wrapper_path=wrapper, extra_flags=self.runner.extra_flags)
+        elif runner_type == "pyscf" and hasattr(self.runner, "python_bin"):
+            py_bin = getattr(self.runner, "python_bin", None) or self.combo_conda.currentData() or sys.executable
+            self.runner.python_bin = py_bin
 
         self.lbl_job_info.setText(f"File: {os.path.basename(input_file)} | WorkDir: {os.path.dirname(input_file)}")
         self.btn_stop.setEnabled(True)
@@ -441,19 +445,38 @@ class JobMonitorDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(self, "Calculation Completed", f"Job completed successfully!\n{message}")
         else:
             # Check for beginner diagnostic recommendations
-            from .diagnostics import diagnose_orca_error
+            from .diagnostics import diagnose_qm_error
             raw_text = self.txt_log.toPlainText()
-            diag = diagnose_orca_error(raw_text)
+            eng_hint = getattr(self.runner, "program_name", "orca") or "orca"
+            diag = diagnose_qm_error(raw_text, engine=eng_hint)
             if diag:
                 msg_box = QtWidgets.QMessageBox(self)
                 msg_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-                msg_box.setWindowTitle(f"Calculation Notice: {diag.title}")
-                msg_box.setText(f"<b>{diag.title}</b><br><br>{diag.summary}")
+                msg_box.setWindowTitle(f"QC Doctor: {diag.title}")
+                msg_box.setText(f"<b>🩺 QC Doctor Diagnostic: {diag.title}</b><br><br>{diag.summary}")
                 msg_box.setInformativeText(f"<b>Suggested Remedies:</b>\n{diag.remedy}")
                 msg_box.setDetailedText(raw_text[-2000:] if len(raw_text) > 2000 else raw_text)
+
+                btn_fix = None
+                if diag.suggested_keywords:
+                    btn_fix = msg_box.addButton("⚡ Apply Fix to QM Input", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+                msg_box.addButton(QtWidgets.QMessageBox.StandardButton.Ok)
+
                 msg_box.exec()
+                if btn_fix and msg_box.clickedButton() == btn_fix:
+                    self._launch_fixed_qm_input(diag)
             else:
                 QtWidgets.QMessageBox.warning(self, "Calculation Finished", f"Job finished with notice/error:\n{message}")
+
+    def _launch_fixed_qm_input(self, diag):
+        """Open QM Calculation Setup with QC Doctor recommended keywords pre-filled."""
+        parent = self.parent()
+        if parent and hasattr(parent, "_on_open_qm_calculation_dialog"):
+            parent._on_open_qm_calculation_dialog()
+            # If a dialog was opened and stored, apply remedy
+            active_dlg = getattr(parent, "_active_qm_dialog", None)
+            if active_dlg and hasattr(active_dlg, "apply_qc_doctor_remedy"):
+                active_dlg.apply_qc_doctor_remedy(diag.suggested_keywords, title=diag.title)
 
     def _on_load_results(self):
         if self.runner.input_file:

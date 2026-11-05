@@ -54,6 +54,54 @@ class QMLogParseResult:
     homo_idx: Optional[int] = None
     is_irc: bool = False
     irc_path_points: Optional[List[float]] = None  # Reaction coordinate values along IRC (e.g. amu^(1/2)*Bohr)
+    irc_pathway: Optional[Any] = None  # Assembled IRCPathway object with barriers and landmark indices
+    trajectory_max_forces: Optional[List[float]] = None  # Per-step max atomic force norm (Ha/Bohr)
+    trajectory_rms_forces: Optional[List[float]] = None  # Per-step RMS atomic force norm (Ha/Bohr)
+    nmr_shieldings: Optional[List[Dict[str, Any]]] = None  # [{'atom_index': int, 'symbol': str, 'sigma_iso': float, 'anisotropy': float}]
+
+
+def _extract_nmr_shieldings_from_text(text: str, symbols: Optional[List[str]] = None) -> Optional[List[Dict[str, Any]]]:
+    """
+    Extract isotropic NMR chemical shielding tensors (sigma_iso in ppm) from ORCA, Gaussian, or Q-Chem output text.
+    Returns a list of dicts: [{'atom_index': 0-based int, 'symbol': str, 'sigma_iso': float, 'anisotropy': float}].
+    """
+    if not text:
+        return None
+
+    results: Dict[int, Dict[str, Any]] = {}
+
+    # 1. ORCA format: "CHEMICAL SHIELDING SUMMARY (ppm)"
+    #   Nucleus  Element    Isotropic     Anisotropy
+    #   -------  -------  ------------   ------------
+    #      0       C          154.321        25.123
+    sec_orca = text.rfind("CHEMICAL SHIELDING SUMMARY")
+    if sec_orca != -1:
+        blk = text[sec_orca:sec_orca + 15000]
+        for m in re.finditer(r'^\s*(\d+)\s+([A-Z][a-z]?)\s+([+-]?\d+\.\d+)\s+([+-]?\d+\.\d+)', blk, re.MULTILINE):
+            at_idx = int(m.group(1))
+            sym = m.group(2)
+            iso = float(m.group(3))
+            aniso = float(m.group(4))
+            results[at_idx] = {"atom_index": at_idx, "symbol": sym, "sigma_iso": iso, "anisotropy": aniso}
+
+    # 2. Gaussian GIAO format:
+    #   "  1  C    Isotropic =   187.4521   Anisotropy =    12.3456"
+    if not results:
+        for m in re.finditer(
+            r'^\s*(\d+)\s+([A-Z][a-z]?)\s+Isotropic\s*=\s*([+-]?\d+\.\d+)\s+Anisotropy\s*=\s*([+-]?\d+\.\d+)',
+            text,
+            re.MULTILINE,
+        ):
+            at_idx = int(m.group(1)) - 1  # Gaussian is 1-indexed
+            sym = m.group(2)
+            iso = float(m.group(3))
+            aniso = float(m.group(4))
+            results[at_idx] = {"atom_index": at_idx, "symbol": sym, "sigma_iso": iso, "anisotropy": aniso}
+
+    if not results:
+        return None
+
+    return [results[k] for k in sorted(results.keys())]
 
 
 def _extract_thermo_and_frontier_from_text(text: str) -> Dict[str, Optional[float]]:
@@ -122,7 +170,7 @@ def can_parse_with_cclib() -> bool:
 
 
 def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
-    """Dedicated parser for newBRORSEN calculations (.out, .log, _summary.txt)."""
+    """Dedicated parser for newBRORSEN and direct PySCF calculations (.out, .log, _summary.txt)."""
     if not os.path.isfile(path):
         return None
     try:
@@ -131,7 +179,15 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
     except Exception:
         return None
 
-    if "newBRORSEN" not in text and "POSHF" not in text and "newBRORSEN OPTIMIZATION SUMMARY" not in text:
+    is_brorsen = ("newBRORSEN" in text or "POSHF" in text or "newBRORSEN OPTIMIZATION SUMMARY" in text)
+    is_pyscf = (
+        "converged SCF energy =" in text
+        or "SCF Total Energy:" in text
+        or "PySCF" in text
+        or "Exported orbitals.molden" in text
+        or "Molden/Cube export" in text
+    )
+    if not is_brorsen and not is_pyscf:
         return None
 
     base_dir = os.path.dirname(os.path.abspath(path))
@@ -160,6 +216,12 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
     if not cycle_energy_matches:
         cycle_energy_matches = re.findall(
             r'(?:Converged\s+(?:\S+\s+)?Energy|Optimized Energy|Final Conventional Energy)\s*(?:\([^)]*\))?\s*:\s*([+-]?\d+\.\d+)\s*Ha',
+            text,
+            re.IGNORECASE
+        )
+    if not cycle_energy_matches:
+        cycle_energy_matches = re.findall(
+            r'(?:converged\s+SCF\s+energy\s*=|(?:SCF|MP2|CCSD(?:\(T\))?)\s+Total\s+Energy:)\s*([+-]?\d+\.\d+)',
             text,
             re.IGNORECASE
         )
@@ -207,7 +269,7 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
                 except Exception:
                     logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
-    # Priority B: Check for "Final Cartesian Coordinates (Angstrom):" or "Cartesian Coordinates (Angstrom):" in text
+    # Priority B: Check for "Final Cartesian Coordinates (Angstrom):" or "Cartesian Coordinates (Angstrom):" or PySCF "atoms / geometry" in text
     if final_coords is None:
         coord_blocks = re.findall(
             r'(?:Final\s+)?Cartesian\s+Coordinates\s*\((?:Angstrom|Angs|A)\):\s*\n((?:\s*[A-Za-z]{1,2}\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s*\n)+)',
@@ -229,6 +291,65 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
                 traj_coords.append(np.array(crds, dtype=np.float64))
         if traj_coords:
             final_coords = traj_coords[-1]
+
+    # Priority B2: Direct PySCF Mole dump ("atoms:" block or companion .py / .molden file)
+    if final_coords is None and is_pyscf:
+        # Check PySCF verbose=4 atom coordinate table: "   1 O       0.000000    0.000000    0.117300"
+        pyscf_at_blocks = re.findall(
+            r'(?:^\s*\d+\s+[A-Z][a-z]?\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+[^\n]*\n)+',
+            text,
+            re.MULTILINE,
+        )
+        for blk in pyscf_at_blocks:
+            syms = []
+            crds = []
+            for l in blk.strip().splitlines():
+                parts = l.split()
+                if len(parts) >= 5 and parts[0].isdigit() and parts[1].capitalize() in ELEMENT_DATA:
+                    syms.append(parts[1].capitalize())
+                    try:
+                        crds.append([float(parts[2]), float(parts[3]), float(parts[4])])
+                    except ValueError:
+                        pass
+            if syms and len(syms) == len(crds):
+                symbols = syms
+                traj_coords.append(np.array(crds, dtype=np.float64))
+        if traj_coords:
+            final_coords = traj_coords[-1]
+
+        # Also check companion .py script or .molden in the same directory
+        if final_coords is None:
+            py_cand = os.path.join(base_dir, f"{base_name}.py")
+            if os.path.isfile(py_cand):
+                try:
+                    py_txt = open(py_cand, "r", encoding="utf-8", errors="ignore").read()
+                    m_at = re.search(r'mol\.atom\s*=\s*"""(.*?)"""', py_txt, re.DOTALL)
+                    if m_at:
+                        syms, crds = [], []
+                        for l in m_at.group(1).replace(";", "\n").replace("'", "").replace('"', "").splitlines():
+                            p = l.split()
+                            if len(p) >= 4 and p[0].capitalize() in ELEMENT_DATA:
+                                syms.append(p[0].capitalize())
+                                crds.append([float(p[1]), float(p[2]), float(p[3])])
+                        if syms and len(syms) == len(crds):
+                            symbols = syms
+                            final_coords = np.array(crds, dtype=np.float64)
+                            traj_coords = [final_coords]
+                except Exception as e:
+                    log.debug("Failed parsing xyz candidate %s: %s", xyz_cand, e)
+        if final_coords is None:
+            for m_cand in (os.path.join(base_dir, f"{base_name}.molden"), os.path.join(base_dir, "orbitals.molden")):
+                if os.path.isfile(m_cand):
+                    try:
+                        from .volumetric import parse_molden_file
+                        md = parse_molden_file(m_cand)
+                        if md and md.symbols and len(md.coords) == len(md.symbols):
+                            symbols = md.symbols
+                            final_coords = md.coords
+                            traj_coords = [final_coords]
+                            break
+                    except Exception as e:
+                        log.debug("Failed parsing molden candidate %s: %s", m_cand, e)
 
     # Priority C: Check for companion input file (.inp)
     # If we have optimization steps or only final coordinates, get initial structure as step 0 if available!
@@ -389,10 +510,26 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
         if len(q_list) == len(symbols):
             parsed_charges = np.array(q_list, dtype=np.float64)
 
-    comment = f"newBRORSEN output: {len(symbols)} atoms, {len(cycle_energy_matches)} energy evaluation(s)"
+    # Extract TD-DFT UV-Vis transitions if printed by PySCF / newBRORSEN
+    et_energies = None
+    et_oscs = None
+    td_matches = re.findall(
+        r'Excited\s+State\s+\d+:\s*E\s*=\s*([+-]?\d+\.\d+)\s*eV\s+lambda\s*=\s*([+-]?\d+\.\d+)\s*nm\s+f\s*=\s*([+-]?\d+\.\d+)',
+        text,
+        re.IGNORECASE,
+    )
+    if td_matches:
+        et_energies = [float(m[1]) for m in td_matches]
+        et_oscs = [float(m[2]) for m in td_matches]
+
+    nmr_sh = _extract_nmr_shieldings_from_text(text, symbols=symbols)
+    prog_label = "newBRORSEN" if is_brorsen else "PySCF"
+    comment = f"{prog_label} output: {len(symbols)} atoms, {len(cycle_energy_matches)} energy evaluation(s)"
+    if nmr_sh:
+        comment += f", {len(nmr_sh)} NMR shielding(s)"
     extra = _extract_thermo_and_frontier_from_text(text)
     return QMLogParseResult(
-        program_name="newBRORSEN",
+        program_name=prog_label,
         symbols=symbols,
         trajectory_coords=traj_coords if traj_coords else [final_coords],
         trajectory_energies=traj_energies,
@@ -400,6 +537,96 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
         converged="converged" in text.lower(),
         comment=comment,
         charges=parsed_charges,
+        et_energies=et_energies,
+        et_oscs=et_oscs,
+        nmr_shieldings=nmr_sh,
+        **extra,
+    )
+
+
+def _parse_openlowdin_logfile(path: str) -> Optional[QMLogParseResult]:
+    """Dedicated parser for openLOWDIN APMO output files (.out, .log)."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except Exception:
+        return None
+
+    if "LOWDIN" not in text.upper() and "APMO" not in text.upper() and "SYSTEM_DESCRIPTION" not in text:
+        return None
+
+    base_dir = os.path.dirname(os.path.abspath(path))
+    base_name = os.path.splitext(os.path.basename(path))[0]
+    ha_to_ev = 27.211386245988
+
+    # Extract total energies (Hartree)
+    e_matches = re.findall(
+        r'(?:TOTAL\s+ENERGY\s*=|Total\s+Energy\s*[:=]|E\(TOTAL\)\s*=)\s*([+-]?\d+\.\d+)',
+        text,
+        re.IGNORECASE,
+    )
+    energies = [float(e) * ha_to_ev for e in e_matches]
+
+    symbols: List[str] = []
+    steps: List[np.ndarray] = []
+
+    # 1. Try parsing classical nuclei / geometry blocks in output or companion .lowdin input
+    lowdin_inp = os.path.join(base_dir, f"{base_name}.lowdin")
+    for src_txt in ([text] + ([open(lowdin_inp, encoding="utf-8", errors="ignore").read()] if os.path.isfile(lowdin_inp) else [])):
+        # Match classical dirac lines: "O  dirac  0.000  0.000  0.117" or e-(O) lines
+        dirac_matches = re.findall(
+            r'^\s*([A-Z][a-z]?)\s+dirac\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)',
+            src_txt,
+            re.MULTILINE,
+        )
+        if dirac_matches:
+            syms = [m[0].capitalize() for m in dirac_matches]
+            crds = np.array([[float(m[1]), float(m[2]), float(m[3])] for m in dirac_matches], dtype=np.float64)
+            symbols = syms
+            steps.append(crds)
+            break
+        e_matches_geom = re.findall(
+            r'^\s*e-\(([A-Za-z]+)\)\s+\S+\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)\s+([-+]?\d+\.\d+)',
+            src_txt,
+            re.MULTILINE,
+        )
+        if e_matches_geom:
+            syms = [m[0].capitalize() for m in e_matches_geom]
+            crds = np.array([[float(m[1]), float(m[2]), float(m[3])] for m in e_matches_geom], dtype=np.float64)
+            symbols = syms
+            steps.append(crds)
+            break
+
+    # 2. Check companion Molden files exported by openLOWDIN
+    if not symbols or not steps:
+        for ext in (".molden", ".e-.molden", ".E-.molden", ".E-ALPHA.molden", ".molf"):
+            cand_m = os.path.join(base_dir, f"{base_name}{ext}")
+            if os.path.isfile(cand_m):
+                try:
+                    from .volumetric import parse_molden_file
+                    md = parse_molden_file(cand_m)
+                    if md and md.symbols and len(md.coords) == len(md.symbols):
+                        symbols = md.symbols
+                        steps = [md.coords]
+                        break
+                except Exception as e:
+                    log.debug("Failed parsing openLOWDIN molden candidate %s: %s", cand_m, e)
+
+    if not symbols or not steps:
+        return None
+
+    extra = _extract_thermo_and_frontier_from_text(text)
+    comment = f"openLOWDIN APMO calculation: {len(symbols)} atoms, {len(energies)} energy evaluation(s)"
+    return QMLogParseResult(
+        program_name="openLOWDIN",
+        symbols=symbols,
+        trajectory_coords=steps,
+        trajectory_energies=energies,
+        vibrational_analysis=None,
+        converged=("END OF LOWDIN" in text.upper() or "CONVERGED" in text.upper() or len(energies) > 0),
+        comment=comment,
         **extra,
     )
 
@@ -576,6 +803,9 @@ def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
         comment += f", {len(et_energies)} electronic transition(s)"
 
     extra = _extract_thermo_and_frontier_from_text(text)
+    nmr_sh = _extract_nmr_shieldings_from_text(text, symbols=symbols)
+    if nmr_sh:
+        comment += f", {len(nmr_sh)} NMR shielding(s)"
     return QMLogParseResult(
         program_name="Orca",
         symbols=symbols,
@@ -586,6 +816,7 @@ def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
         comment=comment,
         et_energies=et_energies,
         et_oscs=et_oscs,
+        nmr_shieldings=nmr_sh,
         **extra,
     )
 
@@ -595,10 +826,13 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"File not found: {path}")
 
-    # 1. Try dedicated newBRORSEN parser first
+    # 1. Try dedicated newBRORSEN / PySCF and openLOWDIN parsers first
     brorsen_res = parse_brorsen_logfile(path)
     if brorsen_res is not None:
         return brorsen_res
+    lowdin_res = _parse_openlowdin_logfile(path)
+    if lowdin_res is not None:
+        return lowdin_res
 
     # 2. Use cclib to open and parse
     if not cclib:
@@ -634,7 +868,7 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
         if parser is None:
             raise ValueError(
                 f"Could not automatically detect the QM program format of '{os.path.basename(path)}'.\n"
-                "Supported programs include newBRORSEN, Gaussian, ORCA, Q-Chem, NWChem, Molpro, GAMESS, xTB, etc."
+                "Supported programs include newBRORSEN, PySCF, Gaussian, ORCA, openLOWDIN, Q-Chem, NWChem, Molpro, GAMESS, xTB, etc."
             )
         raise ValueError(f"Could not extract coordinates from output file: {path}")
 
@@ -706,14 +940,44 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
             if vib_analysis is not None and vib_analysis.raman_activities is None and orca_fb.vibrational_analysis:
                 vib_analysis.raman_activities = orca_fb.vibrational_analysis.raman_activities
 
+        if et_energies is None and os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as f_log:
+                    log_txt = f_log.read()
+                # Gaussian format: Excited State   1:      Singlet-A      3.5421 eV   350.04 nm  f=0.0421
+                g_td = re.findall(
+                    r'Excited\s+State\s+\d+:\s*(?:[^\d\n]+)?\s*([+-]?\d+\.?\d*)\s*eV\s+([+-]?\d+\.?\d*)\s*nm\s+f\s*=\s*([+-]?\d+\.?\d*)',
+                    log_txt,
+                    re.IGNORECASE,
+                )
+                if g_td:
+                    et_energies = [float(m[1]) for m in g_td]
+                    et_oscs = [float(m[2]) for m in g_td]
+                    comment += f", {len(et_energies)} electronic transition(s)"
+            except Exception as e:
+                log.debug("Gaussian TD-DFT extraction fallback notice: %s", e)
+
     # Extract gradients / forces if present
     nuclear_forces = None
+    trajectory_max_forces = None
+    trajectory_rms_forces = None
     grads = getattr(data, "grads", None)
     if grads is not None and len(grads) > 0:
         # Most recent optimization step gradients (n_atoms, 3)
         last_g = np.asarray(grads[-1], dtype=np.float64)
         # Force = -gradient
         nuclear_forces = -last_g
+        try:
+            trajectory_max_forces = []
+            trajectory_rms_forces = []
+            for g_step in grads:
+                g_arr = np.asarray(g_step, dtype=np.float64)
+                atom_norms = np.linalg.norm(g_arr, axis=1)
+                trajectory_max_forces.append(float(np.max(atom_norms)))
+                trajectory_rms_forces.append(float(np.sqrt(np.mean(atom_norms ** 2))))
+        except Exception:
+            trajectory_max_forces = None
+            trajectory_rms_forces = None
 
     # Extract HOMO/LUMO, Dipole, and Thermochemistry from cclib or raw log text
     extra: Dict[str, Optional[float]] = {
@@ -755,6 +1019,7 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     # Detect if this is an Intrinsic Reaction Coordinate (IRC) calculation
     is_irc = False
     irc_pts = None
+    irc_pathway = None
     if full_text:
         is_irc = bool(
             "IRC-Calculation" in full_text
@@ -770,6 +1035,30 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
                     irc_pts = [float(x) for x in rxn_coords]
                 except ValueError:
                     irc_pts = None
+
+            try:
+                from .irc_sweeper import parse_gaussian_irc_text, parse_orca_irc_text, assemble_irc_pathway
+                if "Gaussian" in program_name or "Point Number:" in full_text:
+                    irc_pathway = parse_gaussian_irc_text(full_text)
+                elif "ORCA" in program_name or "ORCA INTRINSIC REACTION COORDINATE" in full_text:
+                    irc_pathway = parse_orca_irc_text(full_text)
+
+                if irc_pathway is None and trajectory_coords and trajectory_energies:
+                    e_ha = [e / 27.211386245988 for e in trajectory_energies]
+                    irc_pathway = assemble_irc_pathway(
+                        symbols=symbols,
+                        coords_list=trajectory_coords,
+                        energies_ha=e_ha,
+                        rxn_coords=irc_pts,
+                    )
+
+                if irc_pathway and irc_pathway.n_points > 0:
+                    trajectory_coords = irc_pathway.get_coords_trajectory()
+                    trajectory_energies = [e * 27.211386245988 for e in irc_pathway.get_energies_ha()]
+                    irc_pts = irc_pathway.get_reaction_coords()
+                    comment += f", ordered IRC pathway ({irc_pathway.n_points} steps, barrier: +{irc_pathway.delta_e_fwd_kcal:.1f} kcal/mol)"
+            except Exception:
+                log.debug("Ignored non-fatal exception assembling IRC pathway", exc_info=True)
 
     # Extract Molecular Orbitals if present in cclib data
     parsed_orbitals = None
@@ -794,6 +1083,10 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     except Exception:
         log.debug("Ignored non-fatal exception extracting MOs from cclib data", exc_info=True)
 
+    nmr_sh = _extract_nmr_shieldings_from_text(full_text, symbols=symbols) if full_text else None
+    if nmr_sh:
+        comment += f", {len(nmr_sh)} NMR shielding(s)"
+
     return QMLogParseResult(
         program_name=program_name,
         symbols=symbols,
@@ -809,5 +1102,9 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
         homo_idx=parsed_homo_idx,
         is_irc=is_irc,
         irc_path_points=irc_pts,
+        irc_pathway=irc_pathway,
+        trajectory_max_forces=trajectory_max_forces,
+        trajectory_rms_forces=trajectory_rms_forces,
+        nmr_shieldings=nmr_sh,
         **extra,
     )

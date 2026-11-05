@@ -90,6 +90,8 @@ class BaseCalcRunner(QtCore.QObject):
             for k, v in extra_env.items():
                 q_env.insert(k, v)
             self.process.setProcessEnvironment(q_env)
+        if getattr(self, "stdin_file", None) and os.path.isfile(self.stdin_file):
+            self.process.setStandardInputFile(self.stdin_file)
         self.process.readyReadStandardOutput.connect(self._on_stdout_ready)
         self.process.readyReadStandardError.connect(self._on_stderr_ready)
         self.process.finished.connect(self._on_process_finished)
@@ -128,6 +130,24 @@ class BaseCalcRunner(QtCore.QObject):
         pass
 
     def _on_process_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus):
+        if self.process:
+            rem_out = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+            for line in rem_out.splitlines():
+                if line:
+                    self._raw_log_buffer.append(line)
+                    self.line_received.emit(line, False)
+                    self._parse_line(line)
+            rem_err = bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace")
+            for line in rem_err.splitlines():
+                if line:
+                    self._raw_log_buffer.append(line)
+                    self.line_received.emit(line, True)
+                    if hasattr(self, "_out_fh") and getattr(self, "_out_fh") is not None:
+                        try:
+                            self._out_fh.write(line + "\n")
+                            self._out_fh.flush()
+                        except Exception as e:
+                            log.debug("Failed writing stderr line to log file: %s", e)
         success = (exit_code == 0 and exit_status == QtCore.QProcess.ExitStatus.NormalExit)
         if success:
             self._set_status(JobStatus.FINISHED, f"Job finished successfully (code {exit_code})")

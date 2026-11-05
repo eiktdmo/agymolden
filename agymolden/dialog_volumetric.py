@@ -76,6 +76,8 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         self.current_lmo_orbitals = None  # Holds localized orbital coefficients if calculated
         self.pos_color = (0.22, 0.58, 0.94)  # Vibrant Cyan-Blue (+)
         self.neg_color = (0.95, 0.30, 0.25)  # Vibrant Coral-Red (-)
+        self._surface_undo_stack: List[Tuple[List[IsosurfaceMesh], float]] = []
+        self._surface_redo_stack: List[Tuple[List[IsosurfaceMesh], float]] = []
 
         self._init_ui()
 
@@ -329,6 +331,18 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         btn_clear = QtWidgets.QPushButton("Clear Surface")
         btn_clear.clicked.connect(self._on_clear_surface)
         btn_box.addWidget(btn_clear)
+
+        self.btn_undo_surf = QtWidgets.QPushButton("↩️ Undo Surface")
+        self.btn_undo_surf.setToolTip("Revert to the previous multi-surface overlay snapshot")
+        self.btn_undo_surf.setEnabled(False)
+        self.btn_undo_surf.clicked.connect(self._on_undo_surface)
+        btn_box.addWidget(self.btn_undo_surf)
+
+        self.btn_redo_surf = QtWidgets.QPushButton("↪️ Redo Surface")
+        self.btn_redo_surf.setToolTip("Restore the undone surface overlay snapshot")
+        self.btn_redo_surf.setEnabled(False)
+        self.btn_redo_surf.clicked.connect(self._on_redo_surface)
+        btn_box.addWidget(self.btn_redo_surf)
 
         btn_box.addStretch()
         btn_close = QtWidgets.QPushButton("Close")
@@ -1325,8 +1339,47 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             self.btn_neg_col.setStyleSheet(f"background-color: {col.name()}; color: {txt_col}; font-weight: bold;")
             self._update_surface()
 
+    def _push_surface_state(self, new_meshes: list, new_opacity: float):
+        """Record current viewer active isosurfaces before applying new meshes for undo/redo."""
+        current_meshes = list(getattr(self.viewer, "active_isosurfaces", [])) if self.viewer else []
+        current_opacity = float(getattr(self.viewer, "surface_opacity", 0.8)) if self.viewer else 0.8
+        self._surface_undo_stack.append((current_meshes, current_opacity))
+        if len(self._surface_undo_stack) > 25:
+            self._surface_undo_stack.pop(0)
+        self._surface_redo_stack.clear()
+        self._update_undo_redo_buttons()
+        self.surface_updated.emit(new_meshes, new_opacity)
+
+    def _update_undo_redo_buttons(self):
+        if hasattr(self, "btn_undo_surf"):
+            self.btn_undo_surf.setEnabled(len(self._surface_undo_stack) > 0)
+        if hasattr(self, "btn_redo_surf"):
+            self.btn_redo_surf.setEnabled(len(self._surface_redo_stack) > 0)
+
+    def _on_undo_surface(self):
+        if not self._surface_undo_stack:
+            return
+        current_meshes = list(getattr(self.viewer, "active_isosurfaces", [])) if self.viewer else []
+        current_opacity = float(getattr(self.viewer, "surface_opacity", 0.8)) if self.viewer else 0.8
+        self._surface_redo_stack.append((current_meshes, current_opacity))
+        prev_meshes, prev_opacity = self._surface_undo_stack.pop()
+        self._update_undo_redo_buttons()
+        self.surface_updated.emit(prev_meshes, prev_opacity)
+        self.lbl_stats.setText(f"Surface restored from undo: {len(prev_meshes)} active mesh layer(s).")
+
+    def _on_redo_surface(self):
+        if not self._surface_redo_stack:
+            return
+        current_meshes = list(getattr(self.viewer, "active_isosurfaces", [])) if self.viewer else []
+        current_opacity = float(getattr(self.viewer, "surface_opacity", 0.8)) if self.viewer else 0.8
+        self._surface_undo_stack.append((current_meshes, current_opacity))
+        next_meshes, next_opacity = self._surface_redo_stack.pop()
+        self._update_undo_redo_buttons()
+        self.surface_updated.emit(next_meshes, next_opacity)
+        self.lbl_stats.setText(f"Surface restored from redo: {len(next_meshes)} active mesh layer(s).")
+
     def _on_clear_surface(self):
-        self.surface_updated.emit([], 1.0)
+        self._push_surface_state([], 1.0)
         self.lbl_stats.setText("Isosurface cleared.")
 
     def _update_surface(self):
@@ -1408,7 +1461,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
                 combined = list(self.viewer.active_isosurfaces) + list(meshes)
             else:
                 combined = meshes
-            self.surface_updated.emit(combined, opacity)
+            self._push_surface_state(combined, opacity)
             self.lbl_stats.setText(stat_text)
             if self.parent() and hasattr(self.parent(), "statusBar") and self.parent().statusBar():
                 self.parent().statusBar().showMessage(stat_text, 4000)

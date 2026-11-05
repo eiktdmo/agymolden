@@ -471,6 +471,11 @@ function render() {{
 
     gl.lineWidth(3);
     gl.drawArrays(gl.LINES, 0, lineVerts.length / 3);
+
+    gl.disableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(colLoc);
+    gl.deleteBuffer(lineBuf);
+    gl.deleteBuffer(colBuf);
   }}
 
   // 2. Draw Atoms (Sphere Quads)
@@ -478,24 +483,54 @@ function render() {{
   gl.uniformMatrix4fv(gl.getUniformLocation(sphereProg, 'uProjection'), false, new Float32Array(uProjection));
   gl.uniformMatrix4fv(gl.getUniformLocation(sphereProg, 'uModelView'), false, new Float32Array(uModelView));
 
-  const quad = [-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1];
-  const qBuf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, qBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(quad), gl.STATIC_DRAW);
-  const qLoc = gl.getAttribLocation(sphereProg, 'aQuad');
-  gl.enableVertexAttribArray(qLoc);
-  gl.vertexAttribPointer(qLoc, 2, gl.FLOAT, false, 0, 0);
-
+  const atomData = [];
+  const qVerts = [
+    [-1, -1], [1, -1], [-1, 1],
+    [-1, 1], [1, -1], [1, 1]
+  ];
   for (let i = 0; i < coords.length; i++) {{
     const p = coords[i];
     const a = DATA.atoms[i];
     const col = hexToRgb(a.color);
-    
-    gl.vertexAttrib3f(gl.getAttribLocation(sphereProg, 'aOffset'), p[0], p[1], p[2]);
-    gl.vertexAttrib3f(gl.getAttribLocation(sphereProg, 'aColor'), col[0], col[1], col[2]);
-    gl.vertexAttrib1f(gl.getAttribLocation(sphereProg, 'aRadius'), a.radius);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    for (let k = 0; k < 6; k++) {{
+      atomData.push(
+        p[0], p[1], p[2],
+        qVerts[k][0], qVerts[k][1],
+        col[0], col[1], col[2],
+        a.radius
+      );
+    }}
   }}
+
+  const atomBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, atomBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(atomData), gl.STATIC_DRAW);
+
+  const stride = 9 * 4;
+  const offLoc = gl.getAttribLocation(sphereProg, 'aOffset');
+  const qLoc = gl.getAttribLocation(sphereProg, 'aQuad');
+  const cLoc = gl.getAttribLocation(sphereProg, 'aColor');
+  const rLoc = gl.getAttribLocation(sphereProg, 'aRadius');
+
+  gl.enableVertexAttribArray(offLoc);
+  gl.vertexAttribPointer(offLoc, 3, gl.FLOAT, false, stride, 0);
+
+  gl.enableVertexAttribArray(qLoc);
+  gl.vertexAttribPointer(qLoc, 2, gl.FLOAT, false, stride, 12);
+
+  gl.enableVertexAttribArray(cLoc);
+  gl.vertexAttribPointer(cLoc, 3, gl.FLOAT, false, stride, 20);
+
+  gl.enableVertexAttribArray(rLoc);
+  gl.vertexAttribPointer(rLoc, 1, gl.FLOAT, false, stride, 32);
+
+  gl.drawArrays(gl.TRIANGLES, 0, coords.length * 6);
+
+  gl.disableVertexAttribArray(offLoc);
+  gl.disableVertexAttribArray(qLoc);
+  gl.disableVertexAttribArray(cLoc);
+  gl.disableVertexAttribArray(rLoc);
+  gl.deleteBuffer(atomBuf);
 }}
 
 // Mouse / Touch Controls

@@ -356,7 +356,8 @@ class RemoteSshRunner(BaseCalcRunner):
                 mkdir_cmd.extend(["-i", self.host_cfg.identity_file, "-o", "IdentitiesOnly=yes"])
             if self.host_cfg.port != 22:
                 mkdir_cmd.extend(["-p", str(self.host_cfg.port)])
-            mkdir_cmd.extend([target, f"mkdir -p {clean_rem_dir}"])
+            q_rem_dir = shlex.quote(clean_rem_dir)
+            mkdir_cmd.extend([target, f"mkdir -p {q_rem_dir}"])
             full_mkdir, mkdir_env = _wrap_ssh_command(mkdir_cmd, self.host_cfg.password)
             try:
                 subprocess.run(full_mkdir, capture_output=True, timeout=8, env=mkdir_env)
@@ -393,12 +394,15 @@ class RemoteSshRunner(BaseCalcRunner):
             if self.host_cfg.port != 22:
                 ssh_args.extend(["-p", str(self.host_cfg.port)])
 
-            nice_prefix = f"nice -n {self.host_cfg.nice_value} " if self.host_cfg.use_nice else ""
+            nice_prefix = f"nice -n {int(self.host_cfg.nice_value)} " if self.host_cfg.use_nice else ""
             stem = os.path.splitext(base_in)[0]
             remote_log = f"{stem}.out"
+            q_remote_log = shlex.quote(remote_log)
+            q_base_in = shlex.quote(base_in)
 
             if self.host_cfg.use_slurm:
                 slurm_file = f"{stem}.slurm"
+                q_slurm_file = shlex.quote(slurm_file)
                 local_slurm_path = os.path.join(self.work_dir, slurm_file)
                 slurm_content = generate_slurm_script(
                     job_name=stem,
@@ -446,7 +450,7 @@ class RemoteSshRunner(BaseCalcRunner):
                     sbatch_cmd.extend(["-i", self.host_cfg.identity_file, "-o", "IdentitiesOnly=yes"])
                 if self.host_cfg.port != 22:
                     sbatch_cmd.extend(["-p", str(self.host_cfg.port)])
-                sbatch_cmd.extend([target, f"cd {clean_rem_dir} && sbatch {slurm_file}"])
+                sbatch_cmd.extend([target, f"cd {q_rem_dir} && sbatch {q_slurm_file}"])
                 full_sbatch, sbatch_env = _wrap_ssh_command(sbatch_cmd, self.host_cfg.password)
                 try:
                     r_sub = subprocess.run(full_sbatch, capture_output=True, text=True, timeout=20, env=sbatch_env)
@@ -460,19 +464,20 @@ class RemoteSshRunner(BaseCalcRunner):
 
                 if slurm_job_id:
                     remote_cmd = (
-                        f"cd {clean_rem_dir} && touch {remote_log} && "
-                        f"(tail -n +1 -f {remote_log} & T_PID=$!; "
+                        f"cd {q_rem_dir} && touch {q_remote_log} && "
+                        f"(tail -n +1 -f {q_remote_log} & T_PID=$!; "
                         f"while squeue -j {slurm_job_id} 2>/dev/null | grep -q {slurm_job_id}; do sleep 2; done; "
                         f"sleep 2; kill $T_PID 2>/dev/null)"
                     )
                 else:
-                    remote_cmd = f"cd {clean_rem_dir} && touch {remote_log} && tail -n +1 -f {remote_log}"
+                    remote_cmd = f"cd {q_rem_dir} && touch {q_remote_log} && tail -n +1 -f {q_remote_log}"
             else:
+                flags_str = " ".join(shlex.quote(f) for f in self.extra_flags)
                 if self.host_cfg.use_nohup:
-                    exec_body = f"nohup {nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {' '.join(self.extra_flags)} {base_in} 2>&1 | tee {remote_log}"
+                    exec_body = f"nohup {nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {flags_str} {q_base_in} 2>&1 | tee {q_remote_log}"
                 else:
-                    exec_body = f"{nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {' '.join(self.extra_flags)} {base_in}"
-                remote_cmd = f"cd {clean_rem_dir} && {exec_body}"
+                    exec_body = f"{nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {flags_str} {q_base_in}"
+                remote_cmd = f"cd {q_rem_dir} && {exec_body}"
 
             ssh_args.extend([target, remote_cmd])
             full_exec_cmd, exec_env = _wrap_ssh_command([ssh_bin] + ssh_args, self.host_cfg.password)
@@ -529,8 +534,8 @@ class RemoteSshRunner(BaseCalcRunner):
                     inp_txt = f_inp.read()
                 for m_jn in re.finditer(r"^\s*%jobname\s+([^\s]+)", inp_txt, re.MULTILINE | re.IGNORECASE):
                     stem_prefixes.add(m_jn.group(1).strip())
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Failed parsing %%jobname stems from %s: %s", self.input_file, e)
 
         base_ssh_opts = ["-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2"]
         if self.host_cfg.password:
@@ -545,11 +550,13 @@ class RemoteSshRunner(BaseCalcRunner):
         import threading
 
         def _pull_worker():
+            out_candidate = None
             try:
                 files_to_pull = []
                 # 1. Query remote directory via SSH for each stem prefix
-                ls_patterns = " ".join([f"{st}*" for st in stem_prefixes])
-                list_cmd = ["ssh"] + base_ssh_opts + [target, f"cd {clean_rem_dir} && ls -1 {ls_patterns}"]
+                ls_patterns = " ".join([f"{shlex.quote(st)}*" for st in stem_prefixes])
+                q_rem_dir = shlex.quote(clean_rem_dir)
+                list_cmd = ["ssh"] + base_ssh_opts + [target, f"cd {q_rem_dir} && ls -1 {ls_patterns}"]
                 full_list_cmd, list_env = _wrap_ssh_command(list_cmd, self.host_cfg.password)
                 r_ls = subprocess.run(full_list_cmd, capture_output=True, text=True, timeout=20, env=list_env)
 
@@ -592,7 +599,6 @@ class RemoteSshRunner(BaseCalcRunner):
                     subprocess.run(full_scp, capture_output=True, timeout=30, env=scp_env)
 
                 # 3. Locate downloaded .out or .log file if present
-                out_candidate = None
                 for ext in (".out", ".log"):
                     cand = os.path.join(self.work_dir, f"{base_no_ext}{ext}")
                     if os.path.isfile(cand):

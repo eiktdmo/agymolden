@@ -8,6 +8,7 @@ can be registered seamlessly with its own options, syntax, and file extensions.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import re
 from typing import List, Dict, Optional, Type, Tuple, Any
 import numpy as np
 
@@ -80,30 +81,107 @@ class GaussianGenerator(BaseQMGenerator):
         "Methanol": "methanol", "THF": "thf", "Toluene": "toluene"
     }
 
+    supported_methods = [
+        "B3LYP", "PBE0", "wB97XD", "M062X", "CAM-B3LYP", "B97D3", "HF", "MP2", "CCSD(T)"
+    ]
+    supported_basis_sets = [
+        "def2SVP", "def2TZVP", "def2QZVP", "6-31G*", "6-31+G(d,p)", "6-311++G(d,p)", "cc-pVDZ", "cc-pVTZ", "sto-3g"
+    ]
+
+    @staticmethod
+    def _normalize_gaussian_basis(basis: str) -> str:
+        b = (basis or "").strip()
+        # Gaussian Ahlrichs def2 basis sets do NOT have hyphens (def2SVP, def2TZVP, etc.)
+        b = re.sub(r"^def2-", "def2", b, flags=re.IGNORECASE)
+        b_lower = b.lower()
+        if b_lower == "sto-3g":
+            return "STO-3G"
+        if b_lower in ("6-31g*", "6-31g(d)"):
+            return "6-31G*"
+        if b_lower in ("6-31+g(d,p)", "6-31+g*", "6-31+g**"):
+            return "6-31+G(d,p)"
+        if b_lower in ("6-311++g(d,p)", "6-311++g**"):
+            return "6-311++G(d,p)"
+        if b_lower == "cc-pvdz":
+            return "cc-pVDZ"
+        if b_lower == "cc-pvtz":
+            return "cc-pVTZ"
+        if b_lower in ("cc-pvqz", "cc-pqvdz"):
+            return "cc-pVQZ"
+        return b
+
+    @staticmethod
+    def _normalize_gaussian_method(method: str) -> str:
+        m = (method or "B3LYP").strip().split()[0]
+        m_lower = m.lower()
+        if m_lower in ("wb97x-d", "wb97xd"):
+            return "wB97XD"
+        if m_lower in ("m06-2x", "m062x"):
+            return "M062X"
+        if m_lower in ("m06-hf", "m06hf"):
+            return "M06HF"
+        if m_lower in ("m06-l", "m06l"):
+            return "M06L"
+        if m_lower == "pbe0":
+            return "PBE1PBE"
+        if m_lower in ("camb3lyp", "cam-b3lyp"):
+            return "CAM-B3LYP"
+        if m_lower in ("b97d3", "b97-d3"):
+            return "B97D3"
+        return m
+
     def generate_input(self, symbols, coords, params, zatoms=None, variables=None) -> str:
+        mem_gb = max(2, getattr(params, "memory_gb", 2))
         lines = [
             f"%chk={params.chk_file}",
             f"%nprocshared={params.n_procs}",
-            f"%mem={params.memory_gb}GB",
+            f"%mem={mem_gb}GB",
         ]
         job_keys = []
         if "Opt" in params.job_type:
             job_keys.append("opt")
         if "Freq" in params.job_type:
             job_keys.append("freq")
-        if "SP" in params.job_type or not job_keys:
-            job_keys.append("sp")
         if "TS" in params.job_type:
             job_keys.append("opt=(ts,calcfc,noeigentest)")
+        if "NMR" in params.job_type:
+            job_keys.append("nmr=giao")
+        if "TD-DFT" in params.job_type or "UV-Vis" in params.job_type:
+            job_keys.append("td=(nstates=10)")
+        if "SP" in params.job_type or not job_keys:
+            job_keys.append("sp")
 
-        func = params.method.split()[0]
+        basis = self._normalize_gaussian_basis(params.basis)
+        func = self._normalize_gaussian_method(params.method)
+
+        # Empirical dispersion: Gaussian only accepts a damping scheme the functional is parametrised for.
+        # (Verified against Gaussian 16: HF/MP2/CCSD(T) take none here; M06-2X has no BJ set, only zero-damping D3.)
+        disp_key = ""
+        if params.dispersion and params.dispersion not in ("None", ""):
+            d_upper = params.dispersion.upper()
+            f_up = func.upper()
+            wavefunction = f_up in ("HF", "MP2", "CCSD(T)", "CCSD", "MP3", "MP4")
+            builtin = f_up in ("WB97XD", "B97D3", "B97D")
+            if not wavefunction and not builtin:
+                bj_unavailable = f_up in ("M062X", "M06HF", "M06L", "M06")
+                if "D3BJ" in d_upper and not bj_unavailable:
+                    disp_key = "EmpiricalDispersion=GD3BJ"
+                elif "D3" in d_upper:
+                    disp_key = "EmpiricalDispersion=GD3"
+                elif "D2" in d_upper:
+                    disp_key = "EmpiricalDispersion=GD2"
+
         if params.frozen_atoms or params.scan_spec:
             # Gaussian modredundant option
             job_keys = [k if k != "opt" else "opt=modredundant" for k in job_keys]
             if "opt" not in " ".join(job_keys):
                 job_keys.append("opt=modredundant")
 
-        route = f"#p {func}/{params.basis} {' '.join(job_keys)}"
+        route = f"#p {func}/{basis} {' '.join(job_keys)}"
+        if disp_key:
+            route += f" {disp_key}"
+        route += " gfinput pop=regular"
+
         if params.solvent != "None (Gas Phase)" and params.solvent in self.SOLVENT_MAP:
             route += f" scrf=(cpcm,solvent={self.SOLVENT_MAP[params.solvent]})"
         if params.extra_keywords.strip():
@@ -116,11 +194,11 @@ class GaussianGenerator(BaseQMGenerator):
         lines.append(f"{params.charge} {params.multiplicity}")
 
         if params.use_zmatrix and zatoms:
-            zmat_str = format_zmatrix_variables(zatoms, variables) if variables else format_zmatrix_numeric(zatoms)
+            zmat_str = format_zmatrix_numeric(zatoms).strip()
             lines.append(zmat_str)
         else:
             for s, (x, y, z) in zip(symbols, coords):
-                lines.append(f" {s:<2}  {x:12.6f} {y:12.6f} {z:12.6f}")
+                lines.append(f" {s:<2}  {float(x):12.6f} {float(y):12.6f} {float(z):12.6f}")
 
         # Inject Gaussian modredundant freeze / scan specifications
         if params.frozen_atoms or params.scan_spec:
@@ -135,7 +213,7 @@ class GaussianGenerator(BaseQMGenerator):
                 lines.append(f"{stype} {idx_1based} S {n_intervals} {step_size:.4f}")
 
         lines.append("")
-        return "\n".join(lines)
+        return "\n".join(lines) + "\n\n"
 
 
 class OrcaGenerator(BaseQMGenerator):
@@ -156,10 +234,12 @@ class OrcaGenerator(BaseQMGenerator):
             job_keys.append("Opt")
         if "Freq" in params.job_type:
             job_keys.append("Freq")
-        if "SP" in params.job_type or not job_keys:
-            job_keys.append("SP")
         if "TS" in params.job_type:
             job_keys.append("OptTS")
+        if "NMR" in params.job_type:
+            job_keys.append("NMR")
+        if "SP" in params.job_type or (not job_keys and "TD-DFT" not in params.job_type and "UV-Vis" not in params.job_type):
+            job_keys.append("SP")
 
         func = params.method.split()[0]
         simple_route = f"! {func} {params.basis}"
@@ -176,6 +256,10 @@ class OrcaGenerator(BaseQMGenerator):
         if params.n_procs > 1:
             lines.append(f"%pal nprocs {params.n_procs} end")
         lines.append(f"%maxcore {int(params.memory_gb * 1024 / max(1, params.n_procs))}")
+        if "TD-DFT" in params.job_type or "UV-Vis" in params.job_type:
+            lines.append("%tddft")
+            lines.append("  nroots 10")
+            lines.append("end")
 
         # Inject ORCA Constraints / Relaxed Surface Scan if frozen atoms or scan_spec exist
         if params.frozen_atoms or params.scan_spec:
@@ -199,7 +283,7 @@ class OrcaGenerator(BaseQMGenerator):
             lines.append(f"  {s:<2}  {x:12.6f} {y:12.6f} {z:12.6f}")
         lines.append("*")
         lines.append("")
-        return "\n".join(lines)
+        return "\n".join(lines) + "\n\n"
 
 
 class PySCFGenerator(BaseQMGenerator):
@@ -216,8 +300,8 @@ class PySCFGenerator(BaseQMGenerator):
     def generate_input(self, symbols, coords, params, zatoms=None, variables=None) -> str:
         atom_entries = []
         for s, (x, y, z) in zip(symbols, coords):
-            atom_entries.append(f"        '{s} {x:.6f} {y:.6f} {z:.6f}'")
-        geom_str = ";\n".join(atom_entries)
+            atom_entries.append(f"        {s} {x:.6f} {y:.6f} {z:.6f}")
+        geom_str = "\n".join(atom_entries)
 
         spin = params.multiplicity - 1
         method_upper = params.method.strip().upper()
@@ -350,13 +434,72 @@ class PySCFGenerator(BaseQMGenerator):
                     '# Geometry Optimization via geometric or berny',
                     'try:',
                     '    from pyscf.geomopt.geometric_solver import optimize',
-                    '    mol_eq = optimize(mf)',
-                    '    print("Optimized Coordinates:")',
-                    '    print(mol_eq.tostring(format="xyz"))',
+                    '    def _agy_step_cb(envs):',
+                    '        m_cur = envs.get("mol")',
+                    '        e_cur = envs.get("e_tot")',
+                    '        if m_cur is not None:',
+                    '            if e_cur is not None:',
+                    '                print(f"converged SCF energy = {float(e_cur):.10f}")',
+                    '            print("Cartesian Coordinates (Angstrom):")',
+                    '            for ia in range(m_cur.natm):',
+                    '                c_ang = m_cur.atom_coord(ia, unit="Angstrom")',
+                    '                print(f"  {m_cur.atom_symbol(ia):<3} {c_ang[0]:12.6f} {c_ang[1]:12.6f} {c_ang[2]:12.6f}")',
+                    '            print("---")',
+                    '    mol_eq = optimize(mf, callback=_agy_step_cb)',
+                    '    mol = mol_eq',
+                    '    mf.reset(mol_eq)',
+                    '    mf.kernel()',
+                    '    print("Final Cartesian Coordinates (Angstrom):")',
+                    '    for _ia in range(mol_eq.natm):',
+                    '        _c = mol_eq.atom_coord(_ia, unit="Angstrom")',
+                    '        print(f"  {mol_eq.atom_symbol(_ia):<3} {_c[0]:12.6f} {_c[1]:12.6f} {_c[2]:12.6f}")',
                     'except ImportError:',
                     '    print("Install geometric: pip install geometric for PySCF geometry optimization.")',
                     '',
                 ])
+
+        # TD-DFT / CIS Excited States (UV-Vis)
+        if "TD-DFT" in params.job_type or "UV-Vis" in params.job_type:
+            lines.extend([
+                '# TD-DFT / CIS Excited States (UV-Vis Spectrum)',
+                'try:',
+                '    from pyscf import tdscf',
+                '    td = tdscf.TDDFT(mf) if hasattr(mf, "xc") else tdscf.TDA(mf)',
+                '    td.nstates = 10',
+                '    td.kernel()',
+                '    td.analyze(verbose=4)',
+                '    oscs = td.oscillator_strength()',
+                '    for idx_s, (de_ha, f_osc) in enumerate(zip(td.e, oscs)):',
+                '        de_ev = float(de_ha) * 27.211386245988',
+                '        wl_nm = 1239.84193 / max(1e-4, de_ev)',
+                '        print(f"Excited State {idx_s+1:3d}: E = {de_ev:8.4f} eV  lambda = {wl_nm:8.2f} nm  f = {float(f_osc):8.4f}")',
+                'except Exception as e_td:',
+                '    print("TD-DFT calculation warning:", e_td)',
+                '',
+            ])
+
+        # GIAO Isotropic NMR Chemical Shielding Tensors
+        if "NMR" in params.job_type:
+            lines.extend([
+                '# GIAO NMR Chemical Shielding Tensors (ppm)',
+                'try:',
+                '    from pyscf.prop import nmr',
+                '    msc = nmr.RKS(mf).kernel() if (hasattr(mf, "xc") and mol.spin == 0) else (',
+                '          nmr.UKS(mf).kernel() if hasattr(mf, "xc") else (',
+                '          nmr.RHF(mf).kernel() if mol.spin == 0 else nmr.UHF(mf).kernel()))',
+                '    print("CHEMICAL SHIELDING SUMMARY (ppm)")',
+                '    print("  Nucleus  Element    Isotropic     Anisotropy")',
+                '    print("  -------  -------  ------------   ------------")',
+                '    for ia in range(mol.natm):',
+                '        t_mat = 0.5 * (msc[ia] + msc[ia].T)',
+                '        evals = np.sort(np.linalg.eigvalsh(t_mat))',
+                '        iso = float(np.mean(evals))',
+                '        aniso = float(evals[2] - 0.5 * (evals[0] + evals[1]))',
+                '        print(f"  {ia:5d}       {mol.atom_symbol(ia):<4}   {iso:12.4f}   {aniso:12.4f}")',
+                'except Exception as e_nmr:',
+                '    print("PySCF NMR shielding warning (install pyscf-properties):", e_nmr)',
+                '',
+            ])
 
         # Harmonic Frequencies
         if "Freq" in params.job_type:
@@ -379,10 +522,17 @@ class PySCFGenerator(BaseQMGenerator):
         lines.extend([
             '# Export Molden orbitals & electron density for AgyMolden visualization',
             'try:',
+            '    import os, shutil',
             '    from pyscf.tools import molden, cubegen',
-            '    molden.from_mo(mol, "orbitals.molden", mf.mo_coeff)',
-            '    cubegen.density(mol, "electron_density.cube", mf.make_rdm1())',
-            '    print("Exported orbitals.molden and electron_density.cube successfully.")',
+            '    _stem = os.path.splitext(os.path.basename(__file__))[0] if "__file__" in globals() else "orbitals"',
+            '    _molden_out = f"{_stem}.molden"',
+            '    _cube_out = f"{_stem}_density.cube"',
+            '    molden.from_mo(mol, _molden_out, mf.mo_coeff, ene=mf.mo_energy, occ=mf.mo_occ)',
+            '    if _molden_out != "orbitals.molden":',
+            '        shutil.copy2(_molden_out, "orbitals.molden")',
+            '    cubegen.density(mol, _cube_out, mf.make_rdm1())',
+            '    print(f"[Artifact Generated] {_molden_out}")',
+            '    print(f"Exported {_molden_out} and {_cube_out} successfully.")',
             'except Exception as err_export:',
             '    print(f"Molden/Cube export warning: {err_export}")',
             '',
@@ -502,6 +652,10 @@ class OpenLOWDINGenerator(BaseQMGenerator):
         if "Opt" in params.job_type:
             lines.append("\toptimizeGeometry = .true.")
 
+        # Harmonic frequency analysis task
+        if "Freq" in params.job_type:
+            lines.append("\tfrequencyAnalysis = .true.")
+
         # COSMO Solvation task
         use_cosmo = (params.solvent != "None (Gas Phase)")
         if use_cosmo:
@@ -605,7 +759,7 @@ class QChemGenerator(BaseQMGenerator):
             lines.append(f"   {s:<2}  {x:12.6f} {y:12.6f} {z:12.6f}")
         lines.append("$end")
         lines.append("")
-        return "\n".join(lines)
+        return "\n".join(lines) + "\n\n"
 
 
 # Global registry of available QM generators (ordered by default presentation and usage)

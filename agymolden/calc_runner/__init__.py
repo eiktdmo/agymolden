@@ -14,6 +14,10 @@ from .orca_runner import OrcaRunner
 from .generic_runner import GenericQMRunner
 from .dialog_job_monitor import JobMonitorDialog
 from .dialog_launch import BrorsenLaunchDialog
+from .preflight import validate_qm_calculation, PreflightReport, ValidationIssue
+from .dialog_preflight import PreflightValidationDialog
+from .pipeline import ChainedWorkflowPipeline, WORKFLOW_TEMPLATES, WorkflowStageConfig
+from .dialog_pipeline import WorkflowPipelineDialog
 
 __all__ = [
     "BaseCalcRunner",
@@ -26,4 +30,12 @@ __all__ = [
     "BrorsenLaunchDialog",
     "detect_conda_environments",
     "find_brorsen_wrappers",
+    "validate_qm_calculation",
+    "PreflightReport",
+    "ValidationIssue",
+    "PreflightValidationDialog",
+    "ChainedWorkflowPipeline",
+    "WORKFLOW_TEMPLATES",
+    "WorkflowStageConfig",
+    "WorkflowPipelineDialog",
 ]

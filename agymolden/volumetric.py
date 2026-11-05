@@ -512,6 +512,193 @@ def _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr):
     return ctx
 
 
+def compute_molden_mo_atom_contributions(
+    molden_path: str,
+    orbital_index: int,
+    top_k: int = 4,
+) -> str:
+    """
+    Compute Mulliken/c^2 atomic and angular-momentum (s/p/d/f) percentage composition
+    for a given Molecular Orbital index from a Molden file.
+    Returns a concise summary string (e.g. '68.4% O1 (2p), 15.8% H2 (1s), 15.8% H3 (1s)').
+    """
+    if not molden_path or not os.path.isfile(molden_path):
+        return ""
+    res = None
+    with _MO_CTX_LOCK:
+        for k, v in _MO_CTX_CACHE.items():
+            if k[0] == os.path.abspath(molden_path):
+                res = v.get("res")
+                break
+    if res is None:
+        try:
+            res = _load_pyscf_molden(molden_path)
+        except Exception:
+            return ""
+    if not res:
+        return ""
+    mol = res[0]
+    if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return ""
+
+    mo_coeff = np.asarray(res[2])
+    if mo_coeff.ndim == 3:
+        mo_coeff = mo_coeff[0]
+    if orbital_index < 0 or orbital_index >= mo_coeff.shape[1]:
+        return ""
+
+    c_vec = mo_coeff[:, orbital_index]
+    try:
+        s_mat = mol.intor("int1e_ovlp")
+        ao_weights = c_vec * (s_mat @ c_vec)
+        ao_weights = np.maximum(0.0, ao_weights)
+        if float(np.sum(ao_weights)) <= 1e-12:
+            ao_weights = c_vec ** 2
+    except Exception:
+        ao_weights = c_vec ** 2
+
+    total_w = float(np.sum(ao_weights))
+    if total_w <= 1e-12:
+        return ""
+    ao_pct = (ao_weights / total_w) * 100.0
+
+    try:
+        ao_labels = mol.ao_labels(fmt=False)
+    except Exception:
+        return ""
+
+    atom_totals: Dict[int, float] = {}
+    atom_shell_totals: Dict[int, Dict[str, float]] = {}
+    for mu, lbl in enumerate(ao_labels):
+        if mu >= len(ao_pct):
+            break
+        at_idx = int(lbl[0])
+        nl_str = str(lbl[2])  # e.g. '1s', '2p', '3d'
+        w_val = float(ao_pct[mu])
+        atom_totals[at_idx] = atom_totals.get(at_idx, 0.0) + w_val
+        sh_dict = atom_shell_totals.setdefault(at_idx, {})
+        sh_dict[nl_str] = sh_dict.get(nl_str, 0.0) + w_val
+
+    ranked = sorted(atom_totals.items(), key=lambda kv: kv[1], reverse=True)
+    parts = []
+    for at_idx, pct in ranked[:top_k]:
+        if pct < 1.5:
+            continue
+        sym = mol.atom_symbol(at_idx)
+        sh_dict = atom_shell_totals.get(at_idx, {})
+        if sh_dict:
+            top_sh = max(sh_dict.items(), key=lambda kv: kv[1])[0]
+            parts.append(f"{pct:.1f}% {sym}{at_idx + 1} ({top_sh})")
+        else:
+            parts.append(f"{pct:.1f}% {sym}{at_idx + 1}")
+    return ", ".join(parts)
+
+
+def localize_molden_orbitals(
+    molden_path: str,
+    method: str = "pipek-mezey",
+    localize_virtuals: bool = False,
+) -> Optional[str]:
+    """
+    Generate Localized Molecular Orbitals (LMOs) from a Molden file using PySCF's
+    unitary orbital localization schemes:
+      - 'pipek-mezey' (or 'pm'): Pipek-Mezey Mulliken/IAO population localization (preserves sigma/pi separation)
+      - 'boys' (or 'fb'): Foster-Boys minimum spatial variance <r^2> - <r>^2 localization
+
+    Writes a companion `<stem>_localized_<method>.molden` file and returns its path.
+    """
+    if not molden_path or not os.path.isfile(molden_path):
+        return None
+
+    res = _load_pyscf_molden(molden_path)
+    if not res:
+        return None
+
+    mol = res[0]
+    mo_energy = np.asarray(res[1], dtype=np.float64) if len(res) > 1 and res[1] is not None else None
+    mo_coeff_raw = np.asarray(res[2], dtype=np.float64)
+    mo_occ_raw = np.asarray(res[3], dtype=np.float64) if len(res) > 3 and res[3] is not None else None
+
+    if mo_coeff_raw.ndim == 3:
+        mo_coeff = mo_coeff_raw[0].copy()
+        mo_occ = mo_occ_raw[0].copy() if (mo_occ_raw is not None and mo_occ_raw.ndim == 2) else mo_occ_raw
+        mo_en = mo_energy[0].copy() if (mo_energy is not None and mo_energy.ndim == 2) else mo_energy
+    else:
+        mo_coeff = mo_coeff_raw.copy()
+        mo_occ = mo_occ_raw.copy() if mo_occ_raw is not None else np.zeros(mo_coeff.shape[1])
+        mo_en = mo_energy.copy() if mo_energy is not None else np.zeros(mo_coeff.shape[1])
+
+    if mo_occ is None or len(mo_occ) != mo_coeff.shape[1]:
+        n_occ = mol.nelectron // 2
+        mo_occ = np.zeros(mo_coeff.shape[1], dtype=np.float64)
+        mo_occ[:n_occ] = 2.0
+
+    if mo_en is None or len(mo_en) != mo_coeff.shape[1]:
+        mo_en = np.arange(mo_coeff.shape[1], dtype=np.float64) * 0.1 - 0.5
+
+    from pyscf import lo
+    from pyscf.tools import molden as pyscf_molden
+
+    occ_idx = np.where(mo_occ > 0.05)[0]
+    virt_idx = np.where(mo_occ <= 0.05)[0]
+
+    method_low = method.strip().lower()
+    use_boys = "boys" in method_low or method_low == "fb"
+    tag = "boys" if use_boys else "pm"
+
+    def _run_loc(sub_coeff: np.ndarray) -> np.ndarray:
+        if sub_coeff.shape[1] <= 1:
+            return sub_coeff
+        if use_boys:
+            loc_obj = lo.Boys(mol, sub_coeff)
+        else:
+            loc_obj = lo.PM(mol, sub_coeff)
+            loc_obj.pop_method = "mulliken"
+        loc_obj.verbose = 0
+        loc_obj.conv_tol = 1e-6
+        return loc_obj.kernel()
+
+    new_coeff = mo_coeff.copy()
+    if len(occ_idx) > 1:
+        new_coeff[:, occ_idx] = _run_loc(mo_coeff[:, occ_idx])
+    if localize_virtuals and len(virt_idx) > 1:
+        new_coeff[:, virt_idx] = _run_loc(mo_coeff[:, virt_idx])
+
+    # Compute expectation value of Fock-like diagonal energy E_i = <LMO_i | F | LMO_i>
+    # where F = S * C_canon * diag(e_canon) * C_canon^T * S so LMOs remain meaningfully ordered by energy!
+    try:
+        s_mat = mol.intor("int1e_ovlp")
+        # Transformation matrix U = C_canon^T S C_loc
+        u_mat = mo_coeff.T @ s_mat @ new_coeff
+        new_en = np.einsum("ki,k,ki->i", u_mat, mo_en, u_mat)
+        # Sort occupied LMOs by expectation energy
+        if len(occ_idx) > 1:
+            order_occ = np.argsort(new_en[occ_idx])
+            new_coeff[:, occ_idx] = new_coeff[:, occ_idx[order_occ]]
+            new_en[occ_idx] = new_en[occ_idx[order_occ]]
+    except Exception:
+        new_en = mo_en.copy()
+
+    stem, _ = os.path.splitext(molden_path)
+    if stem.endswith(".molden"):
+        stem = stem[:-7]
+    out_path = f"{stem}_localized_{tag}.molden"
+
+    with open(out_path, "w", encoding="utf-8") as f_out:
+        pyscf_molden.header(mol, f_out)
+        pyscf_molden.orbital_coeff(
+            mol,
+            f_out,
+            new_coeff,
+            ene=new_en,
+            occ=mo_occ,
+            symm=["LMO"] * new_coeff.shape[1],
+        )
+
+    return out_path
+
+
+
 
 def evaluate_molden_orbital_grid(
     molden_path: str,
@@ -539,10 +726,16 @@ def evaluate_molden_orbital_grid(
     # Handle spin channels if mo_coeff has shape (2, nao, nmo)
     if mo_coeff.ndim == 3:
         n_spin, nao, nmo = mo_coeff.shape
-        coeff_col = mo_coeff[0, :, orbital_index % nmo]
+        spin_idx = min(n_spin - 1, max(0, orbital_index // nmo))
+        orb_in_spin = orbital_index % nmo
+        coeff_col = mo_coeff[spin_idx, :, orb_in_spin]
+        spin_label = " [Beta]" if spin_idx == 1 else " [Alpha]"
     else:
         nao, nmo = mo_coeff.shape
-        coeff_col = mo_coeff[:, orbital_index % nmo]
+        spin_idx = 0
+        orb_in_spin = orbital_index % nmo
+        coeff_col = mo_coeff[:, orb_in_spin]
+        spin_label = ""
 
     # AO values on the grid are cached per file, so each MO is a single matrix-vector product
     grid_1d = ao_val.dot(coeff_col)
@@ -556,15 +749,23 @@ def evaluate_molden_orbital_grid(
     symbols = [mol.atom_symbol(i) for i in range(mol.natm)]
 
     sym_tag = ""
-    if irrep_labels and orbital_index < len(irrep_labels):
-        sym_tag = f" ({irrep_labels[orbital_index]})"
+    if irrep_labels is not None:
+        if isinstance(irrep_labels, (list, tuple, np.ndarray)) and len(irrep_labels) == 2 and mo_coeff.ndim == 3:
+            sub_irrep = irrep_labels[spin_idx]
+            if sub_irrep is not None and orb_in_spin < len(sub_irrep):
+                sym_tag = f" ({sub_irrep[orb_in_spin]})"
+        elif orbital_index < len(irrep_labels):
+            sym_tag = f" ({irrep_labels[orbital_index]})"
 
     e_tag = ""
-    if mo_energy is not None and orbital_index < len(mo_energy):
-        e_tag = f" E={float(mo_energy[orbital_index]):.4f} a.u."
+    if mo_energy is not None:
+        if mo_energy.ndim == 2 and spin_idx < mo_energy.shape[0] and orb_in_spin < mo_energy.shape[1]:
+            e_tag = f" E={float(mo_energy[spin_idx, orb_in_spin]):.4f} a.u."
+        elif mo_energy.ndim == 1 and orbital_index < len(mo_energy):
+            e_tag = f" E={float(mo_energy[orbital_index]):.4f} a.u."
 
     return VolumetricData(
-        title=f"MO #{orbital_index + 1}{sym_tag}{e_tag}",
+        title=f"MO #{orbital_index + 1}{spin_label}{sym_tag}{e_tag}",
         comment=f"Exact GTO Evaluation from Molden ({c.nx}x{c.ny}x{c.nz})",
         symbols=symbols,
         atom_coords=atom_coords_ang,
@@ -587,6 +788,7 @@ def compute_molden_esp_grid(
     ny: int = 40,
     nz: int = 40,
     margin_bohr: float = 3.5,
+    extent: Optional[Tuple[float, float, float]] = None,
 ) -> Optional[VolumetricData]:
     """
     Compute rigorous Molecular Electrostatic Potential (ESP) 3D grid directly
@@ -623,7 +825,11 @@ def compute_molden_esp_grid(
     else:
         dm = mo_coeff @ np.diag(mo_occ) @ mo_coeff.T
 
-    c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
+    cube_kw = {"margin": margin_bohr}
+    if extent is not None and all(e > 0 for e in extent):
+        cube_kw["extent"] = extent
+
+    c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, **cube_kw)
     coords = c.get_coords()
 
     # Nuclear potential: V_nuc = sum_A Z_A / |r - R_A|
@@ -676,34 +882,38 @@ def compute_molden_spin_density_grid(
     """
     Compute open-shell spin density 3D grid: Delta rho(r) = rho_alpha(r) - rho_beta(r).
     Evaluated from unrestricted Molden wavefunction MO coefficients using PySCF GTO evaluation.
+    Reuses cached _get_mo_grid_context AO values when available for instantaneous evaluation.
     """
-    import io
-    import contextlib
-
-    try:
-        from pyscf.tools import molden, cubegen
-    except ImportError:
-        return None
-
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            res = _load_pyscf_molden(molden_path)
-    except Exception:
-        return None
-
-    if not res:
-        return None
-
-    mol = res[0]
-    if not getattr(mol, "_basis", None) or mol.natm == 0:
-        return None
+    ctx = _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr)
+    if ctx is not None:
+        res = ctx["res"]
+        mol = ctx["mol"]
+        c = ctx["cube"]
+        coords = ctx["coords"]
+        ao_val = ctx["ao_val"]
+    else:
+        import io
+        import contextlib
+        try:
+            from pyscf.tools import cubegen
+        except ImportError:
+            return None
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                res = _load_pyscf_molden(molden_path)
+        except Exception:
+            return None
+        if not res:
+            return None
+        mol = res[0]
+        if not getattr(mol, "_basis", None) or mol.natm == 0:
+            return None
+        c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
+        coords = c.get_coords()
+        ao_val = mol.eval_gto("GTOval", coords)  # (n_points, nao)
 
     mo_coeff = np.asarray(res[2])
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else None
-
-    c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
-    coords = c.get_coords()
-    ao_val = mol.eval_gto("GTOval", coords)  # (n_points, nao)
 
     if mo_coeff.ndim == 3 and mo_coeff.shape[0] == 2:
         # Unrestricted: Alpha and Beta channels
@@ -763,6 +973,8 @@ def compute_molden_esp_mapped_density(
     esp_max: Optional[float] = None,
     colormap_name: str = "bwr_r",
     find_extrema: bool = True,
+    margin_bohr: float = 3.5,
+    extent: Optional[Tuple[float, float, float]] = None,
 ) -> Optional[IsosurfaceMesh]:
     """
     Generate an ESP-mapped Electron Density Isosurface mesh.
@@ -782,30 +994,46 @@ def compute_molden_esp_mapped_density(
     except ImportError:
         return None
 
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            res = _load_pyscf_molden(molden_path)
-    except Exception:
-        return None
+    ctx = None
+    if extent is None:
+        ctx = _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr)
 
-    if not res:
-        return None
+    if ctx is not None:
+        res = ctx["res"]
+        mol = ctx["mol"]
+        c = ctx["cube"]
+        coords = ctx["coords"]
+        ao_val = ctx["ao_val"]
+    else:
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                res = _load_pyscf_molden(molden_path)
+        except Exception:
+            return None
 
-    mol = res[0]
-    if not getattr(mol, "_basis", None) or mol.natm == 0:
-        return None
+        if not res:
+            return None
+
+        mol = res[0]
+        if not getattr(mol, "_basis", None) or mol.natm == 0:
+            return None
+
+        cube_kw = {"margin": margin_bohr}
+        if extent is not None and all(e > 0 for e in extent):
+            cube_kw["extent"] = extent
+
+        c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, **cube_kw)
+        coords = c.get_coords()
+        ao_val = mol.eval_gto("GTOval", coords)
 
     mo_coeff = np.asarray(res[2])
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else np.zeros(mo_coeff.shape[-1])
 
     if mo_coeff.ndim == 3:
-        dm = np.sum([c @ np.diag(occ) @ c.T for c, occ in zip(mo_coeff, mo_occ)], axis=0)
+        dm = np.sum([c_m @ np.diag(occ) @ c_m.T for c_m, occ in zip(mo_coeff, mo_occ)], axis=0)
     else:
         dm = mo_coeff @ np.diag(mo_occ) @ mo_coeff.T
 
-    c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=3.2)
-    coords = c.get_coords()
-    ao_val = mol.eval_gto("GTOval", coords)
     rho = np.einsum("pi,ij,pj->p", ao_val, dm, ao_val).reshape((c.nx, c.ny, c.nz)).astype(np.float32)
 
     step_x = (c.box[0] / max(1, c.nx - 1)) * BOHR_TO_ANGSTROM
@@ -888,6 +1116,7 @@ def compute_molden_esp_mapped_density(
     mesh.vertex_colors = colors
     mesh.surface_values = v_esp_verts
     mesh.esp_range = (eff_esp_min, eff_esp_max)
+    mesh.colormap_name = colormap_name
 
     # Find Multiwfn-style local surface extrema (V_min and V_max)
     if find_extrema and len(mesh.faces) > 0:
@@ -909,12 +1138,14 @@ def compute_molden_esp_mapped_density(
 
             if is_min or is_max:
                 kcal = v_val * 627.5095
+                ev = v_val * 27.211386
                 ext_type = "min" if is_min else "max"
-                lbl = f"{'V_min' if is_min else 'V_max'}: {kcal:+.1f} kcal/mol ({v_val:+.4f} a.u.)"
+                lbl = f"{'V_min' if is_min else 'V_max'}: {ev:+.3f} eV ({kcal:+.1f} kcal/mol, {v_val:+.4f} a.u.)"
                 extrema.append({
                     "type": ext_type,
                     "pos": mesh.vertices[vi],
                     "val": float(v_val),
+                    "ev": float(ev),
                     "kcal": float(kcal),
                     "label": lbl,
                 })
@@ -1492,12 +1723,21 @@ def compute_molden_orbital_decomposition(
 
     mol = res[0]
     mo_coeff = np.asarray(res[2])
-    c_mat = mo_coeff[0] if mo_coeff.ndim == 3 else mo_coeff
-    if orbital_index >= c_mat.shape[1]:
-        return []
+    if mo_coeff.ndim == 3:
+        n_spin, _nao, nmo = mo_coeff.shape
+        if orbital_index >= n_spin * nmo:
+            return []
+        spin_idx = orbital_index // nmo
+        orb_in_spin = orbital_index % nmo
+        c_mat = mo_coeff[spin_idx]
+    else:
+        c_mat = mo_coeff
+        orb_in_spin = orbital_index
+        if orb_in_spin >= c_mat.shape[1]:
+            return []
 
     s_mat = mol.intor("int1e_ovlp")
-    c_i = c_mat[:, orbital_index]
+    c_i = c_mat[:, orb_in_spin]
     sc_i = s_mat @ c_i
     ao_pop = c_i * sc_i  # sum(ao_pop) == 1.0 for normalized MO
 

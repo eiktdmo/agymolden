@@ -55,6 +55,7 @@ def test_compute_mayer_and_wiberg_orders():
 
 
 def test_pyscf_fallback_bond_orders():
+    pytest.importorskip("pyscf")
     if not os.path.isfile(H2O_MOLDEN):
         pytest.skip("examples/h2o_orca.molden not found")
 
@@ -65,6 +66,7 @@ def test_pyscf_fallback_bond_orders():
 
 
 def test_compute_condensed_fukui():
+    pytest.importorskip("pyscf")
     if not os.path.isfile(H2O_MOLDEN):
         pytest.skip("examples/h2o_orca.molden not found")
 

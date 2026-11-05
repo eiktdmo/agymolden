@@ -47,6 +47,7 @@ def test_symmetry_matrices_all_display(qapp):
 
 
 def test_esp_2d_property_switch(qapp):
+    pytest.importorskip("pyscf")
     if not os.path.isfile(H2O_MOLDEN):
         pytest.skip("H2O molden not found")
 

@@ -7,7 +7,7 @@ import os
 import sys
 import traceback
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 _REQUIRED = {
     "PyQt6": "PyQt6",
@@ -94,6 +94,22 @@ def _install_excepthook(QtWidgets) -> None:
 
 
 def main(argv=None):
+    raw_args = sys.argv[1:] if argv is None else argv
+    if raw_args and raw_args[0] in ("parse", "gen", "check", "convert", "bundle"):
+        from .cli import build_cli_parser, cmd_parse, cmd_gen, cmd_check, cmd_convert, cmd_bundle
+        cli_p = build_cli_parser()
+        cli_args = cli_p.parse_args(raw_args)
+        if cli_args.subcommand == "parse":
+            sys.exit(cmd_parse(cli_args))
+        elif cli_args.subcommand == "gen":
+            sys.exit(cmd_gen(cli_args))
+        elif cli_args.subcommand == "check":
+            sys.exit(cmd_check(cli_args))
+        elif cli_args.subcommand == "convert":
+            sys.exit(cmd_convert(cli_args))
+        elif cli_args.subcommand == "bundle":
+            sys.exit(cmd_bundle(cli_args))
+
     parser = argparse.ArgumentParser(
         prog="agymolden", description="AgyMolden - Z-Matrix molecular builder & quantum chemistry viewer"
     )
@@ -116,11 +132,17 @@ def main(argv=None):
     # Enable shared OpenGL contexts before creating QApplication to prevent context recreation flicker
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
-    # Request a high-quality OpenGL surface (24-bit depth + 4x MSAA + double buffering)
+    # Request a modern OpenGL core context (4.1 on macOS, 3.3 on Linux/Windows)
+    # and a high-quality surface (24-bit depth + 4x MSAA + double buffering)
     # with 0-bit alpha for the window framebuffer. If the window framebuffer has an alpha channel,
     # semi-transparent objects (such as orbital lobes) blend alpha into the desktop compositor,
     # causing background windows / desktop wallpaper to bleed through the molecule!
     fmt = QtGui.QSurfaceFormat()
+    if sys.platform == "darwin":
+        fmt.setVersion(4, 1)
+    else:
+        fmt.setVersion(3, 3)
+    fmt.setProfile(QtGui.QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     fmt.setDepthBufferSize(24)
     fmt.setAlphaBufferSize(0)
     fmt.setSamples(4)
@@ -133,11 +155,9 @@ def main(argv=None):
     app.setApplicationVersion(__version__)
     _install_excepthook(QtWidgets)
 
-    # Standard application font, falling back to the platform default if absent
-    font = QtGui.QFont("DejaVu Sans", 10)
-    if QtGui.QFontInfo(font).family() != "DejaVu Sans":
-        font = QtGui.QFont(app.font())
-        font.setPointSize(10)
+    # Standard application font, using system font cleanly across platforms
+    font = QtGui.QFont(app.font())
+    font.setPointSize(10)
     app.setFont(font)
 
     window = MainWindow()

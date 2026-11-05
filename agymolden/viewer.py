@@ -1,6 +1,7 @@
 """Modern OpenGL 3D Molecule Viewport using PyQt6 QtOpenGLWidgets and modern shaders."""
 
 import ctypes
+import logging
 import math
 from typing import List, Optional, Tuple, Set, Dict, Any
 import numpy as np
@@ -13,7 +14,7 @@ from OpenGL.GL import (
     GL_LINK_STATUS, GL_MULTISAMPLE, GL_STATIC_DRAW, GL_DYNAMIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT,
     GL_VERTEX_SHADER, glAttachShader, glBindBuffer, glBindVertexArray, glBlendFunc, glBlendFuncSeparate, glBufferData,
     glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
-    glDeleteShader, glDrawElements, glDrawElementsInstanced, glEnable, glEnableVertexAttribArray,
+    glDeleteBuffers, glDeleteShader, glDeleteVertexArrays, glDrawElements, glDrawElementsInstanced, glEnable, glEnableVertexAttribArray,
     glGenBuffers, glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
     glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
     glShaderSource, glUniform1i, glUniform1f, glUniform3f, glUniformMatrix3fv,
@@ -32,6 +33,8 @@ from .viewer_meshes import (
     SURFACE_VERTEX_SHADER, SURFACE_FRAGMENT_SHADER,
 )
 from .viewer_interaction import ViewerInteractionMixin
+
+log = logging.getLogger(__name__)
 
 
 class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
@@ -102,6 +105,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         # Selection & Picking
         self.selected_atom_idx: Optional[int] = None
         self.multi_selected: List[int] = [] # For distance / angle / dihedral measurement
+        self.frozen_atoms: set = set() # Constrained / frozen atom indices (Chemcraft/GaussView style)
+        self.show_publication_outlines: bool = False # IboView/QuteMol style silhouette outlines & hemisphere lighting
         self.show_manipulator_gizmo: bool = False # 3D translation & rotation manipulator gizmo on selected atoms (off by default)
         self.active_gizmo_axis: Optional[str] = None # 'x', 'y', 'z' or None
         self.gizmo_hover_axis: Optional[str] = None
@@ -159,6 +164,9 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.show_labels: bool = True
         self.show_indices: bool = True
         self.show_measurements: bool = True
+        self.show_bond_lengths: bool = False
+        self.show_axis_triad: bool = True
+        self.show_scale_bar: bool = False
         self.sphere_scale: float = 0.35
         self.cylinder_radius: float = 0.08
         self.style_mode: str = "Ball & Stick" # Ball & Stick, Spacefill, Wireframe
@@ -195,6 +203,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.cone_indices_count = 0
 
         # Vibrational mode animation state
+        self._active_isosurfaces: List[Any] = []
+        self._retired_surface_gl_caches: List[Tuple[int, int, int, int]] = []
         self.vibrating: bool = False
         self.vib_mode_idx: Optional[int] = None
         self.vib_frequency: float = 0.0
@@ -256,6 +266,28 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
     def set_vibration_show_vectors(self, show: bool):
         self.vib_show_vectors = show
         self.update()
+
+    @property
+    def active_isosurfaces(self) -> List[Any]:
+        return getattr(self, "_active_isosurfaces", [])
+
+    @active_isosurfaces.setter
+    def active_isosurfaces(self, value: List[Any]):
+        new_list = list(value) if value else []
+        new_ids = {id(m) for m in new_list}
+        old_list = getattr(self, "_active_isosurfaces", [])
+        retired = getattr(self, "_retired_surface_gl_caches", [])
+        for old_m in old_list:
+            if id(old_m) not in new_ids:
+                gl_cache = getattr(old_m, "_gl_cache", None)
+                if gl_cache is not None:
+                    retired.append(gl_cache)
+                    try:
+                        old_m._gl_cache = None
+                    except Exception as e:
+                        log.debug("Failed to clear _gl_cache on surface: %s", e)
+        self._retired_surface_gl_caches = retired
+        self._active_isosurfaces = new_list
 
     def get_render_coords(self) -> np.ndarray:
         """Return instantaneous atom coordinates considering active vibrational mode displacement."""
@@ -557,6 +589,45 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.update()
         return self.is_orthographic
 
+    def set_bg_color_mode(self, mode: str):
+        """Set background color mode ('dark', 'white', or 'transparent') and request repaint."""
+        self.bg_color_mode = "white" if mode.lower() == "white" else "dark"
+        self.update()
+
+    def apply_journal_preset(self, preset_name: str) -> str:
+        """
+        Apply publication-grade visual preset for journal figures and presentations.
+        Supported presets:
+          - 'jacs': JACS Pastel (white background, crisp publication outlines ON)
+          - 'nature': Nature / Wiley Glossy (crisp white background, high-contrast specular Phong, outlines OFF)
+          - 'angewandte': Angewandte Bold (white background, bold silhouette outlines ON)
+          - 'monochrome': Monochrome Print (white background, crisp ink outlines, high contrast)
+          - 'dark': Dark Presentation Mode (dark slate background, vibrant colors, outlines OFF)
+        """
+        p = preset_name.lower()
+        if "jacs" in p:
+            self.set_bg_color_mode("white")
+            self.show_publication_outlines = True
+            label = "JACS Pastel"
+        elif "nature" in p:
+            self.set_bg_color_mode("white")
+            self.show_publication_outlines = False
+            label = "Nature Glossy"
+        elif "angewandte" in p:
+            self.set_bg_color_mode("white")
+            self.show_publication_outlines = True
+            label = "Angewandte Bold"
+        elif "mono" in p or "print" in p or "gray" in p:
+            self.set_bg_color_mode("white")
+            self.show_publication_outlines = True
+            label = "Monochrome Print"
+        else:  # "dark"
+            self.set_bg_color_mode("dark")
+            self.show_publication_outlines = False
+            label = "Dark Presentation"
+        self.update()
+        return label
+
     def initializeGL(self):
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_MULTISAMPLE)
@@ -631,6 +702,27 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * 4, ctypes.c_void_p(0))
         glEnableVertexAttribArray(1)
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * 4, ctypes.c_void_p(3 * 4))
+
+        # Dynamic instance buffer for fast batch rendering of bond cylinders
+        self.cyl_inst_vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, self.cyl_inst_vbo)
+        # 11 floats per cylinder instance: start_pos(3), radius(1), color(3), hl(1), end_pos(3) = 44 bytes
+        cyl_inst_stride = 11 * 4
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, cyl_inst_stride, ctypes.c_void_p(0))
+        glVertexAttribDivisor(2, 1)
+        glEnableVertexAttribArray(3)
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, cyl_inst_stride, ctypes.c_void_p(3 * 4))
+        glVertexAttribDivisor(3, 1)
+        glEnableVertexAttribArray(4)
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, cyl_inst_stride, ctypes.c_void_p(4 * 4))
+        glVertexAttribDivisor(4, 1)
+        glEnableVertexAttribArray(5)
+        glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, cyl_inst_stride, ctypes.c_void_p(7 * 4))
+        glVertexAttribDivisor(5, 1)
+        glEnableVertexAttribArray(6)
+        glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, cyl_inst_stride, ctypes.c_void_p(8 * 4))
+        glVertexAttribDivisor(6, 1)
 
         glBindVertexArray(0)
 
@@ -814,13 +906,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glUniform3f(loc_light, cam_world_pos[0] + 15.0, cam_world_pos[1] + 25.0, cam_world_pos[2] + 20.0)
         glUniform3f(loc_view_pos, cam_world_pos[0], cam_world_pos[1], cam_world_pos[2])
         glUniform1i(loc_use_inst, 0)
+        loc_pub_outline = glGetUniformLocation(self.shader_program, "u_publication_outline")
+        if loc_pub_outline != -1:
+            glUniform1i(loc_pub_outline, 1 if getattr(self, "show_publication_outlines", False) else 0)
 
-        # 1. Render Bonds (Cylinders)
+        # 1. Render Bonds (Cylinders) via GPU instancing
         if self.style_mode != "Spacefill":
             glBindVertexArray(self.cyl_vao)
             # Reference vector perpendicular to view line of sight
             right_cam, up_cam = self._get_camera_axes()
             deloc = self._delocalized_bonds()
+            cyl_instances = []
             for i1, i2 in self.bonds:
                 p1 = render_coords[i1]
                 p2 = render_coords[i2]
@@ -887,15 +983,20 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     cyl_rad *= 0.35
 
                 half_len = 0.5 * length
-                raw_c1 = get_color(self.symbols[i1])
-                raw_c2 = get_color(self.symbols[i2])
-                # Ensure bond halves have crisp visibility against dark viewport backgrounds
-                # (especially carbon bonds which are otherwise very dark)
+                is_white_bg = (getattr(self, "bg_color_mode", "dark") == "white")
+                raw_c1 = get_color(self.symbols[i1], bg_mode="white" if is_white_bg else "dark")
+                raw_c2 = get_color(self.symbols[i2], bg_mode="white" if is_white_bg else "dark")
+                # Ensure bond halves have crisp visibility and contrast against both dark and white backgrounds
                 def _bond_contrast(c):
-                    # If dark grey/black (like dark carbon), brighten to a clear metallic slate / medium-light grey
                     lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
-                    if lum < 0.55 and max(c) - min(c) < 0.12:  # achromatic dark
-                        return (max(c[0], 0.58), max(c[1], 0.58), max(c[2], 0.60))
+                    if is_white_bg:
+                        # Against pure white, darken near-white bonds slightly for clear definition
+                        if lum > 0.80:
+                            return (min(c[0], 0.76), min(c[1], 0.78), min(c[2], 0.80))
+                    else:
+                        # Against dark backgrounds, brighten overly dark bonds
+                        if lum < 0.55 and max(c) - min(c) < 0.12:
+                            return (max(c[0], 0.58), max(c[1], 0.58), max(c[2], 0.60))
                     return c
                 c1 = _bond_contrast(raw_c1)
                 c2 = _bond_contrast(raw_c2)
@@ -912,41 +1013,39 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     # shorter lines are centred on the bond: shift start inward by (1 - scale) * L / 2
                     p1_off = p1 + off + v_norm * (0.5 * length * (1.0 - len_scale))
                     mid_off = 0.5 * (p1 + p2) + off
-                    half_len = 0.5 * length * len_scale
+                    p2_off = mid_off + v_norm * (0.5 * length * len_scale)
 
-                    # First half (p1 -> mid)
-                    m1 = QtGui.QMatrix4x4()
-                    m1.translate(float(p1_off[0]), float(p1_off[1]), float(p1_off[2]))
-                    if angle_deg != 0:
-                        m1.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
-                    m1.scale(cyl_rad, cyl_rad, float(half_len))
-
-                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m1.data())
-                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m1.normalMatrix().data())
                     if is_bond_selected:
-                        glUniform3f(loc_color, 1.0, 0.84, 0.0) # Vibrant gold
-                        glUniform1i(loc_hl, 1)
+                        col1 = (1.0, 0.84, 0.0)
+                        col2 = (1.0, 0.84, 0.0)
+                        hl_val = 1.0
                     else:
-                        glUniform3f(loc_color, c1[0], c1[1], c1[2])
-                        glUniform1i(loc_hl, 0)
-                    glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
+                        col1 = c1
+                        col2 = c2
+                        hl_val = 0.0
 
-                    # Second half (mid -> p2)
-                    m2 = QtGui.QMatrix4x4()
-                    m2.translate(float(mid_off[0]), float(mid_off[1]), float(mid_off[2]))
-                    if angle_deg != 0:
-                        m2.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
-                    m2.scale(cyl_rad, cyl_rad, float(half_len))
+                    cyl_instances.append((
+                        float(p1_off[0]), float(p1_off[1]), float(p1_off[2]),
+                        float(cyl_rad),
+                        float(col1[0]), float(col1[1]), float(col1[2]),
+                        hl_val,
+                        float(mid_off[0]), float(mid_off[1]), float(mid_off[2]),
+                    ))
+                    cyl_instances.append((
+                        float(mid_off[0]), float(mid_off[1]), float(mid_off[2]),
+                        float(cyl_rad),
+                        float(col2[0]), float(col2[1]), float(col2[2]),
+                        hl_val,
+                        float(p2_off[0]), float(p2_off[1]), float(p2_off[2]),
+                    ))
 
-                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m2.data())
-                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m2.normalMatrix().data())
-                    if is_bond_selected:
-                        glUniform3f(loc_color, 1.0, 0.84, 0.0) # Vibrant gold
-                        glUniform1i(loc_hl, 1)
-                    else:
-                        glUniform3f(loc_color, c2[0], c2[1], c2[2])
-                        glUniform1i(loc_hl, 0)
-                    glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
+            if cyl_instances:
+                cyl_inst_arr = np.array(cyl_instances, dtype=np.float32)
+                glBindBuffer(GL_ARRAY_BUFFER, self.cyl_inst_vbo)
+                glBufferData(GL_ARRAY_BUFFER, cyl_inst_arr.nbytes, cyl_inst_arr, GL_DYNAMIC_DRAW)
+                glUniform1i(loc_use_inst, 2)
+                glDrawElementsInstanced(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None, len(cyl_instances))
+                glUniform1i(loc_use_inst, 0)
 
         # 1b. Render Hydrogen Bonds (Dashed / segmented cyan cylinders) (Avogadro style)
         if getattr(self, "show_hbonds", False) and len(self.symbols) > 2 and len(render_coords) == len(self.symbols):
@@ -1015,7 +1114,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 else:
                     rad = max(0.2, cov_r * self.sphere_scale)
 
-                c = self._charge_to_rgb(charges_arr[i]) if (charges_arr is not None and i < len(charges_arr)) else get_color(sym)
+                c = self._charge_to_rgb(charges_arr[i]) if (charges_arr is not None and i < len(charges_arr)) else get_color(sym, bg_mode="white" if is_white_bg else "dark")
                 hl = 0
                 if not clean_export:
                     if i in self.highlighted_feature_atoms:
@@ -1246,16 +1345,20 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
         # 3b-1. Render Dynamic 3D IR Transition Dipole Moment Derivative Vector during vibration
         if getattr(self, "vibrating", False) and getattr(self, "show_vib_dipole", True) and len(render_coords) > 0:
-            if hasattr(self, "vibration_displacements") and self.vibration_displacements is not None:
+            vib_disp = getattr(self, "vib_displacements", None)
+            if vib_disp is None:
+                vib_disp = getattr(self, "vibration_displacements", None)
+            if vib_disp is not None and len(vib_disp) == len(render_coords):
                 # Transition dipole derivative approx: sum(q_i * dr_i)
                 charges_arr = self._charges_and_dipole()[0] if hasattr(self, "_charges_and_dipole") else None
                 if charges_arr is not None and len(charges_arr) == len(render_coords):
                     q = charges_arr
                 else:
                     q = np.array([1.0 if s != "H" else 0.5 for s in self.symbols])
-                disp = self.vibration_displacements
+                disp = vib_disp
                 # Oscillating displacement factor
-                cos_phase = math.cos(getattr(self, "vibration_phase", 0.0))
+                phase_val = getattr(self, "vib_phase", getattr(self, "vibration_phase", 0.0))
+                cos_phase = math.cos(phase_val)
                 d_mu = np.sum((q[:, None] * disp), axis=0) * cos_phase
                 d_mag = np.linalg.norm(d_mu)
                 if d_mag >= 0.01:
@@ -1344,6 +1447,14 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glUseProgram(0)
 
         # 3c. Render 3D Volumetric Isosurfaces (Molecular Orbitals / ESP / Density)
+        if getattr(self, "_retired_surface_gl_caches", None):
+            for old_vao, old_vbo, old_ebo, _ in self._retired_surface_gl_caches:
+                try:
+                    glDeleteVertexArrays(1, [int(old_vao)])
+                    glDeleteBuffers(2, [int(old_vbo), int(old_ebo)])
+                except Exception as e:
+                    log.debug("Failed deleting old GL buffers: %s", e)
+            self._retired_surface_gl_caches.clear()
         active_surfaces = getattr(self, "active_isosurfaces", [])
         if active_surfaces:
             glUseProgram(self.surface_program)
@@ -1432,8 +1543,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                         gl_cache = (vao, vbo, ebo, len(faces_flat))
                         try:
                             mesh_obj._gl_cache = gl_cache
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug("Failed to cache GL buffers on mesh_obj: %s", e)
                     else:
                         vao, vbo, ebo, n_indices = gl_cache
                         glBindVertexArray(vao)
@@ -1463,19 +1574,25 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             bp.end()
 
         # 4. Render 2D overlays (Atom labels & indices, active status banners, selection rings)
+        is_white_vp = (getattr(self, "bg_color_mode", "dark") == "white")
         has_selection = (self.selected_atom_idx is not None) or bool(self.multi_selected) or (self.selected_bond is not None)
+        frozen_set = set(getattr(self, "frozen_atoms", set()) or set())
         surface_extrema = []
         for s in active_surfaces:
-            if getattr(s, "extrema_points", None):
+            if getattr(s, "show_extrema_labels", False) and getattr(s, "extrema_points", None):
                 surface_extrema.extend(s.extrema_points)
 
         if (
             has_selection
+            or bool(frozen_set)
             or bool(active_surfaces)
             or self.show_labels
             or self.show_indices
             or self.show_charges
             or self.show_dipole
+            or getattr(self, "show_bond_lengths", False)
+            or getattr(self, "show_axis_triad", True)
+            or getattr(self, "show_scale_bar", False)
             or self.vibrating
             or self.partial_reorder_mode
             or self.reordering_active
@@ -1491,12 +1608,13 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             w = self.width()
             h = self.height()
 
-            # Render glowing high-contrast selection rings around all selected atoms
-            if has_selection and len(render_coords) == len(self.symbols):
+            # Render glowing high-contrast selection rings & frozen constraint rings around atoms
+            if (has_selection or bool(frozen_set)) and len(render_coords) == len(self.symbols):
                 for i in range(len(self.symbols)):
                     is_prim = (i == self.selected_atom_idx)
                     is_multi = (i in self.multi_selected)
-                    if not (is_prim or is_multi):
+                    is_froz = (i in frozen_set)
+                    if not (is_prim or is_multi or is_froz):
                         continue
                     pos = render_coords[i]
                     p4 = mvp * QtGui.QVector4D(float(pos[0]), float(pos[1]), float(pos[2]), 1.0)
@@ -1509,6 +1627,11 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     r_px = max(13.0, (cov_r / max(self.zoom, 1.0)) * h * 0.45)
 
                     painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                    if is_froz:
+                        # Frozen atom constraint halo (dashed icy blue-violet ring)
+                        froz_pen = QtGui.QPen(QtGui.QColor(99, 102, 241, 215), 2.2, QtCore.Qt.PenStyle.DashLine)
+                        painter.setPen(froz_pen)
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 9), int(r_px + 9))
                     if is_prim:
                         # Primary: bright radiant gold ring + 4 tick marks
                         painter.setPen(QtGui.QPen(QtGui.QColor(250, 204, 21, 55), 7))
@@ -1525,15 +1648,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             x2 = int(sx + d_out * math.cos(rad))
                             y2 = int(sy + d_out * math.sin(rad))
                             painter.drawLine(x1, y1, x2, y2)
-                    else:
+                    elif is_multi:
                         # Secondary: vibrant cyan ring
                         painter.setPen(QtGui.QPen(QtGui.QColor(56, 189, 248, 55), 5))
                         painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 6), int(r_px + 6))
                         painter.setPen(QtGui.QPen(QtGui.QColor(186, 230, 253), 2.0))
                         painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 4), int(r_px + 4))
 
-            if self.show_labels or self.show_indices or self.show_charges:
+            if self.show_labels or self.show_indices or self.show_charges or bool(frozen_set):
                 for i, (sym, pos) in enumerate(zip(self.symbols, render_coords)):
+                    if not (self.show_labels or self.show_indices or self.show_charges or (i in frozen_set)):
+                        continue
                     p4 = mvp * QtGui.QVector4D(float(pos[0]), float(pos[1]), float(pos[2]), 1.0)
                     if p4.w() <= 0.05:
                         continue
@@ -1557,57 +1682,69 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     if self.show_charges and charges_arr is not None and i < len(charges_arr):
                         q_str = f"{charges_arr[i]:+.2f}e"
                         label_text = f"{label_text} ({q_str})" if label_text else q_str
+                    if i in frozen_set:
+                        label_text = f"{label_text} 🔒".strip() if label_text else f"{sym}{i+1} 🔒"
 
                     # Role tag when feature box is clicked in Z-Matrix
                     if i in self.highlighted_feature_atoms:
                         role_name = self.highlighted_feature_atoms[i].capitalize()
                         label_text = f"[{role_name}] {label_text}"
 
-                    # Text pill styling: high-contrast background and crisp border
-                    bg_color = QtGui.QColor(15, 23, 42, 215) # Dark slate semi-transparent
-                    border_color = QtGui.QColor("#38bdf8")
-                    text_color = QtGui.QColor("#ffffff")
+                    # Text pill styling: high-contrast background and crisp border adapted to dark/white viewport
+                    is_white_vp = (getattr(self, "bg_color_mode", "dark") == "white")
+                    if is_white_vp:
+                        bg_color = QtGui.QColor(248, 250, 252, 235)  # Light porcelain background
+                        border_color = QtGui.QColor("#0284c7")
+                        text_color = QtGui.QColor("#0f172a")          # Deep charcoal
+                    else:
+                        bg_color = QtGui.QColor(15, 23, 42, 220)      # Dark slate semi-transparent
+                        border_color = QtGui.QColor("#38bdf8")
+                        text_color = QtGui.QColor("#ffffff")
 
                     if self.partial_reorder_mode and i in self.partial_reorder_picks:
                         step_idx = self.partial_reorder_picks.index(i)
                         role = ["Target", "Bond", "Angle", "Dihedral"][step_idx] if step_idx < 4 else f"#{step_idx+1}"
                         label_text = f"[{role}] {sym}{i+1}"
-                        text_color = QtGui.QColor("#fef08a") # Pale bright yellow
-                        border_color = QtGui.QColor("#f59e0b")
-                        bg_color = QtGui.QColor(69, 26, 3, 230)
+                        text_color = QtGui.QColor("#854d0e") if is_white_vp else QtGui.QColor("#fef08a")
+                        border_color = QtGui.QColor("#d97706") if is_white_vp else QtGui.QColor("#f59e0b")
+                        bg_color = QtGui.QColor(254, 243, 199, 240) if is_white_vp else QtGui.QColor(69, 26, 3, 230)
                     elif i in self.highlighted_feature_atoms:
                         role = self.highlighted_feature_atoms[i]
                         if role == "target":
-                            text_color = QtGui.QColor("#fef08a") # Gold/yellow
-                            border_color = QtGui.QColor("#eab308")
-                            bg_color = QtGui.QColor(50, 40, 5, 235)
+                            text_color = QtGui.QColor("#854d0e") if is_white_vp else QtGui.QColor("#fef08a")
+                            border_color = QtGui.QColor("#ca8a04") if is_white_vp else QtGui.QColor("#eab308")
+                            bg_color = QtGui.QColor(254, 249, 195, 240) if is_white_vp else QtGui.QColor(50, 40, 5, 235)
                         elif role == "bond":
-                            text_color = QtGui.QColor("#a5f3fc") # Cyan
-                            border_color = QtGui.QColor("#06b6d4")
-                            bg_color = QtGui.QColor(8, 47, 73, 235)
+                            text_color = QtGui.QColor("#0e7490") if is_white_vp else QtGui.QColor("#a5f3fc")
+                            border_color = QtGui.QColor("#0891b2") if is_white_vp else QtGui.QColor("#06b6d4")
+                            bg_color = QtGui.QColor(207, 250, 254, 240) if is_white_vp else QtGui.QColor(8, 47, 73, 235)
                         elif role == "angle":
-                            text_color = QtGui.QColor("#f5d0fe") # Purple/magenta
-                            border_color = QtGui.QColor("#c026d3")
-                            bg_color = QtGui.QColor(59, 7, 100, 235)
+                            text_color = QtGui.QColor("#86198f") if is_white_vp else QtGui.QColor("#f5d0fe")
+                            border_color = QtGui.QColor("#a21caf") if is_white_vp else QtGui.QColor("#c026d3")
+                            bg_color = QtGui.QColor(250, 232, 255, 240) if is_white_vp else QtGui.QColor(59, 7, 100, 235)
                         elif role == "dihedral":
-                            text_color = QtGui.QColor("#fed7aa") # Orange
-                            border_color = QtGui.QColor("#f97316")
-                            bg_color = QtGui.QColor(67, 20, 7, 235)
+                            text_color = QtGui.QColor("#9a3412") if is_white_vp else QtGui.QColor("#fed7aa")
+                            border_color = QtGui.QColor("#ea580c") if is_white_vp else QtGui.QColor("#f97316")
+                            bg_color = QtGui.QColor(255, 237, 213, 240) if is_white_vp else QtGui.QColor(67, 20, 7, 235)
                     elif self.reordering_active and i in self.reorder_list:
-                        text_color = QtGui.QColor("#86efac")
-                        border_color = QtGui.QColor("#22c55e")
+                        text_color = QtGui.QColor("#15803d") if is_white_vp else QtGui.QColor("#86efac")
+                        border_color = QtGui.QColor("#16a34a") if is_white_vp else QtGui.QColor("#22c55e")
+                        if is_white_vp: bg_color = QtGui.QColor(220, 252, 231, 240)
                     elif i in self.picked_references:
-                        text_color = QtGui.QColor("#86efac")
-                        border_color = QtGui.QColor("#22c55e")
+                        text_color = QtGui.QColor("#15803d") if is_white_vp else QtGui.QColor("#86efac")
+                        border_color = QtGui.QColor("#16a34a") if is_white_vp else QtGui.QColor("#22c55e")
+                        if is_white_vp: bg_color = QtGui.QColor(220, 252, 231, 240)
                     elif i == self.selected_atom_idx:
-                        text_color = QtGui.QColor("#fef08a")
-                        border_color = QtGui.QColor("#fbbf24")
+                        text_color = QtGui.QColor("#854d0e") if is_white_vp else QtGui.QColor("#fef08a")
+                        border_color = QtGui.QColor("#d97706") if is_white_vp else QtGui.QColor("#fbbf24")
+                        if is_white_vp: bg_color = QtGui.QColor(254, 243, 199, 245)
                     elif i in self.multi_selected:
-                        text_color = QtGui.QColor("#a5f3fc")
-                        border_color = QtGui.QColor("#38bdf8")
+                        text_color = QtGui.QColor("#0369a1") if is_white_vp else QtGui.QColor("#a5f3fc")
+                        border_color = QtGui.QColor("#0284c7") if is_white_vp else QtGui.QColor("#38bdf8")
+                        if is_white_vp: bg_color = QtGui.QColor(224, 242, 254, 245)
                     else:
-                        text_color = QtGui.QColor("#f1f5f9")
-                        border_color = QtGui.QColor(100, 116, 139, 180)
+                        text_color = QtGui.QColor("#0f172a") if is_white_vp else QtGui.QColor("#f1f5f9")
+                        border_color = QtGui.QColor(148, 163, 184, 200) if is_white_vp else QtGui.QColor(100, 116, 139, 180)
 
                     # Draw pill background
                     t_w = fm.horizontalAdvance(label_text)
@@ -1622,6 +1759,43 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
                     painter.setPen(text_color)
                     painter.drawText(pill_x + 5, pill_y + t_h - 1, label_text)
+
+            # Render Chemcraft-style "Show All Bond Lengths" 3D overlays at bond midpoints
+            if getattr(self, "show_bond_lengths", False) and self.bonds and len(render_coords) == len(self.symbols):
+                bl_font = QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold)
+                painter.setFont(bl_font)
+                bl_fm = painter.fontMetrics()
+                vp_w = float(self.width())
+                vp_h = float(self.height())
+                for i1, i2 in self.bonds:
+                    if not (0 <= i1 < len(render_coords) and 0 <= i2 < len(render_coords)):
+                        continue
+                    p1_arr = render_coords[i1]
+                    p2_arr = render_coords[i2]
+                    mid = 0.5 * (p1_arr + p2_arr)
+                    p4 = mvp * QtGui.QVector4D(float(mid[0]), float(mid[1]), float(mid[2]), 1.0)
+                    if p4.w() <= 0.05:
+                        continue
+                    ndc = p4 / p4.w()
+                    sx = int((ndc.x() * 0.5 + 0.5) * vp_w)
+                    sy = int((-ndc.y() * 0.5 + 0.5) * vp_h)
+                    dist_val = float(np.linalg.norm(p2_arr - p1_arr))
+                    bl_txt = f"{dist_val:.3f} Å"
+                    tw = bl_fm.horizontalAdvance(bl_txt)
+                    th = bl_fm.height()
+                    bx = sx - tw // 2 - 4
+                    by = sy - th // 2 - 2
+                    b_rect = QtCore.QRect(bx, by, tw + 8, th + 4)
+                    if is_white_vp:
+                        painter.setBrush(QtGui.QColor(255, 255, 255, 225))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(15, 118, 110, 210), 1.2))
+                    else:
+                        painter.setBrush(QtGui.QColor(18, 22, 34, 215))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(56, 189, 248, 200), 1.2))
+                    painter.drawRoundedRect(b_rect, 4, 4)
+                    painter.setPen(QtGui.QColor(15, 23, 42) if is_white_vp else QtGui.QColor(186, 230, 253))
+                    painter.drawText(bx + 4, by + th - 2, bl_txt)
+                painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
 
             # Render GaussView-style 3D floating measurement overlays (Distance, Angle, Dihedral)
             if self.show_measurements and len(self.multi_selected) >= 2 and len(render_coords) == len(self.symbols):
@@ -1646,10 +1820,16 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                         bx = sx - tw // 2 - 6
                         by = sy - th // 2 - 3
                         b_rect = QtCore.QRect(bx, by, tw + 12, th + 6)
-                        painter.setBrush(QtGui.QColor(15, 23, 42, bg_alpha))
-                        painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
-                        painter.drawRoundedRect(b_rect, 5, 5)
-                        painter.setPen(QtGui.QColor("#ffffff"))
+                        if is_white_vp:
+                            painter.setBrush(QtGui.QColor(248, 250, 252, 240))
+                            painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
+                            painter.drawRoundedRect(b_rect, 5, 5)
+                            painter.setPen(QtGui.QColor("#0f172a"))
+                        else:
+                            painter.setBrush(QtGui.QColor(15, 23, 42, bg_alpha))
+                            painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
+                            painter.drawRoundedRect(b_rect, 5, 5)
+                            painter.setPen(QtGui.QColor("#ffffff"))
                         painter.drawText(bx + 6, by + th - 2, text)
 
                     if k_sel == 2:
@@ -1663,7 +1843,13 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             painter.drawLine(s_a[0], s_a[1], s_b[0], s_b[1])
                             s_mid = _proj_pos((pa + pb) * 0.5)
                             if s_mid:
-                                _draw_badge(s_mid[0], s_mid[1], f"{dist:.3f} Å", "#38bdf8")
+                                # Educational reference: color-code if bond length is strained or clashing
+                                badge_col = "#38bdf8"
+                                if dist < 0.70:
+                                    badge_col = "#ef4444"  # Severe clash (red)
+                                elif dist < 0.95:
+                                    badge_col = "#f59e0b"  # Short bond (amber)
+                                _draw_badge(s_mid[0], s_mid[1], f"{dist:.3f} Å", badge_col)
 
                     elif k_sel == 3:
                         a, b, c = self.multi_selected[0], self.multi_selected[1], self.multi_selected[2]
@@ -1683,7 +1869,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             norm_b = np.linalg.norm(bisect)
                             pos_badge = pb + (bisect / norm_b) * 0.65 if norm_b > 1e-5 else pb + np.array([0.0, 0.5, 0.0])
                             s_badge = _proj_pos(pos_badge) or (s_b[0] + 25, s_b[1] - 25)
-                            _draw_badge(s_badge[0], s_badge[1], f"θ = {deg:.1f}°", "#c026d3")
+                            # Educational hint: compare with ideal tetrahedral (109.5°), planar (120°), or linear (180°)
+                            ref_txt = ""
+                            if abs(deg - 109.5) <= 3.5:
+                                ref_txt = " (~sp³)"
+                            elif abs(deg - 120.0) <= 3.5:
+                                ref_txt = " (~sp²)"
+                            elif abs(deg - 180.0) <= 3.5:
+                                ref_txt = " (~sp)"
+                            _draw_badge(s_badge[0], s_badge[1], f"θ = {deg:.1f}°{ref_txt}", "#c026d3")
 
                     elif k_sel >= 4:
                         a, b, c, d = self.multi_selected[:4]
@@ -1775,10 +1969,10 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 d_fm = painter.fontMetrics()
                 d_tw = d_fm.horizontalAdvance(dip_txt)
                 d_rect = QtCore.QRect(w - d_tw - 26, 8, d_tw + 16, 24)
-                painter.setBrush(QtGui.QColor(15, 23, 42, 220))
-                painter.setPen(QtGui.QPen(QtGui.QColor("#ec4899"), 1.2))
+                painter.setBrush(QtGui.QColor(248, 250, 252, 240) if is_white_vp else QtGui.QColor(15, 23, 42, 220))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#db2777" if is_white_vp else "#ec4899"), 1.2))
                 painter.drawRoundedRect(d_rect, 5, 5)
-                painter.setPen(QtGui.QColor("#fdf2f8"))
+                painter.setPen(QtGui.QColor("#831843" if is_white_vp else "#fdf2f8"))
                 painter.drawText(d_rect, QtCore.Qt.AlignmentFlag.AlignCenter, dip_txt)
 
             # Top-left HUD badge: Active Element Brush indicator
@@ -1788,15 +1982,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             b_fm = painter.fontMetrics()
             b_tw = b_fm.horizontalAdvance(brush_text)
             b_rect = QtCore.QRect(10, 8, b_tw + 18, 24)
-            painter.setBrush(QtGui.QColor(15, 23, 42, 215)) # Dark slate semi-transparent
-            painter.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), 1))
+            painter.setBrush(QtGui.QColor(248, 250, 252, 240) if is_white_vp else QtGui.QColor(15, 23, 42, 215))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"), 1))
             painter.drawRoundedRect(b_rect, 5, 5)
             # Dot in element color
-            brush_col = get_color(brush_sym)
+            brush_col = get_color(brush_sym, bg_mode="white" if is_white_vp else "dark")
             painter.setBrush(QtGui.QColor(int(brush_col[0]*255), int(brush_col[1]*255), int(brush_col[2]*255)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawEllipse(18, 15, 10, 10)
-            painter.setPen(QtGui.QColor("#f1f5f9"))
+            painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#f1f5f9"))
             painter.drawText(34, 24, brush_text)
 
             # Left-Click drag visual line (elastic rubberband indicating new atom addition or cross-bond)
@@ -1834,7 +2028,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     painter.setPen(QtGui.QColor("#f8fafc"))
                     painter.drawText(snap_rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.active_drag_label)
 
-            # Top-left HUD badge: Publication Molecule Watermark / Figure Overlay
+            # Top-left HUD badge: Publication Molecule Watermark / Figure Overlay (positioned below Element Brush badge)
             if getattr(self, "show_watermark", True) and len(self.symbols) > 0:
                 # Formula & symmetry info
                 sym_counts: Dict[str, int] = {}
@@ -1849,11 +2043,16 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
                 wfm = painter.fontMetrics()
                 wtw = wfm.horizontalAdvance(wm_txt)
-                wrect = QtCore.QRect(12, 10, wtw + 14, 22)
-                painter.setBrush(QtGui.QColor(15, 23, 42, 190))
-                painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.0))
+                wm_y = 74 if banner_msg else 38
+                wrect = QtCore.QRect(10, wm_y, wtw + 14, 22)
+                if is_white_vp:
+                    painter.setBrush(QtGui.QColor(248, 250, 252, 230))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1.0))
+                else:
+                    painter.setBrush(QtGui.QColor(15, 23, 42, 190))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.0))
                 painter.drawRoundedRect(wrect, 4, 4)
-                painter.setPen(QtGui.QColor("#e2e8f0"))
+                painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#e2e8f0"))
                 painter.drawText(wrect, QtCore.Qt.AlignmentFlag.AlignCenter, wm_txt)
 
             # Bottom-left HUD badge: Selection summary
@@ -1884,10 +2083,16 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 s_tw = fm.horizontalAdvance(sel_str)
                 s_th = fm.height()
                 badge_rect = QtCore.QRect(10, self.height() - s_th - 16, s_tw + 20, s_th + 8)
-                painter.setBrush(QtGui.QColor(15, 23, 42, 230))
-                painter.setPen(QtGui.QPen(QtGui.QColor("#fbbf24"), 1.5))
-                painter.drawRoundedRect(badge_rect, 5, 5)
-                painter.setPen(QtGui.QColor("#fef08a"))
+                if is_white_vp:
+                    painter.setBrush(QtGui.QColor(254, 252, 232, 245))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#d97706"), 1.5))
+                    painter.drawRoundedRect(badge_rect, 5, 5)
+                    painter.setPen(QtGui.QColor("#78350f"))
+                else:
+                    painter.setBrush(QtGui.QColor(15, 23, 42, 230))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#fbbf24"), 1.5))
+                    painter.drawRoundedRect(badge_rect, 5, 5)
+                    painter.setPen(QtGui.QColor("#fef08a"))
                 painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, sel_str)
 
             # Top-right HUD badge: Clear 3D Orbital / Surface Pill (when active_isosurfaces is non-empty)
@@ -1910,89 +2115,59 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 esp_mesh = next((m for m in active_surfaces if getattr(m, "esp_range", None) is not None), None)
                 if esp_mesh is not None:
                     e_min, e_max = esp_mesh.esp_range
-                    cbar_w = 140
-                    cbar_h = 10
+                    cbar_w = 170
+                    cbar_h = 12
                     cbar_x = w - cbar_w - 28
                     cbar_y = y_surf + 32
-                    box_rect = QtCore.QRect(cbar_x - 6, cbar_y - 14, cbar_w + 12, cbar_h + 30)
-                    painter.setBrush(QtGui.QColor(15, 23, 42, 225))
-                    painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.0))
-                    painter.drawRoundedRect(box_rect, 5, 5)
+                    box_rect = QtCore.QRect(cbar_x - 8, cbar_y - 16, cbar_w + 16, cbar_h + 36)
+                    if is_white_vp:
+                        painter.setBrush(QtGui.QColor(248, 250, 252, 240))
+                        painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1.2))
+                    else:
+                        painter.setBrush(QtGui.QColor(15, 23, 42, 230))
+                        painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1.2))
+                    painter.drawRoundedRect(box_rect, 6, 6)
 
-                    # Draw gradient ramp
+                    # Dynamic multi-stop gradient for realistic colormap preview
                     grad = QtGui.QLinearGradient(cbar_x, cbar_y, cbar_x + cbar_w, cbar_y)
-                    # Sample gradient matching the colormap or standard Red -> White -> Blue
-                    grad.setColorAt(0.0, QtGui.QColor("#ef4444"))   # Negative (Red)
-                    grad.setColorAt(0.5, QtGui.QColor("#f8fafc"))   # Neutral 0.0 (White)
-                    grad.setColorAt(1.0, QtGui.QColor("#3b82f6"))   # Positive (Blue)
+                    cmap_hint = getattr(esp_mesh, "colormap_name", "bwr_r").lower()
+                    if "jet" in cmap_hint:
+                        grad.setColorAt(0.00, QtGui.QColor("#ef4444"))
+                        grad.setColorAt(0.25, QtGui.QColor("#f97316"))
+                        grad.setColorAt(0.50, QtGui.QColor("#22c55e"))
+                        grad.setColorAt(0.75, QtGui.QColor("#06b6d4"))
+                        grad.setColorAt(1.00, QtGui.QColor("#2563eb"))
+                    elif "spectral" in cmap_hint:
+                        grad.setColorAt(0.00, QtGui.QColor("#d73027"))
+                        grad.setColorAt(0.25, QtGui.QColor("#fee08b"))
+                        grad.setColorAt(0.50, QtGui.QColor("#ffffbf"))
+                        grad.setColorAt(0.75, QtGui.QColor("#91bfdb"))
+                        grad.setColorAt(1.00, QtGui.QColor("#4575b4"))
+                    else:  # bwr_r / RdBu / coolwarm_r standard
+                        grad.setColorAt(0.00, QtGui.QColor("#dc2626"))   # Negative nucleophilic (Red)
+                        grad.setColorAt(0.48, QtGui.QColor("#f8fafc"))   # Neutral
+                        grad.setColorAt(0.52, QtGui.QColor("#f8fafc"))
+                        grad.setColorAt(1.00, QtGui.QColor("#2563eb"))   # Positive electrophilic (Blue)
+
                     painter.setBrush(QtGui.QBrush(grad))
                     painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1.0))
                     painter.drawRect(cbar_x, cbar_y, cbar_w, cbar_h)
 
-                    # Labels: -V_lim, 0, +V_lim
+                    # Labels: -V_lim, 0, +V_lim and unit conversion (eV)
                     painter.setFont(QtGui.QFont("DejaVu Sans", 7, QtGui.QFont.Weight.Bold))
-                    painter.setPen(QtGui.QColor("#f87171"))
-                    painter.drawText(cbar_x, cbar_y + cbar_h + 12, f"{e_min:+.3f}")
-                    painter.setPen(QtGui.QColor("#cbd5e1"))
-                    painter.drawText(cbar_x + cbar_w // 2 - 4, cbar_y + cbar_h + 12, "0")
-                    painter.setPen(QtGui.QColor("#60a5fa"))
-                    painter.drawText(cbar_x + cbar_w - 38, cbar_y + cbar_h + 12, f"{e_max:+.3f}")
-                    painter.setPen(QtGui.QColor("#94a3b8"))
-                    painter.drawText(cbar_x, cbar_y - 3, "ESP Heatmap (a.u.)")
+                    painter.setPen(QtGui.QColor("#dc2626" if is_white_vp else "#f87171"))
+                    painter.drawText(cbar_x - 2, cbar_y + cbar_h + 13, f"{e_min:+.3f}")
+                    painter.setPen(QtGui.QColor("#475569" if is_white_vp else "#cbd5e1"))
+                    painter.drawText(cbar_x + cbar_w // 2 - 4, cbar_y + cbar_h + 13, "0")
+                    painter.setPen(QtGui.QColor("#2563eb" if is_white_vp else "#60a5fa"))
+                    e_max_str = f"{e_max:+.3f}"
+                    painter.drawText(cbar_x + cbar_w - 42, cbar_y + cbar_h + 13, e_max_str)
+                    painter.setPen(QtGui.QColor("#334155" if is_white_vp else "#94a3b8"))
+                    painter.drawText(cbar_x, cbar_y - 4, "ESP Heatmap (a.u.)")
             else:
                 self.clear_surface_rect = None
 
-            # 4. Interactive 3D Measurement Overlay (HUD Distance line / Angle arc directly in 3D viewport)
-            if has_selection and 2 <= len(self.multi_selected) <= 4 and len(render_coords) > 0:
-                n_rc = len(render_coords)
-                sel_sub = [i for i in self.multi_selected if 0 <= i < n_rc]
-                if len(sel_sub) == 2:
-                    i1, i2 = sel_sub
-                    p4_1 = mvp * QtGui.QVector4D(float(render_coords[i1][0]), float(render_coords[i1][1]), float(render_coords[i1][2]), 1.0)
-                    p4_2 = mvp * QtGui.QVector4D(float(render_coords[i2][0]), float(render_coords[i2][1]), float(render_coords[i2][2]), 1.0)
-                    if p4_1.w() > 0.05 and p4_2.w() > 0.05:
-                        ndc1 = p4_1 / p4_1.w()
-                        ndc2 = p4_2 / p4_2.w()
-                        sx1, sy1 = int((ndc1.x() * 0.5 + 0.5) * w), int((-ndc1.y() * 0.5 + 0.5) * h)
-                        sx2, sy2 = int((ndc2.x() * 0.5 + 0.5) * w), int((-ndc2.y() * 0.5 + 0.5) * h)
-                        # Draw measurement line
-                        painter.setPen(QtGui.QPen(QtGui.QColor("#f59e0b"), 2, QtCore.Qt.PenStyle.DashLine))
-                        painter.drawLine(sx1, sy1, sx2, sy2)
-                        # Midpoint distance label
-                        mx, my = (sx1 + sx2) // 2, (sy1 + sy2) // 2
-                        dist = float(np.linalg.norm(render_coords[i1] - render_coords[i2]))
-                        d_str = f"{dist:.3f} Å"
-                        painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
-                        dfm = painter.fontMetrics()
-                        dtw = dfm.horizontalAdvance(d_str)
-                        drect = QtCore.QRect(mx - dtw // 2 - 6, my - 12, dtw + 12, 22)
-                        painter.setBrush(QtGui.QColor(15, 23, 42, 220))
-                        painter.setPen(QtGui.QPen(QtGui.QColor("#fbbf24"), 1.2))
-                        painter.drawRoundedRect(drect, 4, 4)
-                        painter.setPen(QtGui.QColor("#fef08a"))
-                        painter.drawText(drect, QtCore.Qt.AlignmentFlag.AlignCenter, d_str)
-                elif len(sel_sub) == 3:
-                    i1, i2, i3 = sel_sub
-                    p4_2 = mvp * QtGui.QVector4D(float(render_coords[i2][0]), float(render_coords[i2][1]), float(render_coords[i2][2]), 1.0)
-                    if p4_2.w() > 0.05:
-                        ndc2 = p4_2 / p4_2.w()
-                        sx2, sy2 = int((ndc2.x() * 0.5 + 0.5) * w), int((-ndc2.y() * 0.5 + 0.5) * h)
-                        v1 = render_coords[i1] - render_coords[i2]
-                        v2 = render_coords[i3] - render_coords[i2]
-                        cos_th = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-12)
-                        ang_deg = math.degrees(math.acos(np.clip(cos_th, -1.0, 1.0)))
-                        ang_str = f"∠ {ang_deg:.1f}°"
-                        painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
-                        dfm = painter.fontMetrics()
-                        dtw = dfm.horizontalAdvance(ang_str)
-                        drect = QtCore.QRect(sx2 - dtw // 2 - 6, sy2 - 32, dtw + 12, 22)
-                        painter.setBrush(QtGui.QColor(15, 23, 42, 220))
-                        painter.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), 1.2))
-                        painter.drawRoundedRect(drect, 4, 4)
-                        painter.setPen(QtGui.QColor("#e0f2fe"))
-                        painter.drawText(drect, QtCore.Qt.AlignmentFlag.AlignCenter, ang_str)
-
-            # 5. Render 3D Translation & Manipulation Gizmo (X=Red, Y=Green, Z=Blue) on selection center
+            # 4. Render 3D Translation & Manipulation Gizmo (X=Red, Y=Green, Z=Blue) on selection center
             if (
                 getattr(self, "show_manipulator_gizmo", False)
                 and has_selection
@@ -2056,6 +2231,77 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
                             painter.setPen(QtGui.QColor("#ffffff"))
                             painter.drawText(t_sx + 8, t_sy + 4, ax_name)
+
+            # 5. Render Corner 3D Orientation Axis Triad (Avogadro 2 / PyMOL / VMD style)
+            if getattr(self, "show_axis_triad", True):
+                triad_cx = w - 48
+                triad_cy = h - (58 if getattr(self, "show_scale_bar", False) else 42)
+                triad_len = 26.0
+                # Background disc
+                painter.setBrush(QtGui.QColor(248, 250, 252, 200) if is_white_vp else QtGui.QColor(15, 23, 42, 185))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1" if is_white_vp else "#334155"), 1.0))
+                painter.drawEllipse(QtCore.QPoint(triad_cx, triad_cy), 34, 34)
+
+                q_rot = self.rot_quat if (hasattr(self, "rot_quat") and not self.rot_quat.isNull()) else (
+                    QtGui.QQuaternion.fromAxisAndAngle(1.0, 0.0, 0.0, self.rot_x)
+                    * QtGui.QQuaternion.fromAxisAndAngle(0.0, 1.0, 0.0, self.rot_y)
+                )
+                triad_axes = [
+                    ("X", QtGui.QVector3D(1.0, 0.0, 0.0), QtGui.QColor("#ef4444")),
+                    ("Y", QtGui.QVector3D(0.0, 1.0, 0.0), QtGui.QColor("#22c55e")),
+                    ("Z", QtGui.QVector3D(0.0, 0.0, 1.0), QtGui.QColor("#3b82f6")),
+                ]
+                # Sort back-to-front by rotated z so front axes draw on top
+                rotated_list = []
+                for ax_lbl, v3, col in triad_axes:
+                    rv = q_rot.rotatedVector(v3)
+                    rotated_list.append((float(rv.z()), ax_lbl, float(rv.x()), float(rv.y()), col))
+                rotated_list.sort(key=lambda item: item[0])
+
+                painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                for _rz, ax_lbl, rx_v, ry_v, col in rotated_list:
+                    ex = int(round(triad_cx + rx_v * triad_len))
+                    ey = int(round(triad_cy - ry_v * triad_len))
+                    painter.setPen(QtGui.QPen(col, 2.3))
+                    painter.drawLine(triad_cx, triad_cy, ex, ey)
+                    painter.setBrush(col)
+                    painter.setPen(QtCore.Qt.PenStyle.NoPen)
+                    painter.drawEllipse(QtCore.QPoint(ex, ey), 3, 3)
+                    lx = int(round(triad_cx + rx_v * (triad_len + 8.0))) - 4
+                    ly = int(round(triad_cy - ry_v * (triad_len + 8.0))) + 4
+                    painter.setPen(col)
+                    painter.drawText(lx, ly, ax_lbl)
+
+            # 6. Render Calibrated 3D Scale Bar Overlay (PyMOL / ChimeraX style)
+            if getattr(self, "show_scale_bar", False):
+                vis_ang_h = max(1.0, self.zoom * 0.41421356 * 2.0)
+                px_per_ang = float(max(1, h)) / vis_ang_h
+                bar_ang = 1.0
+                if px_per_ang * 1.0 < 45.0:
+                    bar_ang = 2.0
+                if px_per_ang * 2.0 < 45.0:
+                    bar_ang = 5.0
+                elif px_per_ang * 1.0 > 180.0:
+                    bar_ang = 0.5
+                bar_px = int(round(bar_ang * px_per_ang))
+                bx2 = w - 16
+                bx1 = bx2 - bar_px
+                by = h - 18
+                sb_rect = QtCore.QRect(bx1 - 8, by - 18, bar_px + 16, 26)
+                painter.setBrush(QtGui.QColor(248, 250, 252, 225) if is_white_vp else QtGui.QColor(15, 23, 42, 215))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1" if is_white_vp else "#475569"), 1.0))
+                painter.drawRoundedRect(sb_rect, 4, 4)
+
+                fg_col = QtGui.QColor("#0f172a" if is_white_vp else "#f8fafc")
+                painter.setPen(QtGui.QPen(fg_col, 2.2))
+                painter.drawLine(bx1, by, bx2, by)
+                painter.drawLine(bx1, by - 4, bx1, by + 4)
+                painter.drawLine(bx2, by - 4, bx2, by + 4)
+                painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                lbl_sb = f"{bar_ang:g} Å"
+                sb_fm = painter.fontMetrics()
+                sb_tw = sb_fm.horizontalAdvance(lbl_sb)
+                painter.drawText(bx1 + (bar_px - sb_tw) // 2, by - 5, lbl_sb)
 
             painter.end()
 

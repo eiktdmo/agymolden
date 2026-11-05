@@ -52,6 +52,10 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         self.radio_valence.toggled.connect(self._apply_preset_selection)
         vbox_scope.addWidget(self.radio_valence)
 
+        self.radio_frontier4 = QtWidgets.QRadioButton("Publication Frontier Quartet (HOMO-1 to LUMO+1)")
+        self.radio_frontier4.toggled.connect(self._apply_preset_selection)
+        vbox_scope.addWidget(self.radio_frontier4)
+
         self.radio_occupied = QtWidgets.QRadioButton("All Occupied Orbitals")
         self.radio_occupied.toggled.connect(self._apply_preset_selection)
         vbox_scope.addWidget(self.radio_occupied)
@@ -133,7 +137,13 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         self.btn_save_sheet.clicked.connect(self._on_save_contact_sheet)
         btn_row.addWidget(self.btn_save_sheet)
 
-        self.btn_save_zip = QtWidgets.QPushButton("📁 Export All Images...")
+        self.btn_copy_sheet = QtWidgets.QPushButton("📋 Copy Sheet")
+        self.btn_copy_sheet.setToolTip("Copy composite publication contact sheet directly to system clipboard")
+        self.btn_copy_sheet.setEnabled(False)
+        self.btn_copy_sheet.clicked.connect(self._on_copy_contact_sheet)
+        btn_row.addWidget(self.btn_copy_sheet)
+
+        self.btn_save_zip = QtWidgets.QPushButton("📁 Export All...")
         self.btn_save_zip.setEnabled(False)
         self.btn_save_zip.clicked.connect(self._on_export_individual_images)
         btn_row.addWidget(self.btn_save_zip)
@@ -222,6 +232,11 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
                 # HOMO-5 to LUMO+5
                 lo = max(0, center - 5)
                 hi = min(n, center + 6)
+                item.setCheckState(QtCore.Qt.CheckState.Checked if lo <= row < hi else QtCore.Qt.CheckState.Unchecked)
+            elif hasattr(self, "radio_frontier4") and self.radio_frontier4.isChecked():
+                # HOMO-1, HOMO, LUMO, LUMO+1 (2x2 Publication Frontier Quartet)
+                lo = max(0, center - 1)
+                hi = min(n, center + 3)
                 item.setCheckState(QtCore.Qt.CheckState.Checked if lo <= row < hi else QtCore.Qt.CheckState.Unchecked)
             elif self.radio_occupied.isChecked():
                 item.setCheckState(QtCore.Qt.CheckState.Checked if row <= center else QtCore.Qt.CheckState.Unchecked)
@@ -432,6 +447,8 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         self.progress_bar.setVisible(False)
         has_imgs = bool(self._cache_images)
         self.btn_save_sheet.setEnabled(has_imgs)
+        if hasattr(self, "btn_copy_sheet"):
+            self.btn_copy_sheet.setEnabled(has_imgs)
         self.btn_save_zip.setEnabled(has_imgs)
         self.lbl_stats.setText(f"Completed {len(self._cache_images)} orbital snapshots.")
 
@@ -554,6 +571,15 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
                 "Contact Sheet Saved",
                 f"Successfully exported orbital snapshot collage ({sheet.width()}x{sheet.height()} px) to:\n{path}",
             )
+
+    def _on_copy_contact_sheet(self):
+        """Copy the composite contact sheet grid directly to the system clipboard."""
+        sheet = self._create_composite_contact_sheet()
+        if sheet.isNull():
+            return
+        QtWidgets.QApplication.clipboard().setImage(sheet)
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "📋 Copied orbital contact sheet to clipboard!", self)
+        self.lbl_stats.setText(f"📋 Copied {sheet.width()}×{sheet.height()} px contact sheet to clipboard.")
 
     def _on_export_individual_images(self):
         """Batch export each individual orbital snapshot image into a target folder."""

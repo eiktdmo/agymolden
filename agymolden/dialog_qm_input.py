@@ -389,6 +389,12 @@ class QMCalculationDialog(QtWidgets.QDialog):
         btn_run.clicked.connect(self._on_run_calculation)
         btn_layout.addWidget(btn_run)
 
+        btn_pipeline = QtWidgets.QPushButton("⚡ Workflow Pipeline...")
+        btn_pipeline.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 4px 10px;")
+        btn_pipeline.setToolTip("Launch chained multi-stage QM recipe (e.g., Opt → Freq True Minimum, TS → IRC, Opt → TD-DFT)")
+        btn_pipeline.clicked.connect(self._on_launch_workflow_pipeline)
+        btn_layout.addWidget(btn_pipeline)
+
         # Multi-Package Pipeline Stage Chaining (Option A)
         self.btn_chain_stage = QtWidgets.QPushButton("🔗 + Chain Stage (newBRORSEN)...")
         self.btn_chain_stage.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 10px;")
@@ -490,11 +496,47 @@ class QMCalculationDialog(QtWidgets.QDialog):
             self.chk_zmatrix.setEnabled(gen_cls.supports_zmatrix)
             if not gen_cls.supports_zmatrix:
                 self.chk_zmatrix.setChecked(False)
+
+            # Update method dropdown if specific list defined
+            cur_meth = self.combo_method.currentText()
+            supp_meth = getattr(gen_cls, "supported_methods", None)
+            if supp_meth:
+                self.combo_method.blockSignals(True)
+                self.combo_method.clear()
+                self.combo_method.addItems(supp_meth)
+                idx_m = self.combo_method.findText(cur_meth)
+                if idx_m >= 0:
+                    self.combo_method.setCurrentIndex(idx_m)
+                elif "gaussian" in name.lower() and cur_meth == "wB97X-D":
+                    idx_w = self.combo_method.findText("wB97XD")
+                    if idx_w >= 0:
+                        self.combo_method.setCurrentIndex(idx_w)
+                self.combo_method.blockSignals(False)
+
+            # Update basis set dropdown if specific list defined
+            cur_bas = self.combo_basis.currentText()
+            supp_bas = getattr(gen_cls, "supported_basis_sets", None)
+            if supp_bas:
+                self.combo_basis.blockSignals(True)
+                self.combo_basis.clear()
+                self.combo_basis.addItems(supp_bas)
+                idx_b = self.combo_basis.findText(cur_bas)
+                if idx_b >= 0:
+                    self.combo_basis.setCurrentIndex(idx_b)
+                elif "gaussian" in name.lower() and cur_bas == "def2-SVP":
+                    idx_svp = self.combo_basis.findText("def2SVP")
+                    if idx_svp >= 0:
+                        self.combo_basis.setCurrentIndex(idx_svp)
+                self.combo_basis.blockSignals(False)
+
         if "orca" in name.lower():
             # Default to 1 processor for ORCA so serial runs work out-of-the-box without OpenMPI ABI issues
             self.spin_procs.setValue(1)
             if self.combo_dispersion.currentText() == "D4":
                 self.combo_dispersion.setCurrentText("D3BJ")
+        elif "gaussian" in name.lower():
+            if hasattr(self, "spin_mem") and self.spin_mem.value() < 2:
+                self.spin_mem.setValue(2)
         self._update_route_ui()
         self._update_preview()
 
@@ -527,6 +569,33 @@ class QMCalculationDialog(QtWidgets.QDialog):
             self.lbl_exec_status.setStyleSheet(
                 "background-color: #450a0a; color: #fca5a5; border: 1px solid #dc2626; padding: 8px; border-radius: 4px;"
             )
+
+    def apply_qc_doctor_remedy(self, remedy_keywords: Dict[str, str], title: str = ""):
+        """Apply recommended keywords and settings from QC Doctor failure diagnostics."""
+        if not remedy_keywords:
+            return
+
+        extra_items = []
+        curr_extra = self.txt_extra.text().strip()
+        if curr_extra:
+            extra_items.append(curr_extra)
+
+        for k, v in remedy_keywords.items():
+            if k in ("extra", "scf", "opt", "solver", "lindep"):
+                if v not in extra_items:
+                    extra_items.append(v)
+            elif k == "mem" and "GB" in v:
+                m_num = "".join(ch for ch in v if ch.isdigit())
+                if m_num:
+                    self.spin_mem.setValue(int(m_num))
+
+        self.txt_extra.setText(" ".join(extra_items))
+        self._update_preview()
+        QtWidgets.QToolTip.showText(
+            self.mapToGlobal(QtCore.QPoint(50, 50)),
+            f"Applied QC Doctor recovery parameters for: {title}",
+            self,
+        )
 
     def _on_browse_executable(self):
         qm_name = self.combo_qm_code.currentText()
@@ -646,6 +715,25 @@ class QMCalculationDialog(QtWidgets.QDialog):
 
         from .qm_detect import detect_qm_executable, get_qm_route
         info = detect_qm_executable(qm_name)
+
+        # Pre-Flight Calculation Validation (Prevents crashes before job execution)
+        from .calc_runner.preflight import validate_qm_calculation
+        from .calc_runner.dialog_preflight import PreflightValidationDialog
+        params = self._get_params()
+        report = validate_qm_calculation(
+            code_key=qm_name,
+            symbols=self.symbols,
+            coords=self.coords,
+            params=params,
+            executable_info=info,
+        )
+
+        if report.issues:
+            # If there are errors or warnings, present interactive inspection dialog
+            pref_dlg = PreflightValidationDialog(self, report, qm_name=qm_name)
+            if pref_dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+                return  # Blocked by user or fatal error
+
         if not info.found:
             msg = (
                 f"<b>{info.display_name} executable was not detected on this system.</b><br><br>"
@@ -721,4 +809,25 @@ class QMCalculationDialog(QtWidgets.QDialog):
         self.accept()
         if main_win and hasattr(main_win, "_on_open_brorsen_dialog"):
             main_win._on_open_brorsen_dialog()
+
+    def _on_launch_workflow_pipeline(self):
+        """Launch multi-stage chained calculation pipeline dialog (Opt → Freq, TS → IRC, Opt → TD-DFT)."""
+        qm_name = self.combo_qm_code.currentText()
+        params = self._get_params()
+        from .calc_runner.dialog_pipeline import WorkflowPipelineDialog
+        dlg = WorkflowPipelineDialog(
+            parent=self,
+            code_key=qm_name,
+            symbols=self.symbols,
+            coords=self.coords,
+            base_params=params,
+        )
+        def _on_geom(syms, coords, label):
+            main_win = self.parent()
+            if main_win and hasattr(main_win, "set_molecule_from_zatoms"):
+                from .zmatrix import cartesian_to_zmatrix
+                zat = cartesian_to_zmatrix(syms, coords)
+                main_win.set_molecule_from_zatoms(zat)
+        dlg.pipeline_completed_with_geom.connect(_on_geom)
+        dlg.exec()
 
