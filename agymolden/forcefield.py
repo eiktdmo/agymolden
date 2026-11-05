@@ -4,6 +4,12 @@ import math
 from typing import List, Tuple, Dict, Optional, Set
 import numpy as np
 
+try:
+    from scipy.spatial import cKDTree
+    _HAS_CKDTREE = True
+except ImportError:
+    _HAS_CKDTREE = False
+
 from .elements import get_cov_radius, get_vdw_radius, estimate_bond_length
 
 # Standard valence for common organic and main group atoms
@@ -72,50 +78,93 @@ def detect_connectivity(
         # Sanitize any monovalent over-valence
         return _sanitize_monovalent_bonds(symbols, coords, bonds_set, is_pure_h2)
 
-    # Heavy-heavy bonds from distance
-    for i in range(n):
-        if symbols[i] in MONOVALENT or symbols[i] == "X":
-            continue
-        max_val_i = DEFAULT_VALENCES.get(symbols[i], 4)
-        if user_bonds and len(user_adj[i]) >= max_val_i:
-            continue
-        r_i = get_cov_radius(symbols[i])
+    cov_radii = [get_cov_radius(s) for s in symbols]
 
-        for j in range(i + 1, n):
-            if symbols[j] in MONOVALENT or symbols[j] == "X":
+    if _HAS_CKDTREE and n >= 40:
+        # High-performance spatial indexing for medium-to-large molecules (O(N log N) scaling)
+        tree = cKDTree(coords)
+        candidate_pairs = tree.query_pairs(r=4.8)
+
+        for i, j in candidate_pairs:
+            si, sj = symbols[i], symbols[j]
+            if si in MONOVALENT or sj in MONOVALENT or si == "X" or sj == "X":
                 continue
-            max_val_j = DEFAULT_VALENCES.get(symbols[j], 4)
+            max_val_i = DEFAULT_VALENCES.get(si, 4)
+            if user_bonds and len(user_adj[i]) >= max_val_i:
+                continue
+            max_val_j = DEFAULT_VALENCES.get(sj, 4)
             if user_bonds and len(user_adj[j]) >= max_val_j:
                 continue
-            r_j = get_cov_radius(symbols[j])
-            dist = np.linalg.norm(coords[i] - coords[j])
-            max_cov = (r_i + r_j) * 1.25 + 0.15
+            dist = float(np.linalg.norm(coords[i] - coords[j]))
+            max_cov = (cov_radii[i] + cov_radii[j]) * 1.25 + 0.15
             if 0.4 < dist <= max_cov:
-                bonds_set.add((i, j))
+                bonds_set.add((min(i, j), max(i, j)))
 
-    # Hydrogen / monovalent bonds from distance (strictly to closest heavy atom only)
-    for m_idx in range(n):
-        if symbols[m_idx] not in MONOVALENT:
-            continue
-        # If already bonded to a heavy atom, do not add another bond!
-        already_bonded = any(m_idx in b for b in bonds_set)
-        if already_bonded:
-            continue
-
-        best_partner = None
-        best_dist = 1e9
-        r_m = get_cov_radius(symbols[m_idx])
-        for j in range(n):
-            if symbols[j] in MONOVALENT or symbols[j] == "X":
+        for m_idx in range(n):
+            sm = symbols[m_idx]
+            if sm not in MONOVALENT:
                 continue
-            dist = float(np.linalg.norm(coords[m_idx] - coords[j]))
-            r_j = get_cov_radius(symbols[j])
-            max_cov = (r_m + r_j) * 1.30 + 0.15
-            if dist <= max_cov and dist < best_dist:
-                best_dist = dist
-                best_partner = j
-        if best_partner is not None:
-            bonds_set.add((min(m_idx, best_partner), max(m_idx, best_partner)))
+            already_bonded = any(m_idx in b for b in bonds_set)
+            if already_bonded:
+                continue
+
+            r_m = cov_radii[m_idx]
+            nearby_indices = tree.query_ball_point(coords[m_idx], r=3.5)
+            best_partner = None
+            best_dist = 1e9
+            for j in nearby_indices:
+                if j == m_idx or symbols[j] in MONOVALENT or symbols[j] == "X":
+                    continue
+                dist = float(np.linalg.norm(coords[m_idx] - coords[j]))
+                max_cov = (r_m + cov_radii[j]) * 1.30 + 0.15
+                if dist <= max_cov and dist < best_dist:
+                    best_dist = dist
+                    best_partner = j
+            if best_partner is not None:
+                bonds_set.add((min(m_idx, best_partner), max(m_idx, best_partner)))
+    else:
+        # Direct pairwise evaluation for small molecules (n < 40)
+        for i in range(n):
+            if symbols[i] in MONOVALENT or symbols[i] == "X":
+                continue
+            max_val_i = DEFAULT_VALENCES.get(symbols[i], 4)
+            if user_bonds and len(user_adj[i]) >= max_val_i:
+                continue
+            r_i = cov_radii[i]
+
+            for j in range(i + 1, n):
+                if symbols[j] in MONOVALENT or symbols[j] == "X":
+                    continue
+                max_val_j = DEFAULT_VALENCES.get(symbols[j], 4)
+                if user_bonds and len(user_adj[j]) >= max_val_j:
+                    continue
+                r_j = cov_radii[j]
+                dist = np.linalg.norm(coords[i] - coords[j])
+                max_cov = (r_i + r_j) * 1.25 + 0.15
+                if 0.4 < dist <= max_cov:
+                    bonds_set.add((i, j))
+
+        for m_idx in range(n):
+            if symbols[m_idx] not in MONOVALENT:
+                continue
+            already_bonded = any(m_idx in b for b in bonds_set)
+            if already_bonded:
+                continue
+
+            best_partner = None
+            best_dist = 1e9
+            r_m = cov_radii[m_idx]
+            for j in range(n):
+                if symbols[j] in MONOVALENT or symbols[j] == "X":
+                    continue
+                dist = float(np.linalg.norm(coords[m_idx] - coords[j]))
+                r_j = cov_radii[j]
+                max_cov = (r_m + r_j) * 1.30 + 0.15
+                if dist <= max_cov and dist < best_dist:
+                    best_dist = dist
+                    best_partner = j
+            if best_partner is not None:
+                bonds_set.add((min(m_idx, best_partner), max(m_idx, best_partner)))
 
     return _sanitize_monovalent_bonds(symbols, coords, bonds_set, is_pure_h2)
 

@@ -926,21 +926,6 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     continue
                 v_norm = v / length
 
-                # Rotation to align z-axis (0, 0, 1) with v_norm
-                z_axis = np.array([0.0, 0.0, 1.0])
-                axis = np.cross(z_axis, v_norm)
-                axis_len = np.linalg.norm(axis)
-                angle_deg = 0.0
-                if axis_len > 1e-6:
-                    axis = axis / axis_len
-                    angle_deg = math.degrees(math.acos(np.clip(np.dot(z_axis, v_norm), -1.0, 1.0)))
-                elif np.dot(z_axis, v_norm) < 0:
-                    axis = np.array([1.0, 0.0, 0.0])
-                    angle_deg = 180.0
-                else:
-                    axis = np.array([0.0, 1.0, 0.0])
-                    angle_deg = 0.0
-
                 # Determine bond order: 1, 2, or 3
                 b_key = (min(i1, i2), max(i1, i2))
                 order = self.bond_orders.get(b_key, 1)
