@@ -39,7 +39,7 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 - [x] **Hybrid Optimization Backends**: Provide seamless fallback between analytical UFF/MMFF94s, RDKit (when installed), and semiempirical GFN0-xTB with an inline method selector and automatic parameter fallback.
 - [ ] **Software-OpenGL CI Testing**: Run offscreen GUI tests with Mesa llvmpipe / Xvfb to capture OpenGL framebuffers and verify rendering and picking without physical GPUs.
 - [ ] **Decoupled Architecture**: Refactor large mixins (`mw_editing.py`, `mw_calculations.py`, `mw_ui.py`) into independent controllers around a central event bus.
-- [ ] **Unified Molecule State**: Establish a single authoritative `MoleculeModel` managing Cartesian coordinates, internal connectivity, bond orders, and stereocenters.
+- [x] **Unified Molecule State**: Establish a single authoritative `MoleculeModel` managing Cartesian coordinates, internal connectivity, bond orders, and stereocenters with reactive Qt signal propagation.
 - [x] **Job Queue & Cluster Schedulers**: Integrated SLURM/PBS/LSF/SGE script generator with configurable node/walltime/partition presets, node-local scratch lifecycle management, and MPI configuration.
 - [ ] **Advanced Volumetric Rendering**: GPU ray-casting or depth-sorted impostor spheres/cylinders, ambient occlusion, and publication-ready SVG/vector export.
 
