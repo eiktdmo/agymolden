@@ -761,20 +761,25 @@ def optimize_geometry_rdkit_mmff(
 
     try:
         from rdkit import Chem
-        from rdkit.Chem import AllChem, rdDetermineBonds
+        from rdkit.Chem import AllChem
 
-        # Construct XYZ block
-        xyz_lines = [str(len(symbols)), "rdkit_opt"]
-        for s, pt in zip(symbols, coords):
-            xyz_lines.append(f"{s} {pt[0]:.6f} {pt[1]:.6f} {pt[2]:.6f}")
-        xyz_block = "\n".join(xyz_lines)
+        # Determine connectivity from chemical bonds if not provided
+        conn = bonds if bonds is not None else detect_connectivity(symbols, coords)
 
-        mol = Chem.MolFromXYZBlock(xyz_block)
-        if mol is None:
-            return None
+        mol = Chem.RWMol()
+        for s in symbols:
+            mol.AddAtom(Chem.Atom(s))
 
-        rdDetermineBonds.DetermineBonds(mol)
+        for u, v in conn:
+            if 0 <= u < len(symbols) and 0 <= v < len(symbols) and u != v:
+                mol.AddBond(u, v, Chem.BondType.SINGLE)
+
         Chem.SanitizeMol(mol)
+
+        conf = Chem.Conformer(len(symbols))
+        for i, pt in enumerate(coords):
+            conf.SetAtomPosition(i, [float(pt[0]), float(pt[1]), float(pt[2])])
+        mol.AddConformer(conf, assignId=True)
 
         # 1. Try MMFF94 force field first
         mp = AllChem.MMFFGetMoleculeProperties(mol)
