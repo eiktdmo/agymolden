@@ -147,7 +147,7 @@ def parse_nbo_perturbation_table(text: str) -> List[NBOPerturbation]:
                     fock_element_au=fock,
                 )
             )
-        except Exception:
+        except (ValueError, IndexError):
             continue
 
     # Sort descending by interaction energy E(2)

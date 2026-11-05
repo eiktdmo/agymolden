@@ -8,12 +8,15 @@ Provides algorithms for:
 4. Spiro-Welding (fusing rings at a single quaternary spiro vertex)
 """
 
+import logging
 import math
 from typing import List, Tuple, Dict, Optional, Set, Any
 import numpy as np
 
 from .alignment import rodrigues_rotation
 from .forcefield import optimize_geometry_force_field, detect_connectivity
+
+logger = logging.getLogger(__name__)
 
 
 RING_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -303,8 +306,8 @@ def fuse_ring_to_bond(
                 frozen_indices=frozen,
             )
             result_coords = opt_coords
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Optional edge annulation force field relaxation notice: %s", e)
 
     return out_symbols, result_coords
 
@@ -405,7 +408,7 @@ def bridge_cycle_atoms(
         try:
             opt_c, _ = optimize_geometry_force_field(out_syms, result_coords, max_iter=200)
             result_coords = opt_c
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Optional bridgehead force field relaxation notice: %s", e)
 
     return out_syms, result_coords

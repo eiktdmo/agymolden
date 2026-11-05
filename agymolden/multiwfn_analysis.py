@@ -421,7 +421,7 @@ def compute_qtaim_topology(molden_path: str) -> QTAIMResult:
                         coords_bohr=(x_b, y_b, z_b),
                         coords_angstrom=(x_ang, y_ang, z_ang),
                     ))
-                except Exception:
+                except (ValueError, IndexError):
                     continue
 
     return QTAIMResult(

@@ -15,8 +15,11 @@ import os
 import json
 import zipfile
 import datetime
+import logging
 from typing import List, Optional, Dict, Any
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from .zmatrix import cartesian_to_zmatrix, format_zmatrix_text
 from .chem_identifiers import format_xyz_string
@@ -180,8 +183,8 @@ def create_reproducibility_bundle(
         try:
             with open(input_file_path, "r", encoding="utf-8", errors="ignore") as f:
                 input_text = f.read()
-        except Exception:
-            pass
+        except OSError as e:
+            logger.warning("Could not read input file for SI bundle %s: %s", input_file_path, e)
 
     # Generate Markdown Supporting Info
     si_markdown = generate_si_markdown(

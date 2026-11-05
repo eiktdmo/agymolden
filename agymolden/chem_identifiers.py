@@ -317,18 +317,139 @@ def fetch_3d_from_pubchem_sdf(query: str, timeout: float = 4.0) -> Optional[Tupl
     return None
 
 
+_OFFLINE_TEMPLATES_3D: Dict[str, Tuple[List[str], np.ndarray, List[Tuple[int, int]], Dict[Tuple[int, int], int]]] = {
+    "water": (
+        ["O", "H", "H"],
+        np.array([[0.0, 0.0, 0.117], [0.0, 0.757, -0.469], [0.0, -0.757, -0.469]], dtype=np.float64),
+        [(0, 1), (0, 2)],
+        {(0, 1): 1, (0, 2): 1},
+    ),
+    "methane": (
+        ["C", "H", "H", "H", "H"],
+        np.array([
+            [0.0, 0.0, 0.0],
+            [0.628, 0.628, 0.628],
+            [-0.628, -0.628, 0.628],
+            [-0.628, 0.628, -0.628],
+            [0.628, -0.628, -0.628],
+        ], dtype=np.float64),
+        [(0, 1), (0, 2), (0, 3), (0, 4)],
+        {(0, 1): 1, (0, 2): 1, (0, 3): 1, (0, 4): 1},
+    ),
+    "ammonia": (
+        ["N", "H", "H", "H"],
+        np.array([
+            [0.0, 0.0, 0.113],
+            [0.0, 0.938, -0.264],
+            [0.812, -0.469, -0.264],
+            [-0.812, -0.469, -0.264],
+        ], dtype=np.float64),
+        [(0, 1), (0, 2), (0, 3)],
+        {(0, 1): 1, (0, 2): 1, (0, 3): 1},
+    ),
+    "carbon dioxide": (
+        ["C", "O", "O"],
+        np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.162], [0.0, 0.0, -1.162]], dtype=np.float64),
+        [(0, 1), (0, 2)],
+        {(0, 1): 2, (0, 2): 2},
+    ),
+    "ethylene": (
+        ["C", "C", "H", "H", "H", "H"],
+        np.array([
+            [0.0, 0.0, 0.665],
+            [0.0, 0.0, -0.665],
+            [0.0, 0.923, 1.232],
+            [0.0, -0.923, 1.232],
+            [0.0, 0.923, -1.232],
+            [0.0, -0.923, -1.232],
+        ], dtype=np.float64),
+        [(0, 1), (0, 2), (0, 3), (1, 4), (1, 5)],
+        {(0, 1): 2, (0, 2): 1, (0, 3): 1, (1, 4): 1, (1, 5): 1},
+    ),
+    "benzene": (
+        ["C", "C", "C", "C", "C", "C", "H", "H", "H", "H", "H", "H"],
+        np.array([
+            [1.397, 0.0, 0.0],
+            [0.6985, 1.2098, 0.0],
+            [-0.6985, 1.2098, 0.0],
+            [-1.397, 0.0, 0.0],
+            [-0.6985, -1.2098, 0.0],
+            [0.6985, -1.2098, 0.0],
+            [2.481, 0.0, 0.0],
+            [1.2405, 2.1486, 0.0],
+            [-1.2405, 2.1486, 0.0],
+            [-2.481, 0.0, 0.0],
+            [-1.2405, -2.1486, 0.0],
+            [1.2405, -2.1486, 0.0],
+        ], dtype=np.float64),
+        [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0), (0, 6), (1, 7), (2, 8), (3, 9), (4, 10), (5, 11)],
+        {(0, 1): 2, (1, 2): 1, (2, 3): 2, (3, 4): 1, (4, 5): 2, (5, 0): 1, (0, 6): 1, (1, 7): 1, (2, 8): 1, (3, 9): 1, (4, 10): 1, (5, 11): 1},
+    ),
+}
+_OFFLINE_TEMPLATES_3D["h2o"] = _OFFLINE_TEMPLATES_3D["water"]
+_OFFLINE_TEMPLATES_3D["ch4"] = _OFFLINE_TEMPLATES_3D["methane"]
+_OFFLINE_TEMPLATES_3D["nh3"] = _OFFLINE_TEMPLATES_3D["ammonia"]
+_OFFLINE_TEMPLATES_3D["co2"] = _OFFLINE_TEMPLATES_3D["carbon dioxide"]
+_OFFLINE_TEMPLATES_3D["ethene"] = _OFFLINE_TEMPLATES_3D["ethylene"]
+
+
+def _embed_rdkit_mol_to_3d(
+    mol: Any,
+    add_hydrogens: bool = True,
+) -> Optional[Tuple[List[str], np.ndarray, List[Tuple[int, int]], Dict[Tuple[int, int], int]]]:
+    """Helper to embed an RDKit Mol into 3D using ETKDG and UFF relaxation."""
+    if not _HAS_RDKIT or mol is None:
+        return None
+    try:
+        from rdkit.Chem import AllChem
+        if add_hydrogens:
+            mol = Chem.AddHs(mol)
+        res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+        if res < 0:
+            res2 = AllChem.EmbedMolecule(mol, useRandomCoords=True)
+            if res2 < 0 or mol.GetNumConformers() == 0:
+                AllChem.Compute2DCoords(mol)
+        if mol.GetNumConformers() > 0:
+            try:
+                AllChem.UFFOptimizeMolecule(mol, maxIters=200)
+            except Exception as e:
+                log.debug("RDKit UFF optimization notice: %s", e)
+            conf = mol.GetConformer()
+            symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+            coords = conf.GetPositions().astype(np.float64)
+            bonds = []
+            bond_orders = {}
+            bo_map = {
+                Chem.BondType.SINGLE: 1,
+                Chem.BondType.DOUBLE: 2,
+                Chem.BondType.TRIPLE: 3,
+                Chem.BondType.AROMATIC: 1,
+            }
+            for b in mol.GetBonds():
+                u, v = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+                norm_b = (min(u, v), max(u, v))
+                bonds.append(norm_b)
+                bond_orders[norm_b] = bo_map.get(b.GetBondType(), 1)
+            return symbols, coords, bonds, bond_orders
+    except Exception as e:
+        log.debug("RDKit 3D embedding failed: %s", e)
+    return None
+
+
 def parse_smiles_or_inchi_to_3d(
     text: str,
     add_hydrogens: bool = True,
 ) -> Tuple[List[str], np.ndarray, List[Tuple[int, int]], Dict[Tuple[int, int], int]]:
     """
     Parse a chemical name, SMILES string, or InChI string and generate 3D Cartesian coordinates.
-    
-    Supports:
-      1. Chemical names & IUPAC (e.g. 'aspirin', 'caffeine', 'ferrocene', '2-bromo-4-nitroaniline')
-         via direct 3D resolution (NIH Cactus and PubChem PUG REST).
-      2. SMILES & InChI strings via RDKit ETKDG / UFF when available, or NIH resolver fallback.
-    
+
+    Workflow:
+      1. If offline template matches, returns immediate high-accuracy 3D coordinates.
+      2. If RDKit is available, attempts offline ETKDG / UFF embedding directly for SMILES,
+         InChI, or mapped common names (instant, zero network latency).
+      3. Queries NIH Cactus and PubChem REST APIs for IUPAC names, CAS, or online SMILES.
+      4. Falls back to PubChem name-to-SMILES resolution and local RDKit embedding.
+
     Returns:
         (symbols, coords, bonds, bond_orders)
     """
@@ -336,94 +457,66 @@ def parse_smiles_or_inchi_to_3d(
     if not s:
         raise ValueError("Empty chemical identifier provided.")
 
-    # 1. If RDKit is available and text is explicit SMILES or InChI, try RDKit embedding
-    if _HAS_RDKIT and (s.startswith("InChI=") or any(c in s for c in "=#()[]+")):
-        try:
-            from rdkit.Chem import AllChem
-            mol = Chem.MolFromInchi(s) if s.startswith("InChI=") else Chem.MolFromSmiles(s)
-            if mol is not None:
-                if add_hydrogens:
-                    mol = Chem.AddHs(mol)
-                res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
-                if res < 0:
-                    res2 = AllChem.EmbedMolecule(mol, useRandomCoords=True)
-                    if res2 < 0 or mol.GetNumConformers() == 0:
-                        AllChem.Compute2DCoords(mol)
-                if mol.GetNumConformers() > 0:
-                    try:
-                        AllChem.UFFOptimizeMolecule(mol, maxIters=200)
-                    except Exception as e:
-                        log.debug("RDKit UFF optimization notice: %s", e)
-                    conf = mol.GetConformer()
-                    symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
-                    coords = conf.GetPositions().astype(np.float64)
-                    bonds = []
-                    bond_orders = {}
-                    bo_map = {
-                        Chem.BondType.SINGLE: 1,
-                        Chem.BondType.DOUBLE: 2,
-                        Chem.BondType.TRIPLE: 3,
-                        Chem.BondType.AROMATIC: 1,
-                    }
-                    for b in mol.GetBonds():
-                        u, v = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
-                        norm_b = (min(u, v), max(u, v))
-                        bonds.append(norm_b)
-                        bond_orders[norm_b] = bo_map.get(b.GetBondType(), 1)
-                    return symbols, coords, bonds, bond_orders
-        except Exception as e:
-            log.debug("RDKit 3D coordinate generation failed: %s", e)
+    key_lower = s.lower()
 
-    # 2. Direct 3D resolution via NIH Cactus (fast, high-precision Cartesian coordinates)
+    # 1. Check local offline template dictionary first
+    if key_lower in _OFFLINE_TEMPLATES_3D:
+        syms, coords, bonds, bo = _OFFLINE_TEMPLATES_3D[key_lower]
+        return list(syms), np.copy(coords), list(bonds), dict(bo)
+
+    # 2. Check if text is a known common chemical name with a mapped SMILES
+    mapped_smi = _COMMON_CHEMICAL_NAMES_SMILES.get(key_lower)
+
+    # 3. If RDKit is available, attempt direct local offline 3D embedding
+    if _HAS_RDKIT:
+        target_s = mapped_smi if mapped_smi else s
+        mol = None
+        if target_s.startswith("InChI="):
+            mol = Chem.MolFromInchi(target_s)
+        else:
+            try:
+                mol = Chem.MolFromSmiles(target_s)
+            except Exception:
+                mol = None
+        if mol is not None:
+            res_3d = _embed_rdkit_mol_to_3d(mol, add_hydrogens=add_hydrogens)
+            if res_3d is not None:
+                return res_3d
+
+    # 4. Direct 3D resolution via NIH Cactus
     cactus_3d = fetch_3d_from_cactus(s)
     if cactus_3d is not None:
         return cactus_3d
 
-    # 3. Direct 3D resolution via PubChem 3D SDF
+    # 5. Direct 3D resolution via PubChem 3D SDF
     pubchem_3d = fetch_3d_from_pubchem_sdf(s)
     if pubchem_3d is not None:
         return pubchem_3d
 
-    # 4. Built-in common names dictionary fallback
-    if s.lower() in _COMMON_CHEMICAL_NAMES_SMILES:
-        smi = _COMMON_CHEMICAL_NAMES_SMILES[s.lower()]
-        # Try Cactus for the resolved SMILES
-        c_res = fetch_3d_from_cactus(smi)
+    # 6. If mapped SMILES exists, try Cactus for mapped SMILES
+    if mapped_smi:
+        c_res = fetch_3d_from_cactus(mapped_smi)
         if c_res is not None:
             return c_res
-        if _HAS_RDKIT:
-            return parse_smiles_or_inchi_to_3d(smi, add_hydrogens=add_hydrogens)
 
-    # 5. PubChem Name-to-SMILES resolution fallback
+    # 7. Online PubChem Name-to-SMILES resolution fallback
     resolved_smi = resolve_chemical_name_to_smiles(s)
     if resolved_smi:
         c_res = fetch_3d_from_cactus(resolved_smi)
         if c_res is not None:
             return c_res
         if _HAS_RDKIT:
-            return parse_smiles_or_inchi_to_3d(resolved_smi, add_hydrogens=add_hydrogens)
+            mol = Chem.MolFromSmiles(resolved_smi)
+            if mol is not None:
+                res_3d = _embed_rdkit_mol_to_3d(mol, add_hydrogens=add_hydrogens)
+                if res_3d is not None:
+                    return res_3d
 
     raise ValueError(
         f"Could not resolve 3D structure for chemical name or identifier:\n'{s}'\n\n"
         "Please check the name spelling (e.g. 'caffeine', 'aspirin', 'ferrocene', 'bipyridine')\n"
         "or provide a standard SMILES (e.g. 'c1ccccc1') or InChI string."
     )
-    bo_map = {
-        Chem.BondType.SINGLE: 1,
-        Chem.BondType.DOUBLE: 2,
-        Chem.BondType.TRIPLE: 3,
-        Chem.BondType.AROMATIC: 1, # Kekule representation
-    }
-
-    for b in mol.GetBonds():
-        u, v = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
-        norm_b = (min(u, v), max(u, v))
-        bonds.append(norm_b)
-        order = bo_map.get(b.GetBondType(), 1)
-        if order > 1:
-            bond_orders[norm_b] = order
-
-    return symbols, coords, bonds, bond_orders
 
 
 def format_supporting_information_entry(

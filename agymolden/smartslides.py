@@ -7,9 +7,12 @@ All functions in this module are pure geometric / graph transformations on
 """
 
 import math
+import logging
 from collections import deque
 from typing import List, Tuple, Set, Optional, Dict
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from .zmatrix import calculate_bond_distance, calculate_angle, calculate_dihedral
 from .topology import build_adj, norm_bond
@@ -528,7 +531,8 @@ def generate_conformers(
                     user_bond_orders=bo, method="uff_mmff", frozen_indices=frozen
                 )
             results.append((float(e_kcal) * kcal_to_ev, opt_c))
-        except Exception:
+        except (ValueError, RuntimeError, ArithmeticError) as e:
+            logger.debug("Conformer candidate relaxation failed: %s", e)
             continue
 
     if not results:

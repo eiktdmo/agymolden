@@ -74,6 +74,27 @@ def test_parse_smiles_and_inchi_to_3d():
     assert coords_eth.shape == (9, 3)
 
 
+def test_offline_template_resolution():
+    from agymolden.chem_identifiers import parse_smiles_or_inchi_to_3d
+    # Offline template for water
+    syms, coords, bonds, bo = parse_smiles_or_inchi_to_3d("water")
+    assert syms == ["O", "H", "H"]
+    assert coords.shape == (3, 3)
+    assert len(bonds) == 2
+
+    # Offline template for methane
+    syms_m, coords_m, bonds_m, bo_m = parse_smiles_or_inchi_to_3d("ch4")
+    assert syms_m[0] == "C" and len(syms_m) == 5
+    assert coords_m.shape == (5, 3)
+    assert len(bonds_m) == 4
+
+    # Offline template for benzene
+    syms_b, coords_b, bonds_b, bo_b = parse_smiles_or_inchi_to_3d("benzene")
+    assert len(syms_b) == 12
+    assert coords_b.shape == (12, 3)
+    assert len(bonds_b) == 12
+
+
 def test_chemical_name_to_3d():
     from agymolden.chem_identifiers import parse_smiles_or_inchi_to_3d
     # Test resolving chemical names (works both online and offline via fallback dictionary)

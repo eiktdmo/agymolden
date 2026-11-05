@@ -1490,9 +1490,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self._push_undo_state()
             self.set_molecule_from_zatoms(zatoms)
             self.statusBar().showMessage("Auto-applied Z-matrix text updates", 1500)
-        except Exception:
+        except Exception as e:
             # While typing, syntax may be momentarily incomplete - do not disturb the user with error boxes
-            pass
+            log.debug("Debounced live Z-matrix parse incomplete: %s", e)
 
     def _on_apply_text_zmat(self):
         text = self.text_raw_zmat.toPlainText()
