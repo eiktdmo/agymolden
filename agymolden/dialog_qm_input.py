@@ -383,6 +383,12 @@ class QMCalculationDialog(QtWidgets.QDialog):
         btn_save.clicked.connect(self._on_save_file)
         btn_layout.addWidget(btn_save)
 
+        btn_cluster = QtWidgets.QPushButton("🖥️ Cluster / HPC Script...")
+        btn_cluster.setStyleSheet("background-color: #4338ca; color: white; font-weight: bold; padding: 4px 10px;")
+        btn_cluster.setToolTip("Generate production-grade HPC batch script (SLURM / PBS / LSF / SGE) for cluster execution")
+        btn_cluster.clicked.connect(self._on_generate_cluster_script)
+        btn_layout.addWidget(btn_cluster)
+
         btn_run = QtWidgets.QPushButton("▶ Run Calculation...")
         btn_run.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px;")
         btn_run.setToolTip("Run this calculation and monitor output live")
@@ -410,6 +416,23 @@ class QMCalculationDialog(QtWidgets.QDialog):
         btn_layout.addWidget(btn_close)
 
         layout.addLayout(btn_layout)
+
+    def _on_generate_cluster_script(self):
+        """Open HPC cluster batch submission script dialog for current calculation."""
+        from .dialog_cluster_script import ClusterScriptDialog
+        qm_name = self.combo_qm_code.currentText()
+        gen_cls = QM_GENERATORS.get(qm_name, GaussianGenerator)
+        ext = gen_cls.file_extension
+        def_filename = f"calculation{ext}"
+
+        dlg = ClusterScriptDialog(
+            self,
+            input_filename=def_filename,
+            qm_code=qm_name,
+            default_nprocs=self.spin_procs.value(),
+            default_mem_gb=self.spin_mem.value() if hasattr(self, "spin_mem") else 16,
+        )
+        dlg.exec()
 
     def _on_show_format_info(self):
         """Displays informative explanation for the selected QM package file format."""
