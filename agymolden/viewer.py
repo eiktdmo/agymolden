@@ -195,11 +195,13 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.sphere_vbo = 0
         self.sphere_ebo = 0
         self.sphere_indices_count = 0
+        self.sphere_inst_vbo = 0
 
         self.cyl_vao = 0
         self.cyl_vbo = 0
         self.cyl_ebo = 0
         self.cyl_indices_count = 0
+        self.cyl_inst_vbo = 0
 
         self.cone_vao = 0
         self.cone_vbo = 0
@@ -852,6 +854,9 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         return dir_w / norm
 
     def paintGL(self):
+        is_white_bg = (getattr(self, "bg_color_mode", "dark") == "white")
+        is_white_vp = (is_white_bg and not getattr(self, "transparent_bg", False))
+
         # QPainter overlays (labels/HUD) leave GL state modified (depth test off, etc.), which made
         # atoms draw in index order instead of by depth. Restore the full 3D state every frame.
         glEnable(GL_DEPTH_TEST)
@@ -1028,7 +1033,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                         float(p2_off[0]), float(p2_off[1]), float(p2_off[2]),
                     ))
 
-            if cyl_instances:
+            if cyl_instances and self.cyl_vao and self.cyl_inst_vbo:
                 cyl_inst_arr = np.array(cyl_instances, dtype=np.float32)
                 glBindBuffer(GL_ARRAY_BUFFER, self.cyl_inst_vbo)
                 glBufferData(GL_ARRAY_BUFFER, cyl_inst_arr.nbytes, cyl_inst_arr, GL_DYNAMIC_DRAW)
@@ -1128,14 +1133,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 inst_data[i, 4:7] = c
                 inst_data[i, 7] = float(hl)
 
-            glBindVertexArray(self.sphere_vao)
-            glBindBuffer(GL_ARRAY_BUFFER, self.sphere_inst_vbo)
-            glBufferData(GL_ARRAY_BUFFER, inst_data.nbytes, inst_data, GL_DYNAMIC_DRAW)
-            glUniform1i(loc_use_inst, 1)
+            if self.sphere_vao and self.sphere_inst_vbo:
+                glBindVertexArray(self.sphere_vao)
+                glBindBuffer(GL_ARRAY_BUFFER, self.sphere_inst_vbo)
+                glBufferData(GL_ARRAY_BUFFER, inst_data.nbytes, inst_data, GL_DYNAMIC_DRAW)
+                glUniform1i(loc_use_inst, 1)
 
-            glDrawElementsInstanced(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None, n_atoms)
-            glUniform1i(loc_use_inst, 0)
-            glBindVertexArray(0)
+                glDrawElementsInstanced(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None, n_atoms)
+                glUniform1i(loc_use_inst, 0)
+                glBindVertexArray(0)
 
         # 3. Render 3D Vibrational Normal Mode Displacement Vectors (Arrows)
         if (
