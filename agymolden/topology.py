@@ -128,7 +128,8 @@ def fix_valence_explicit(symbols, coords, bonds, bond_orders=None, add_h: bool =
     if add_h:
         adj = build_adj(len(symbols), bset)
         n0 = len(symbols)
-        new_syms, new_pos = [], []
+        new_syms: List[str] = []
+        new_pos: List[np.ndarray] = []
         for i in range(n0):
             if target_indices is not None and i not in target_indices:
                 continue
@@ -150,11 +151,11 @@ def fix_valence_explicit(symbols, coords, bonds, bond_orders=None, add_h: bool =
                     vecs.append(v / nv)
             dirs = _calculate_hydrogen_directions(vecs, need)
             d = estimate_bond_length(s, "H")
-            for k, dvec in enumerate(dirs[:need]):
-                idx = n0 + len(new_syms)
+            for _k, dvec in enumerate(dirs[:need]):
+                new_atom_idx: int = n0 + len(new_syms)
                 new_syms.append("H")
                 new_pos.append(coords[i] + dvec * d)
-                bset.add(norm_bond(i, idx))
+                bset.add(norm_bond(i, new_atom_idx))
         if new_syms:
             symbols = symbols + new_syms
             coords = np.vstack([coords, np.array(new_pos)])

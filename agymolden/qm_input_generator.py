@@ -12,7 +12,7 @@ import re
 from typing import List, Dict, Optional, Type, Tuple, Any
 import numpy as np
 
-from .zmatrix import ZAtom, format_zmatrix_numeric, format_zmatrix_variables
+from .zmatrix import ZAtom, format_zmatrix_text, format_zmatrix_numeric, format_zmatrix_variables
 
 
 @dataclass

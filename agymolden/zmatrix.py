@@ -320,8 +320,8 @@ def parse_zmatrix_text(text: str) -> Tuple[List[ZAtom], Dict[str, float]]:
     zatoms: List[ZAtom] = []
     variables: Dict[str, float] = {}
 
-    atom_lines = []
-    var_lines = []
+    atom_lines: List[str] = []
+    var_lines: List[str] = []
     parsing_vars = False
 
     def looks_like_var_line(line: str) -> bool:
@@ -369,13 +369,13 @@ def parse_zmatrix_text(text: str) -> Tuple[List[ZAtom], Dict[str, float]]:
             return float(token)
         except ValueError:
             base, sgn = _split_var(token)
-            return sgn * variables.get(base, 0.0)
+            return sgn * variables.get(base or "", 0.0)
 
     def var_name_of(token: str) -> Optional[str]:
         base, _ = _split_var(token)
-        return token if base in variables else None
+        return token if (base and base in variables) else None
 
-    atom_labels = {}  # Map label string (e.g. 'C1', 'O2', '1') to 0-based index
+    atom_labels: Dict[str, int] = {}  # Map label string (e.g. 'C1', 'O2', '1') to 0-based index
 
     def resolve_ref(token: str, current_idx: int) -> int:
         clean = token.strip()
@@ -581,17 +581,17 @@ def assign_symmetric_variables(zatoms: List[ZAtom], tol_dist: float = 0.01, tol_
         return name
 
     for i, a in enumerate(zatoms):
-        if i >= 1 and a.ref1 is not None:
+        if i >= 1 and a.ref1 is not None and 0 <= a.ref1 < len(syms):
             key = tuple(sorted((syms[i], syms[a.ref1])))
             a.dist_var = find_or_create("dist", key, a.dist, tol_dist, False)
-        if i >= 2 and a.ref2 is not None:
+        if i >= 2 and a.ref2 is not None and a.ref1 is not None and 0 <= a.ref2 < len(syms) and 0 <= a.ref1 < len(syms):
             if include_angles:
                 ends = sorted((syms[i], syms[a.ref2]))
                 key = (ends[0], syms[a.ref1], ends[1])
                 a.angle_var = find_or_create("angle", key, a.angle, tol_ang, False)
             else:
                 a.angle_var = None
-        if i >= 3 and a.ref3 is not None:
+        if i >= 3 and a.ref3 is not None and a.ref1 is not None and 0 <= a.ref1 < len(syms):
             if include_dihedrals:
                 key = (syms[i], syms[a.ref1])  # same moving atom type on same center type
                 a.dihedral_var = find_or_create("dihedral", key, a.dihedral, tol_ang, True)
