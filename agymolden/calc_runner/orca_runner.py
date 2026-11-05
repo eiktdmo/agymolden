@@ -63,7 +63,7 @@ class OrcaRunner(BaseCalcRunner):
 
         try:
             self._out_fh = open(self.log_file, "w", encoding="utf-8")
-        except Exception as e:
+        except OSError as e:
             log.warning(f"Could not open {self.log_file} for writing: {e}")
             self._out_fh = None
 
@@ -89,7 +89,7 @@ class OrcaRunner(BaseCalcRunner):
             try:
                 self._out_fh.flush()
                 self._out_fh.close()
-            except Exception:
+            except (OSError, IOError):
                 logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
             self._out_fh = None
 
@@ -109,7 +109,7 @@ class OrcaRunner(BaseCalcRunner):
                     molden_std = f"{stem}.molden"
                     if os.path.isfile(molden_inp) and not os.path.isfile(molden_std):
                         shutil.copy2(molden_inp, molden_std)
-                except Exception as e:
+                except (subprocess.SubprocessError, OSError) as e:
                     log.warning(f"orca_2mkl conversion warning: {e}")
 
         super()._on_process_finished(exit_code, exit_status)
@@ -119,7 +119,7 @@ class OrcaRunner(BaseCalcRunner):
             try:
                 self._out_fh.write(line + "\n")
                 self._out_fh.flush()
-            except Exception:
+            except (OSError, IOError):
                 logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         s = line.strip()

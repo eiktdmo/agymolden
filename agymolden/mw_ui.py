@@ -1727,10 +1727,19 @@ class UIMixin(UIInspectorTabsMixin):
         menu_help = menubar.addMenu("&Help")
 
         self.act_command_palette = QtGui.QAction("🚀 Quick &Command Palette...", self)
-        self.act_command_palette.setShortcut("Ctrl+Shift+P")
-        self.act_command_palette.setToolTip("Instant searchable command palette for all 60+ AgyMolden tools and actions (Ctrl+Shift+P)")
+        self.act_command_palette.setShortcuts([
+            QtGui.QKeySequence("Ctrl+Shift+P"),
+            QtGui.QKeySequence("Ctrl+K"),
+        ])
+        self.act_command_palette.setToolTip("Instant searchable command palette for all 60+ AgyMolden tools and actions (Ctrl+K / Ctrl+Shift+P)")
         self.act_command_palette.triggered.connect(self._on_open_command_palette)
         menu_help.addAction(self.act_command_palette)
+
+        act_examples = QtGui.QAction("🧪 &Example Molecule && Calculation Gallery...", self)
+        act_examples.setShortcut("F2")
+        act_examples.setToolTip("Explore bundled Molden wavefunctions, QM output logs, and Z-matrix templates (F2)")
+        act_examples.triggered.connect(self._on_open_example_gallery)
+        menu_help.addAction(act_examples)
         menu_help.addSeparator()
 
         act_about = QtGui.QAction("&About AgyMolden", self)

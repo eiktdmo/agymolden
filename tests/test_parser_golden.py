@@ -68,9 +68,68 @@ def test_golden_brorsen_multistage_parser():
         assert res.symbols == ["Li", "H"]
         assert len(res.trajectory_coords) >= 1
         assert len(res.trajectory_energies) >= 1
+
         # HLi bond length in cc-pVDZ should be ~1.59-1.62 Angstroms
         d = np.linalg.norm(res.trajectory_coords[0][1] - res.trajectory_coords[0][0])
         assert 1.58 < d < 1.63
+
+
+def test_golden_psi4_parser(tmp_path):
+    """Verify golden extraction on realistic Psi4 optimization + frequency output."""
+    psi4_log = """
+    -----------------------------------------------------------------------
+          Psi4: An Open-Source Ab Initio Electronic Structure Package
+                               Psi4 1.8.2 release
+    -----------------------------------------------------------------------
+
+         Geometry (in Angstrom), charge = 0, multiplicity = 1:
+
+       Center              X                  Y                   Z               Mass       
+    ------------   -----------------  -----------------  -----------------  -----------------
+           O          0.000000000000     0.000000000000     0.117300000000    15.994914619570
+           H          0.000000000000     0.757200000000    -0.469200000000     1.007825032230
+           H          0.000000000000    -0.757200000000    -0.469200000000     1.007825032230
+
+    @DF-RKS Final Energy:     -76.4089532100
+
+         Geometry (in Angstrom), charge = 0, multiplicity = 1:
+
+       Center              X                  Y                   Z               Mass       
+    ------------   -----------------  -----------------  -----------------  -----------------
+           O          0.000000000000     0.000000000000     0.116500000000    15.994914619570
+           H          0.000000000000     0.758000000000    -0.466000000000     1.007825032230
+           H          0.000000000000    -0.758000000000    -0.466000000000     1.007825032230
+
+    @DF-RKS Final Energy:     -76.4091245000
+
+    Optimizer: Optimization complete!
+
+    Harmonic Vibrational Frequencies [cm^-1]
+    ----------------------------------------
+    Freq [cm^-1]        1595.23     3657.05     3755.93
+    IR Intens [km/mol]     2.51       12.30       54.21
+
+    Total ZPE, Electronic energy + ZPE =   -76.38765432
+    Total Enthalpy                     =   -76.38312000
+    Total Gibbs Free Energy            =   -76.40543200
+
+    *** Psi4 exiting successfully. Buy a developer a beer!
+    """
+    log_file = tmp_path / "water_psi4.out"
+    log_file.write_text(psi4_log, encoding="utf-8")
+
+    res = parse_qm_logfile(str(log_file))
+    assert isinstance(res, QMLogParseResult)
+    assert res.program_name == "Psi4"
+    assert res.converged is True
+    assert res.symbols == ["O", "H", "H"]
+    assert len(res.trajectory_coords) == 2
+    assert len(res.trajectory_energies) == 2
+    assert res.trajectory_energies[1] < res.trajectory_energies[0]
+    assert res.vibrational_analysis is not None
+    assert len(res.vibrational_analysis.frequencies) == 3
+    assert res.vibrational_analysis.frequencies[0] == pytest.approx(1595.23, rel=1e-3)
+    assert res.vibrational_analysis.ir_intensities == [2.51, 12.30, 54.21]
 
 
 def test_golden_brorsen_opt_trajectory():

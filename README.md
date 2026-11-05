@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![OpenGL](https://img.shields.io/badge/Graphics-OpenGL%203.3+-orange.svg)](https://www.khronos.org/opengl/)
-[![Tests](https://img.shields.io/badge/Tests-150%2B%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-221%2B%20Passing-brightgreen.svg)]()
 
 **AgyMolden** is an ultra-fast, modern, native cross-platform quantum chemistry companion and molecular modeling workbench. It combines the intuitive internal coordinate (Z-matrix) editing workflows of classic Molden with a full-fledged computational chemistry environment: multi-package calculation execution, live convergence tracking, automated error diagnostics (QC Doctor), volumetric orbital & electrostatic potential (ESP) visualization, intrinsic reaction coordinate (IRC) reaction profiling, transition state IDPP path interpolation, and CREST conformer ensemble exploration.
 
@@ -135,9 +135,11 @@ python run.py
 | **Select Atom** | Left Click on Atom (synchronizes with Z-Matrix table) |
 | **Measure Geometry** | **Shift + Click** on 2 atoms (distance), 3 atoms (angle), 4 atoms (dihedral) |
 | **Quick-Add Atom** | **Ctrl + Right-Click & Drag** from an atom to create a new bonded atom |
-| **Quick Command Palette** | `Ctrl + Shift + P` (Search and trigger all 60+ tools & menus) |
-| **Open File** | `Ctrl + O` (Supports `.zmat`, `.xyz`, `.gjf`, `.inp`, `.out`, `.log`, `.molden`) |
+| **Quick Command Palette** | `Ctrl + K` or `Ctrl + Shift + P` (Search and trigger all 60+ tools & menus) |
+| **Example Gallery** | `F2` (Browse and launch bundled Molden wavefunctions, QM logs, and templates) |
+| **Open File** | `Ctrl + O` (Supports `.zmat`, `.xyz`, `.pdb`, `.sdf`, `.gjf`, `.inp`, `.out`, `.log`, `.molden`) |
 | **Save File** | `Ctrl + S` |
+| **Export High-DPI Publication PNG** | `Ctrl + E` / `Ctrl + P` (Physical 300/600 DPI with ACS/RSC/Nature journal presets) |
 | **Export SI Reproducibility Bundle** | `Ctrl + Shift + S` (XYZ, ZMAT, Summary JSON, Methods Markdown, logs) |
 | **Export Interactive 3D WebGL HTML** | `Ctrl + Shift + H` |
 | **Copy 3D Image to Clipboard** | `Ctrl + Shift + C` (Transparent background, publication quality) |
@@ -159,15 +161,17 @@ python run.py
 
 ## 🧪 Supported File Formats & QM Packages
 
-| Format / Software | Input Generation | Log / Trajectory Parsing | Orbitals & Surfaces |
-| :--- | :---: | :---: | :---: |
-| **Gaussian (G16 / G09)** | ✅ Full (Opt, Freq, IRC, TD-DFT, TS) | ✅ Energetics, forces, thermochemistry | ✅ Via `.molden` or `.fchk` conversion |
-| **ORCA (4.x / 5.x)** | ✅ Full (Compound, IRC, NumFreq, TD) | ✅ Output log, `.opt`, `.engrad`, `.hess` | ✅ Native `.molden.input` / `.molden` |
-| **newBRORSEN** | ✅ Multi-stage nuclear-electronic APMO | ✅ Multi-component trajectory logs | ✅ Electronic & positronic Molden |
-| **PySCF** | ✅ Python driver scripts | ✅ Output logs | ✅ Molden export |
-| **openLOWDIN** | ✅ Direct APMO input generation | ✅ Output log & properties | ✅ Native Molden support |
-| **xTB & CREST** | ✅ GFN2-xTB / Conformer searches | ✅ Multi-frame XYZ & `crest.energies` | — |
-| **Standard Formats** | `.zmat`, `.xyz`, `.sdf`, `.mol`, `.cube` | Multi-XYZ trajectories (`_trj.xyz`) | Gaussian Cube, Molden format |
+| Format / Software | Input Generation | Execution Runner | Log / Trajectory Parsing | Orbitals & Surfaces |
+| :--- | :---: | :---: | :---: | :---: |
+| **ORCA (4.x / 5.x / 6.x)** | ✅ Full (Compound, IRC, NumFreq, TD) | ✅ Streaming process | ✅ Output log, `.opt`, `.engrad`, `.hess` | ✅ Native `.molden.input` / `.molden` |
+| **Gaussian (G16 / G09)** | ✅ Full (Opt, Freq, IRC, TD-DFT, TS) | ✅ Stdin / Pipe streaming | ✅ Energetics, forces, thermochemistry | ✅ Via `.molden` or `.fchk` conversion |
+| **Psi4** | ✅ Cartesian & ZMAT input (`.dat`) | ✅ Streaming process | ✅ Energy, geometry, vibration parser | ✅ Molden wavefunction export |
+| **PySCF** | ✅ Python driver scripts | ✅ Python process runner | ✅ Output logs | ✅ Native Molden export |
+| **Q-Chem** | ✅ Rem / molecule blocks | ✅ Streaming process | ✅ Output log parsing via cclib | ✅ Molden / Fchk format |
+| **newBRORSEN** | ✅ Nuclear-electronic APMO | ✅ Multi-stage runner | ✅ Electronic & positronic logs | ✅ Electronic & positronic Molden |
+| **openLOWDIN** | ✅ Direct APMO input generation | ✅ Streaming process | ✅ Output log & properties | ✅ Native Molden support |
+| **xTB & CREST** | ✅ GFN2-xTB / Conformer searches | ✅ Subprocess runner | ✅ Multi-frame XYZ & `crest.energies` | — |
+| **Standard Formats** | `.zmat`, `.xyz`, `.pdb`, `.sdf`, `.mol`, `.cube` | Headless CLI suite | Multi-XYZ trajectories (`_trj.xyz`) | Gaussian Cube, Molden format |
 
 ---
 

@@ -659,6 +659,122 @@ def _parse_openlowdin_logfile(path: str) -> Optional[QMLogParseResult]:
     )
 
 
+def _parse_psi4_logfile_native(path: str) -> Optional[QMLogParseResult]:
+    """Dedicated native parser for Psi4 output logs (.out, .dat, .log)."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except Exception:
+        return None
+
+    if "PSI4" not in text.upper() and "BUY A DEVELOPER A BEER" not in text.upper():
+        return None
+
+    ha_to_ev = 27.211386245988
+    lines = text.splitlines()
+    i = 0
+    symbols: List[str] = []
+    geom_blocks: List[np.ndarray] = []
+
+    # Parse geometry tables
+    while i < len(lines):
+        line = lines[i]
+        if "Center" in line and ("X" in line or "x" in line) and ("Y" in line or "y" in line):
+            if i + 1 < len(lines) and ("----" in lines[i + 1] or "====" in lines[i + 1]):
+                i += 2
+                coords_step = []
+                step_syms = []
+                while i < len(lines):
+                    row = lines[i].strip()
+                    if not row or "----" in row or "====" in row or "Total Mass" in row:
+                        break
+                    toks = row.split()
+                    if len(toks) >= 4:
+                        s_cand = toks[0]
+                        try:
+                            x, y, z = float(toks[1]), float(toks[2]), float(toks[3])
+                            from .elements import normalize_symbol
+                            norm_s = normalize_symbol(s_cand)
+                            if norm_s:
+                                step_syms.append(norm_s)
+                                coords_step.append([x, y, z])
+                            else:
+                                break
+                        except ValueError:
+                            break
+                    else:
+                        break
+                    i += 1
+                if coords_step and (not symbols or len(step_syms) == len(symbols)):
+                    if not symbols:
+                        symbols = step_syms
+                    geom_blocks.append(np.array(coords_step, dtype=np.float64))
+        i += 1
+
+    if not symbols or not geom_blocks:
+        return None
+
+    # Parse total electronic energies (excluding thermochemical summaries)
+    traj_energies = []
+    for l in lines:
+        if any(w in l for w in ("ZPE", "Enthalpy", "Gibbs", "thermal", "Correction", "Zero-point")):
+            continue
+        m_e = re.search(
+            r'(?:(?:Final\s+Energy|Total\s+Energy|Current\s+energy)\s*[:=]|@.*Final\s+Energy:\s*)\s*([+-]?\d+\.\d+)',
+            l,
+            re.IGNORECASE,
+        )
+        if m_e:
+            traj_energies.append(float(m_e.group(1)) * ha_to_ev)
+
+    # Parse vibrational frequencies & IR intensities
+    vib_analysis = None
+    if "Harmonic Vibrational Frequencies" in text or "Freq [cm^-1]" in text:
+        vib_freqs: List[float] = []
+        vib_irs: List[float] = []
+        n_atoms = len(symbols)
+
+        for match_m in re.finditer(r'Freq\s*\[cm\^-1\]\s+((?:[+-]?\d+\.?\d*\s*)+)', text):
+            freq_tokens = [float(x) for x in match_m.group(1).split()]
+            vib_freqs.extend(freq_tokens)
+
+        for match_ir in re.finditer(r'IR\s+Intens\s*\[km/mol\]\s+((?:[+-]?\d+\.?\d*\s*)+)', text):
+            ir_tokens = [float(x) for x in match_ir.group(1).split()]
+            vib_irs.extend(ir_tokens)
+
+        if vib_freqs:
+            disps = np.zeros((len(vib_freqs), n_atoms, 3), dtype=np.float64)
+            vib_analysis = VibrationalAnalysis(
+                frequencies=vib_freqs,
+                displacements=disps,
+                symbols=symbols,
+                base_coords=geom_blocks[-1],
+                source="Psi4 QM Output",
+                ir_intensities=vib_irs if len(vib_irs) == len(vib_freqs) else None,
+            )
+
+    converged = "exit" in text.lower() or "success" in text.lower() or "optimization complete" in text.lower()
+
+    comment = f"Psi4 calculation: {len(symbols)} atoms, {len(geom_blocks)} geometry step(s)"
+    if vib_analysis:
+        comment += f", {vib_analysis.n_modes} vibrational mode(s)"
+
+    extra = _extract_thermo_and_frontier_from_text(text)
+
+    return QMLogParseResult(
+        program_name="Psi4",
+        symbols=symbols,
+        trajectory_coords=geom_blocks,
+        trajectory_energies=traj_energies,
+        vibrational_analysis=vib_analysis,
+        converged=converged,
+        comment=comment,
+        **extra,
+    )
+
+
 def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
     """Robust native fallback parser for ORCA log/out files when cclib fails."""
     try:
@@ -854,13 +970,16 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"File not found: {path}")
 
-    # 1. Try dedicated newBRORSEN / PySCF and openLOWDIN parsers first
+    # 1. Try dedicated newBRORSEN / PySCF, openLOWDIN, and Psi4 parsers first
     brorsen_res = parse_brorsen_logfile(path)
     if brorsen_res is not None:
         return brorsen_res
     lowdin_res = _parse_openlowdin_logfile(path)
     if lowdin_res is not None:
         return lowdin_res
+    psi4_res = _parse_psi4_logfile_native(path)
+    if psi4_res is not None:
+        return psi4_res
 
     # 2. Use cclib to open and parse
     if not cclib:

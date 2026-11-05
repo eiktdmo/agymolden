@@ -79,7 +79,7 @@ class GenericQMRunner(BaseCalcRunner):
             scr_dir = os.environ.get("GAUSS_SCRDIR") or os.path.join(work_dir, "scratch")
             try:
                 os.makedirs(scr_dir, exist_ok=True)
-            except Exception:
+            except (OSError, PermissionError):
                 scr_dir = work_dir
             env["GAUSS_SCRDIR"] = scr_dir
 
@@ -171,7 +171,7 @@ class GenericQMRunner(BaseCalcRunner):
             self.stdin_file = self.input_file
             try:
                 self._out_fh = open(self.log_file, "w", encoding="utf-8")
-            except Exception as e:
+            except OSError as e:
                 log.warning(f"Could not open {self.log_file} for writing: {e}")
                 self._out_fh = None
         else:
@@ -187,7 +187,7 @@ class GenericQMRunner(BaseCalcRunner):
             try:
                 self._out_fh.flush()
                 self._out_fh.close()
-            except Exception:
+            except (OSError, IOError):
                 logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
             self._out_fh = None
 
@@ -198,7 +198,7 @@ class GenericQMRunner(BaseCalcRunner):
                 with open(self.log_file, "r", encoding="utf-8", errors="replace") as f_tail:
                     for line in f_tail:
                         self._parse_line(line.rstrip("\r\n"))
-            except Exception as e:
+            except (OSError, IOError, UnicodeDecodeError) as e:
                 log.debug(f"Failed to post-parse log file {self.log_file}: {e}")
 
         # Post-job hook for Gaussian: run formchk on .chk if available
@@ -213,7 +213,7 @@ class GenericQMRunner(BaseCalcRunner):
                             import subprocess
                             subprocess.run([formchk_bin, chk_cand, fchk_out], cwd=self.work_dir, capture_output=True, timeout=30)
                         break
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 log.debug(f"formchk post-processing warning: {e}")
 
         super()._on_process_finished(exit_code, exit_status)
@@ -223,7 +223,7 @@ class GenericQMRunner(BaseCalcRunner):
             try:
                 self._out_fh.write(line + "\n")
                 self._out_fh.flush()
-            except Exception:
+            except (OSError, IOError):
                 logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         s = line.strip()

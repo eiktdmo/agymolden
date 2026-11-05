@@ -102,7 +102,7 @@ def detect_conda_environments(force_refresh: bool = False) -> List[Tuple[str, st
                 for name in sorted(os.listdir(envs_dir)):
                     py_path = os.path.join(envs_dir, name, "Scripts", "python.exe") if os.name == "nt" else os.path.join(envs_dir, name, "bin", "python")
                     add_env(f"conda: {name}", py_path)
-            except Exception:
+            except (OSError, PermissionError):
                 logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     _ENV_CACHE = envs

@@ -4,7 +4,38 @@ All notable changes to **AgyMolden** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-11-04
+## [0.6.0] - 2026-11-05
+
+### Added
+- **Psi4 Quantum Chemical Engine Support (`agymolden/qm_input_generator.py`, `qm_detect.py`, `calc_runner/generic_runner.py`)**:
+  - Full input deck generator (`Psi4Generator`) supporting Cartesian and Z-matrix coordinate syntax, memory allocation, multi-threaded scaling, and automatic reference selection (`rhf` / `rohf`).
+  - Polarizable Continuum Model (PCM) solvation setup and job dispatch (`optimize`, `frequency`, `energy`).
+  - Automated executable detection in standard Conda environments and system paths.
+  - Streaming execution runner integration in `GenericQMRunner`.
+- **Publication-Quality Physical DPI Tagging (`agymolden/mw_file_io.py`)**:
+  - Implemented exact physical DPI metadata embedding via `setDotsPerMeterX/Y` (300 and 600 DPI) for drag-and-drop scaling into LaTeX, Word, and InDesign.
+  - Journal layout presets: ACS Single Column (3.25 in / 8.25 cm), ACS Double Column (7.0 in), RSC Single Column (8.3 cm), Nature/Springer (89 mm), and TOC Graphic square.
+- **Vector Spectrum Plot Exporter (`agymolden/spectrum_widget.py`)**:
+  - 1-Click vector figure export (`.pdf`, `.svg`, `.eps`) and high-DPI raster (`.png`) across all spectra (IR/Raman, UV-Vis, NMR Chemical Shifts, and Electronic Density of States).
+  - Customizable print background styling (pure white with high-contrast text and dark spines, transparent, or dark canvas).
+- **Universal PDB and SDF/MOL Molecular File Formats (`agymolden/zmatrix.py`, `mw_file_io.py`)**:
+  - Lossless parsers and writers for Protein Data Bank (`.pdb`) and MDL Molfile / SDF V2000 (`.sdf`, `.mol`).
+  - Preserves exact 3D coordinates, atom serials, explicit `CONECT` bonds, and multiple bond orders (single, double, triple).
+- **Multiwfn Real-Space 3D Grids & NCI/RDG Studio (`agymolden/multiwfn_analysis.py`, `dialog_multiwfn.py`)**:
+  - Automated 3D volumetric grid calculation for Electron Localization Function (ELF), Localized Orbital Locator (LOL), Total Electron Density, Laplacian ($\nabla^2\rho$), and Reduced Density Gradient (RDG / Non-Covalent Interactions).
+  - Pure NumPy/SciPy promolecular density fallback when Multiwfn is not installed.
+- **1-Click Reaction Transition State Workflow Pipeline (`agymolden/dialog_reaction_path.py`)**:
+  - Direct bridge connecting IDPP reaction path interpolation into the multi-stage calculation runner pre-configured with `TS Opt → Freq (Verify 1 Imaginary) → IRC MEP`.
+- **Scientific Trust & Mathematical Validation Corpus (`tests/test_numerical_validation.py`, `test_parser_golden.py`)**:
+  - Mathematical verification of Kabsch SVD rotation recovery ($\text{RMSD} < 10^{-12}$ Å, $\det(R)=1.0$).
+  - Cartesian to Z-Matrix machine-precision roundtrip ($\text{RMSD} = 6.6 \times 10^{-16}$ Å).
+  - Golden parser test corpus validating ORCA, Gaussian, and newBRORSEN multi-stage logfiles.
+
+### Changed
+- Replaced broad `except Exception` blocks in calculation runners and file I/O operations with typed exceptions (`OSError`, `IOError`, `UnicodeDecodeError`, `SubprocessError`) and structured logging.
+- Hardened chemical identifier resolution with offline 3D coordinate templates for standard molecules.
+
+## [0.5.0] - 2026-11-04
 
 ### Added
 - **Molecular Cycle Welder & Ring Fusion Studio (`agymolden/cycle_welder.py`, `dialog_cycle_welder.py`, `Ctrl+Shift+W`)**:

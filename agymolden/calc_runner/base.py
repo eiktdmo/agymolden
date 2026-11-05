@@ -122,7 +122,7 @@ class BaseCalcRunner(QtCore.QObject):
                 try:
                     self._out_fh.write(line + "\n")
                     self._out_fh.flush()
-                except Exception:
+                except (OSError, IOError):
                     logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     def _parse_line(self, line: str):
@@ -146,7 +146,7 @@ class BaseCalcRunner(QtCore.QObject):
                         try:
                             self._out_fh.write(line + "\n")
                             self._out_fh.flush()
-                        except Exception as e:
+                        except (OSError, IOError) as e:
                             log.debug("Failed writing stderr line to log file: %s", e)
         success = (exit_code == 0 and exit_status == QtCore.QProcess.ExitStatus.NormalExit)
         if success:

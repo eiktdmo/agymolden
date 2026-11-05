@@ -159,8 +159,8 @@ class FileIOMixin:
             self.set_molecule_from_zatoms(zatoms)
             self._remember_file(path)
             self.statusBar().showMessage(f"Loaded {os.path.basename(path)}", 4000)
-        except Exception as e:
-            log.exception("Unhandled error in GUI action")
+        except (OSError, IOError, ValueError) as e:
+            log.exception("Error opening Z-matrix file")
             QtWidgets.QMessageBox.critical(self, "Error Opening File", str(e))
 
     def open_path(self, path: str):
@@ -199,7 +199,7 @@ class FileIOMixin:
                 content = f.read().strip().split()[0]
             self.load_from_smiles_or_inchi(content, name=os.path.basename(path))
             self._remember_file(path)
-        except Exception as e:
+        except (OSError, IOError, ValueError) as e:
             log.exception("Error loading SMILES file")
             QtWidgets.QMessageBox.critical(self, "Error Opening SMILES", str(e))
 
@@ -209,7 +209,7 @@ class FileIOMixin:
                 content = f.read().strip()
             self.load_from_smiles_or_inchi(content, name=os.path.basename(path))
             self._remember_file(path)
-        except Exception as e:
+        except (OSError, IOError, ValueError) as e:
             log.exception("Error loading InChI file")
             QtWidgets.QMessageBox.critical(self, "Error Opening InChI", str(e))
 
@@ -1443,8 +1443,8 @@ class FileIOMixin:
                     f.write(txt)
                 self._remember_file(path)
                 self.statusBar().showMessage(f"Saved Z-matrix to {os.path.basename(path)}", 4000)
-            except Exception as e:
-                log.exception("Unhandled error in GUI action")
+            except (OSError, IOError) as e:
+                log.exception("Error saving Z-matrix file")
                 QtWidgets.QMessageBox.critical(self, "Error Saving File", str(e))
 
     def _on_save_zmat_format(self, fmt: str):
@@ -1465,8 +1465,8 @@ class FileIOMixin:
                 f.write(txt)
             self._remember_file(path)
             self.statusBar().showMessage(f"Saved Z-matrix ({fmt}) to {os.path.basename(path)}", 4000)
-        except Exception as e:
-            log.exception("Unhandled error in GUI action")
+        except (OSError, IOError) as e:
+            log.exception("Error saving Z-matrix formatted file")
             QtWidgets.QMessageBox.critical(self, "Error Saving File", str(e))
 
     def _on_assign_symmetric_bond_variables(self):
@@ -1523,8 +1523,8 @@ class FileIOMixin:
                 symbols = [a.symbol for a in self.zatoms]
                 write_xyz(path, symbols, self.coords)
                 self.statusBar().showMessage(f"Exported Cartesian XYZ to {os.path.basename(path)}", 4000)
-            except Exception as e:
-                log.exception("Unhandled error in GUI action")
+            except (OSError, IOError) as e:
+                log.exception("Error exporting XYZ")
                 QtWidgets.QMessageBox.critical(self, "Error Exporting XYZ", str(e))
 
     def _on_export_pdb(self):
@@ -1537,8 +1537,8 @@ class FileIOMixin:
                 bonds = list(self._current_explicit_bonds())
                 write_pdb(path, symbols, self.coords, bonds=bonds)
                 self.statusBar().showMessage(f"Exported PDB structure to {os.path.basename(path)}", 4000)
-            except Exception as e:
-                log.exception("Unhandled error in GUI action")
+            except (OSError, IOError) as e:
+                log.exception("Error exporting PDB")
                 QtWidgets.QMessageBox.critical(self, "Error Exporting PDB", str(e))
 
     def _on_export_sdf(self):
@@ -1552,8 +1552,8 @@ class FileIOMixin:
                 bo = getattr(self.viewer, "bond_orders", {})
                 write_mol_sdf(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
                 self.statusBar().showMessage(f"Exported SDF/MOL structure to {os.path.basename(path)}", 4000)
-            except Exception as e:
-                log.exception("Unhandled error in GUI action")
+            except (OSError, IOError) as e:
+                log.exception("Error exporting SDF/MOL")
                 QtWidgets.QMessageBox.critical(self, "Error Exporting SDF/MOL", str(e))
 
     def _on_export_html(self):
@@ -2021,6 +2021,12 @@ class FileIOMixin:
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
+        dlg.exec()
+
+    def _on_open_example_gallery(self):
+        """Open the Example Molecule & Calculation Gallery."""
+        from .dialog_example_gallery import ExampleGalleryDialog
+        dlg = ExampleGalleryDialog(self)
         dlg.exec()
 
     def _on_open_manual(self):
