@@ -292,8 +292,8 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
         if traj_coords:
             final_coords = traj_coords[-1]
 
-    # Priority B2: Direct PySCF Mole dump ("atoms:" block or companion .py / .molden file)
-    if final_coords is None and is_pyscf:
+    # Priority B2: Check PySCF atom tables, Molden artifacts, companion scripts, or internal distances
+    if final_coords is None:
         # Check PySCF verbose=4 atom coordinate table: "   1 O       0.000000    0.000000    0.117300"
         pyscf_at_blocks = re.findall(
             r'(?:^\s*\d+\s+[A-Z][a-z]?\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+[^\n]*\n)+',
@@ -338,7 +338,20 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
                 except Exception as e:
                     log.debug("Failed parsing xyz candidate %s: %s", xyz_cand, e)
         if final_coords is None:
-            for m_cand in (os.path.join(base_dir, f"{base_name}.molden"), os.path.join(base_dir, "orbitals.molden")):
+            import glob
+            # Check explicitly declared generated artifacts in log
+            artifact_moldens = re.findall(r'\[Artifact Generated\]\s*(\S+\.molden)', text, re.IGNORECASE)
+            molden_candidates = [os.path.join(base_dir, art) for art in artifact_moldens]
+
+            # Also check job_names glob and base_name
+            for jn in (job_names + [base_name]):
+                molden_candidates.extend(glob.glob(os.path.join(base_dir, f"{jn}*.molden")))
+            molden_candidates.extend([
+                os.path.join(base_dir, f"{base_name}.molden"),
+                os.path.join(base_dir, "orbitals.molden"),
+            ])
+
+            for m_cand in molden_candidates:
                 if os.path.isfile(m_cand):
                     try:
                         from .volumetric import parse_molden_file
@@ -350,6 +363,21 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
                             break
                     except Exception as e:
                         log.debug("Failed parsing molden candidate %s: %s", m_cand, e)
+
+            # Check for diatom distance in text: "Distance R(Li1 - H2) : 1.615306 A"
+            if final_coords is None:
+                m_diatom = re.search(
+                    r'Distance\s+R\(([A-Za-z]{1,2})\d*\s*-\s*([A-Za-z]{1,2})\d*\)\s*:\s*([+-]?\d+\.\d+)\s*A',
+                    text,
+                    re.IGNORECASE,
+                )
+                if m_diatom:
+                    s1 = m_diatom.group(1).capitalize()
+                    s2 = m_diatom.group(2).capitalize()
+                    d_val = float(m_diatom.group(3))
+                    symbols = [s1, s2]
+                    final_coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, d_val]], dtype=np.float64)
+                    traj_coords = [final_coords]
 
     # Priority C: Check for companion input file (.inp)
     # If we have optimization steps or only final coordinates, get initial structure as step 0 if available!
