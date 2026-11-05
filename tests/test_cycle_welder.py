@@ -133,3 +133,46 @@ def test_cycle_welder_dialog(qapp):
     assert dlg.btn_fuse.isEnabled() is True
     assert "Target Bond" in dlg.lbl_atoms.text()
     dlg.close()
+
+
+def test_cycle_welder_dropdown_and_execution(qapp):
+    class MockViewer:
+        selected_bond = None
+        multi_selected = []
+        selected_atom_idx = None
+        bonds = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)]
+        def update(self):
+            pass
+        def auto_center(self):
+            pass
+
+    class MockWindow:
+        def __init__(self):
+            syms, crds = _create_benzene()
+            from agymolden.zmatrix import ZAtom
+            self.zatoms = [ZAtom(symbol=s) for s in syms]
+            self.coords = crds
+            self.viewer = MockViewer()
+            self.updated_with_zatoms = False
+
+        def set_molecule_from_zatoms(self, zatoms, exact_coords=None):
+            self.zatoms = zatoms
+            self.coords = exact_coords
+            self.updated_with_zatoms = True
+
+    win = MockWindow()
+    # Even without pre-selecting any atoms, dialog auto-populates all bonds in the molecule!
+    dlg = CycleWelderDialog(win)
+    assert dlg.combo_bonds.count() == 6
+    assert dlg.btn_fuse.isEnabled() is True
+    assert dlg.target_bond == (0, 1)
+
+    # Change to bond 2 (2-3)
+    dlg.combo_bonds.setCurrentIndex(2)
+    assert dlg.target_bond == (2, 3)
+
+    # Execute fuse: Benzene + Benzene -> Naphthalene
+    dlg._on_execute_fuse()
+    assert win.updated_with_zatoms is True
+    assert len(win.zatoms) == 18  # C10H8
+    dlg.close()

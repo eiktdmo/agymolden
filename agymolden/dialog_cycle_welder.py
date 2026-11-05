@@ -27,8 +27,9 @@ class CycleWelderDialog(QtWidgets.QDialog):
         super().__init__(parent if isinstance(parent, QtWidgets.QWidget) else None)
         self.window = parent
         self.setWindowTitle("💍 Molecular Cycle Welder & Ring Fusion Studio")
-        self.resize(520, 480)
+        self.resize(560, 520)
 
+        self.target_bond: Optional[Tuple[int, int]] = None
         self._init_ui()
         self._populate_selection()
 
@@ -46,16 +47,27 @@ class CycleWelderDialog(QtWidgets.QDialog):
         fuse_layout.setSpacing(10)
 
         # Selection group
-        grp_sel = QtWidgets.QGroupBox("1. Target Bond (Select 2 Adjacent Atoms)")
-        sel_layout = QtWidgets.QHBoxLayout(grp_sel)
-        self.lbl_atoms = QtWidgets.QLabel("No atoms selected. Please select 2 atoms in the 3D viewer.")
-        self.lbl_atoms.setStyleSheet("font-weight: bold; color: #38bdf8;")
-        sel_layout.addWidget(self.lbl_atoms, 1)
+        grp_sel = QtWidgets.QGroupBox("1. Target Bond to Fuse Onto")
+        sel_layout = QtWidgets.QVBoxLayout(grp_sel)
+        sel_layout.setSpacing(6)
 
-        btn_refresh = QtWidgets.QPushButton("🔄 Read 3D Selection")
-        btn_refresh.setToolTip("Re-read the currently selected atoms from the 3D canvas")
+        row_bond = QtWidgets.QHBoxLayout()
+        row_bond.addWidget(QtWidgets.QLabel("Select Bond:"))
+        self.combo_bonds = QtWidgets.QComboBox()
+        self.combo_bonds.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.combo_bonds.currentIndexChanged.connect(self._on_bond_combo_changed)
+        row_bond.addWidget(self.combo_bonds, 1)
+
+        btn_refresh = QtWidgets.QPushButton("🔄 Read 3D Viewport")
+        btn_refresh.setToolTip("Re-read the bond or 2 atoms selected in the 3D viewport")
         btn_refresh.clicked.connect(self._populate_selection)
-        sel_layout.addWidget(btn_refresh)
+        row_bond.addWidget(btn_refresh)
+        sel_layout.addLayout(row_bond)
+
+        self.lbl_atoms = QtWidgets.QLabel("No bond selected.")
+        self.lbl_atoms.setStyleSheet("font-weight: bold; color: #38bdf8;")
+        sel_layout.addWidget(self.lbl_atoms)
+
         fuse_layout.addWidget(grp_sel)
 
         # Ring template group
@@ -159,32 +171,99 @@ class CycleWelderDialog(QtWidgets.QDialog):
         layout.addWidget(btn_close, 0, QtCore.Qt.AlignmentFlag.AlignRight)
 
     def _populate_selection(self):
-        """Read selected atoms from parent window."""
-        sel = []
-        if self.window:
-            sel = list(getattr(self.window, "selected_atoms", []))
-            if not sel and hasattr(self.window, "viewer") and self.window.viewer:
-                sel = list(getattr(self.window.viewer, "selected_atoms", []))
+        """Read selected atoms from parent window, populate bond combo box, and update target bond."""
+        self.combo_bonds.blockSignals(True)
+        self.combo_bonds.clear()
 
         symbols = [a.symbol for a in getattr(self.window, "zatoms", [])] if self.window else []
         coords = getattr(self.window, "coords", None)
+        viewer = getattr(self.window, "viewer", None) if self.window else None
 
+        # 1. Determine active selection
+        sel = []
+        if viewer:
+            # Did user click a bond directly?
+            if getattr(viewer, "selected_bond", None) is not None:
+                sel = list(viewer.selected_bond)
+            # Or Shift-selected 2 atoms?
+            elif getattr(viewer, "multi_selected", None) and len(viewer.multi_selected) == 2:
+                sel = list(viewer.multi_selected)
+            elif getattr(viewer, "selected_atom_idx", None) is not None and getattr(viewer, "multi_selected", None):
+                combined = [viewer.selected_atom_idx] + [i for i in viewer.multi_selected if i != viewer.selected_atom_idx]
+                if len(combined) == 2:
+                    sel = combined[:2]
+
+        if not sel and hasattr(self.window, "_get_ordered_selection"):
+            ord_sel = self.window._get_ordered_selection()
+            if len(ord_sel) == 2:
+                sel = ord_sel
+
+        if not sel and self.window:
+            cand = list(getattr(self.window, "selected_atoms", []))
+            if len(cand) == 2:
+                sel = cand
+
+        # 2. Get all molecular bonds
+        bonds = []
+        if viewer and getattr(viewer, "bonds", None):
+            bonds = list(viewer.bonds)
+        elif symbols and coords is not None and len(symbols) == len(coords) and len(symbols) > 1:
+            from .forcefield import detect_connectivity
+            bonds = detect_connectivity(symbols, coords, strict=False)
+
+        # Ensure selected pair is in bonds list even if non-standard distance
         if len(sel) == 2:
-            a1, a2 = sel[0], sel[1]
-            s1 = symbols[a1] if a1 < len(symbols) else f"Atom {a1+1}"
-            s2 = symbols[a2] if a2 < len(symbols) else f"Atom {a2+1}"
+            pair = tuple(sorted((sel[0], sel[1])))
+            if pair not in [tuple(sorted(b)) for b in bonds]:
+                bonds.insert(0, pair)
+
+        selected_bond_idx = -1
+        for idx, (u, v) in enumerate(bonds):
+            s1 = symbols[u] if u < len(symbols) else f"Atom {u+1}"
+            s2 = symbols[v] if v < len(symbols) else f"Atom {v+1}"
+            dist = float(np.linalg.norm(coords[u] - coords[v])) if (coords is not None and u < len(coords) and v < len(coords)) else 0.0
+            label = f"Bond: {s1}{u+1} — {s2}{v+1} ({dist:.3f} Å)"
+            self.combo_bonds.addItem(label, (u, v))
+            if len(sel) == 2 and {u, v} == {sel[0], sel[1]}:
+                selected_bond_idx = idx
+
+        if selected_bond_idx >= 0:
+            self.combo_bonds.setCurrentIndex(selected_bond_idx)
+        elif self.combo_bonds.count() > 0:
+            self.combo_bonds.setCurrentIndex(0)
+
+        self.combo_bonds.blockSignals(False)
+        self._on_bond_combo_changed(self.combo_bonds.currentIndex())
+
+    def _on_bond_combo_changed(self, idx: int):
+        data = self.combo_bonds.currentData()
+        if data and len(data) == 2:
+            self.target_bond = (data[0], data[1])
+            if self.window:
+                self.window.selected_atoms = [data[0], data[1]]
+                viewer = getattr(self.window, "viewer", None)
+                if viewer:
+                    viewer.selected_bond = (data[0], data[1])
+                    viewer.multi_selected = [data[0], data[1]]
+                    viewer.selected_atom_idx = data[0]
+                    viewer.update()
+
+            symbols = [a.symbol for a in getattr(self.window, "zatoms", [])] if self.window else []
+            coords = getattr(self.window, "coords", None)
+            u, v = data
+            s1 = symbols[u] if u < len(symbols) else f"Atom {u+1}"
+            s2 = symbols[v] if v < len(symbols) else f"Atom {v+1}"
             dist_str = ""
-            if coords is not None and a1 < len(coords) and a2 < len(coords):
-                d = np.linalg.norm(coords[a1] - coords[a2])
+            if coords is not None and u < len(coords) and v < len(coords):
+                d = float(np.linalg.norm(coords[u] - coords[v]))
                 dist_str = f" (Distance: {d:.3f} Å)"
-            self.lbl_atoms.setText(f"Target Bond: {s1} ({a1+1}) — {s2} ({a2+1}){dist_str}")
+            self.lbl_atoms.setText(f"Target Bond: {s1}{u+1} — {s2}{v+1}{dist_str}")
             self.lbl_atoms.setStyleSheet("font-weight: bold; color: #4ade80;")
             self.btn_fuse.setEnabled(True)
             self.btn_bridge.setEnabled(True)
         else:
-            self.lbl_atoms.setText(
-                f"Currently {len(sel)} atom(s) selected. Please select exactly 2 atoms."
-            )
+            self.target_bond = None
+            self.lbl_atoms.setText("No bond selected in molecule.")
             self.lbl_atoms.setStyleSheet("font-weight: bold; color: #f87171;")
             self.btn_fuse.setEnabled(False)
             self.btn_bridge.setEnabled(False)
@@ -203,12 +282,16 @@ class CycleWelderDialog(QtWidgets.QDialog):
 
     def _on_execute_fuse(self):
         """Execute ring fusion."""
-        sel = list(getattr(self.window, "selected_atoms", []))
-        if len(sel) != 2:
-            dialog_service.warning(self, "Selection Required", "Please select exactly 2 atoms defining the bond to weld.")
+        bond = getattr(self, "target_bond", None)
+        if not bond:
+            sel = list(getattr(self.window, "selected_atoms", []))
+            if len(sel) == 2:
+                bond = (sel[0], sel[1])
+        if not bond:
+            dialog_service.warning(self, "Selection Required", "Please select a bond to weld the ring onto.")
             return
 
-        a1, a2 = sel[0], sel[1]
+        a1, a2 = bond
         symbols = [a.symbol for a in self.window.zatoms]
         coords = self.window.coords
 
@@ -236,23 +319,30 @@ class CycleWelderDialog(QtWidgets.QDialog):
                 self.window._push_undo_state()
 
             from .zmatrix import cartesian_to_zmatrix
-            zatoms = cartesian_to_zmatrix(new_syms, new_coords)
-            self.window.zatoms = zatoms
-            self.window.coords = new_coords
+            from .forcefield import detect_connectivity
+            detected_bonds = detect_connectivity(new_syms, new_coords, strict=False)
+            zatoms = cartesian_to_zmatrix(new_syms, new_coords, user_bonds=detected_bonds)
 
-            if hasattr(self.window, "table_widget") and self.window.table_widget:
-                self.window.table_widget.load_zatoms(zatoms)
+            if hasattr(self.window, "set_molecule_from_zatoms"):
+                self.window.set_molecule_from_zatoms(zatoms, exact_coords=new_coords)
+            else:
+                self.window.zatoms = zatoms
+                self.window.coords = new_coords
+                if hasattr(self.window, "viewer") and self.window.viewer:
+                    self.window.viewer.set_molecule(new_syms, new_coords)
+
             if hasattr(self.window, "viewer") and self.window.viewer:
-                self.window.viewer.set_molecule(zatoms, new_coords)
-                self.window.viewer.selected_atoms.clear()
-            if hasattr(self.window, "_sync_raw_text"):
-                self.window._sync_raw_text()
+                self.window.viewer.selected_atom_idx = None
+                self.window.viewer.multi_selected = []
+                self.window.viewer.selected_bond = None
+                self.window.viewer.auto_center()
+                self.window.viewer.update()
 
             p_name = preset_key if preset_key != "Custom" else f"{custom_sz}-gon"
             dialog_service.info(
                 self,
                 "Ring Welded Successfully",
-                f"Successfully welded {p_name} onto bond {a1+1}–{a2+1}!\n"
+                f"Successfully welded {p_name} onto bond {symbols[a1]}{a1+1}–{symbols[a2]}{a2+1}!\n"
                 f"Total atoms: {len(new_syms)} (hydrogens adjusted for valency)."
             )
             self.accept()
@@ -261,12 +351,16 @@ class CycleWelderDialog(QtWidgets.QDialog):
 
     def _on_execute_bridge(self):
         """Execute bicyclic bridgehead insertion."""
-        sel = list(getattr(self.window, "selected_atoms", []))
-        if len(sel) != 2:
+        bond = getattr(self, "target_bond", None)
+        if not bond:
+            sel = list(getattr(self.window, "selected_atoms", []))
+            if len(sel) == 2:
+                bond = (sel[0], sel[1])
+        if not bond:
             dialog_service.warning(self, "Selection Required", "Please select exactly 2 bridgehead atoms.")
             return
 
-        a1, a2 = sel[0], sel[1]
+        a1, a2 = bond
         symbols = [a.symbol for a in self.window.zatoms]
         coords = self.window.coords
         b_type = self.combo_bridge.currentData()
@@ -285,22 +379,29 @@ class CycleWelderDialog(QtWidgets.QDialog):
                 self.window._push_undo_state()
 
             from .zmatrix import cartesian_to_zmatrix
-            zatoms = cartesian_to_zmatrix(new_syms, new_coords)
-            self.window.zatoms = zatoms
-            self.window.coords = new_coords
+            from .forcefield import detect_connectivity
+            detected_bonds = detect_connectivity(new_syms, new_coords, strict=False)
+            zatoms = cartesian_to_zmatrix(new_syms, new_coords, user_bonds=detected_bonds)
 
-            if hasattr(self.window, "table_widget") and self.window.table_widget:
-                self.window.table_widget.load_zatoms(zatoms)
+            if hasattr(self.window, "set_molecule_from_zatoms"):
+                self.window.set_molecule_from_zatoms(zatoms, exact_coords=new_coords)
+            else:
+                self.window.zatoms = zatoms
+                self.window.coords = new_coords
+                if hasattr(self.window, "viewer") and self.window.viewer:
+                    self.window.viewer.set_molecule(new_syms, new_coords)
+
             if hasattr(self.window, "viewer") and self.window.viewer:
-                self.window.viewer.set_molecule(zatoms, new_coords)
-                self.window.viewer.selected_atoms.clear()
-            if hasattr(self.window, "_sync_raw_text"):
-                self.window._sync_raw_text()
+                self.window.viewer.selected_atom_idx = None
+                self.window.viewer.multi_selected = []
+                self.window.viewer.selected_bond = None
+                self.window.viewer.auto_center()
+                self.window.viewer.update()
 
             dialog_service.info(
                 self,
                 "Bridgehead Formed",
-                f"Successfully formed {b_type} bridgehead across atoms {a1+1} and {a2+1}!\n"
+                f"Successfully formed {b_type} bridgehead across atoms {symbols[a1]}{a1+1} and {symbols[a2]}{a2+1}!\n"
                 f"Total atoms: {len(new_syms)}."
             )
             self.accept()

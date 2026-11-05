@@ -2891,7 +2891,9 @@ class EditingMixin:
         """Select bond (u, v) and open Cycle Welder Dialog."""
         self.selected_atoms = [u, v]
         if hasattr(self, "viewer") and self.viewer:
-            self.viewer.selected_atoms = {u, v}
+            self.viewer.selected_bond = (u, v)
+            self.viewer.multi_selected = [u, v]
+            self.viewer.selected_atom_idx = u
             self.viewer.update()
         self._on_open_cycle_welder()
 

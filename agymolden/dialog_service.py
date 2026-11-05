@@ -5,6 +5,7 @@ Decouples GUI dialog presentations (QMessageBox, confirmations, prompts) from co
 enabling headless automated testing and scriptable batch workflows without GUI blocking.
 """
 
+import os
 import logging
 from typing import Optional, List, Dict, Any
 from PyQt6 import QtWidgets
@@ -19,6 +20,9 @@ class DialogService:
         self._headless_mode = False
         self._recorded_messages: List[Dict[str, Any]] = []
         self._mock_confirm_responses: List[bool] = []
+
+    def _is_headless(self) -> bool:
+        return self._headless_mode or (QtWidgets.QApplication.instance() is None) or bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
     def set_headless(self, enabled: bool = True):
         """Enable or disable headless mode (suppresses GUI popups for testing)."""
@@ -41,7 +45,7 @@ class DialogService:
         """Display an informational dialog."""
         self._recorded_messages.append({"level": "info", "title": title, "message": message})
         log.info("[%s] %s", title, message)
-        if self._headless_mode or QtWidgets.QApplication.instance() is None:
+        if self._is_headless():
             return
         QtWidgets.QMessageBox.information(parent, title, message)
 
@@ -49,7 +53,7 @@ class DialogService:
         """Display a warning dialog."""
         self._recorded_messages.append({"level": "warning", "title": title, "message": message})
         log.warning("[%s] %s", title, message)
-        if self._headless_mode or QtWidgets.QApplication.instance() is None:
+        if self._is_headless():
             return
         QtWidgets.QMessageBox.warning(parent, title, message)
 
@@ -57,7 +61,7 @@ class DialogService:
         """Display an error/critical dialog."""
         self._recorded_messages.append({"level": "error", "title": title, "message": message})
         log.error("[%s] %s", title, message)
-        if self._headless_mode or QtWidgets.QApplication.instance() is None:
+        if self._is_headless():
             return
         QtWidgets.QMessageBox.critical(parent, title, message)
 
@@ -70,9 +74,10 @@ class DialogService:
     ) -> bool:
         """Prompt user with Yes/No question and return boolean."""
         self._recorded_messages.append({"level": "confirm", "title": title, "message": message})
-        if self._headless_mode or QtWidgets.QApplication.instance() is None:
+        if self._is_headless():
             if self._mock_confirm_responses:
                 return self._mock_confirm_responses.pop(0)
+            return default_yes
             return default_yes
 
         buttons = QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
