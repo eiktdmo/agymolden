@@ -31,7 +31,7 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
   - Exact expected molecular formula (e.g. Naphthalene + Benzene bay fusion $\to$ 1H-Phenalene $\text{C}_{13}\text{H}_{10}$, Naphthalene + Cyclopentyl bay fusion $\to$ Acenaphthene $\text{C}_{12}\text{H}_{10}$).
 - [x] **Round-Trip Format Preservation**: Verify lossless Cartesian round-tripping across ZMAT $\leftrightarrow$ XYZ $\leftrightarrow$ SDF $\leftrightarrow$ PDB preserving interatomic distance matrices $< 10^{-3}$ Å.
 - [ ] **Type Annotation Coverage**: Progressively raise return/parameter type annotations from 22% to >60%, integrated with `mypy --check-untyped-defs`.
-- [ ] **Automated Linting & Formatting**: Enforce `ruff` and `pre-commit` hooks in CI.
+- [x] **Automated Linting & Formatting**: Enforce `ruff` and `pre-commit` hooks in CI.
 - [x] **Verified Input Generators**: Validate generated Gaussian, ORCA, and newBRORSEN decks against keyword syntax linting.
 - [x] **Full Undo/Redo Test Matrix**: Ensure every builder mutation (add atom, delete, bond, reorder, substitute, weld) is reversibly covered by undo/redo.
 
@@ -44,8 +44,8 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 - [ ] **Advanced Volumetric Rendering**: GPU ray-casting or depth-sorted impostor spheres/cylinders, ambient occlusion, and publication-ready SVG/vector export.
 
 ### Tier 4: Strategic & Ecosystem Growth (Effort: XL, 1–4 weeks each)
-- [ ] **Plugin Ecosystem**: Versioned plugin API allowing user-defined Python scripts to add analysis tabs, file importers, and custom calculators.
+- [x] **Plugin Ecosystem**: Versioned plugin API allowing user-defined Python scripts to add analysis tabs, file importers, and custom calculators.
 - [x] **Deep Wavefunction Analysis**: Broaden integration with Multiwfn and QTAIM topology, ELF/LOL real-space grids, and Non-Covalent Interaction (NCI / RDG) color-mapped surfaces.
 - [x] **Macromolecular & Extended Solids Support**: Accelerated spatial partitioning for systems $>10,000$ atoms and space-group symmetry replication.
-- [ ] **Automated Multi-OS Packaging**: Reproducible GitHub Actions workflow publishing standalone AppImage, macOS `.dmg`, and Windows portable executables.
+- [x] **Automated Multi-OS Packaging**: Reproducible GitHub Actions workflow publishing standalone AppImage, macOS `.dmg`, and Windows portable executables.
 - [ ] **Empirical Usability Benchmarking**: Real-world user-experience studies measuring time-to-first-calculation for chemistry students and researchers.
