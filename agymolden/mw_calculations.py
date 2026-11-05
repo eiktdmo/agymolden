@@ -71,7 +71,7 @@ class CalculationsMixin:
             data = self.combo_opt_method.currentData()
             if data in ("auto_hybrid", "uff_mmff", "semiempirical"):
                 return data
-        return "auto_hybrid"
+        return "uff_mmff"
 
     def _on_opt_method_changed(self, idx: int):
         method = self._get_selected_opt_method()
