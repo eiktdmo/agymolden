@@ -53,11 +53,20 @@ def test_surfaces_menu_and_toolbar(main_win):
     win.grp_adjust.setChecked(True)
     assert win.grp_adjust.isChecked()
 
+    # 4. Verify Z-Matrix action buttons under small screen
+    assert win.btn_add_atom.minimumWidth() >= 65
+    assert win.btn_add_hydrogens.minimumWidth() >= 65
+    assert win.btn_del_atom.minimumWidth() >= 65
+    assert win.btn_close_ring.minimumWidth() >= 80
+    assert win.btn_reorder_zmat.minimumWidth() >= 80
+    assert win.btn_optimize_ff.minimumWidth() >= 75
+    assert win.btn_conformer_search.minimumWidth() >= 80
+
     # Test resizing down to small screen
-    win.resize(800, 550)
+    win.resize(750, 480)
     app.processEvents()
-    assert win.width() <= 850
-    assert win.height() <= 600
+    assert win.width() <= 800
+    assert win.height() <= 550
 
 
 def test_quick_orca_dialog_options_and_esp(main_win):

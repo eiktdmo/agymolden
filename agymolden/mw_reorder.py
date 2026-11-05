@@ -109,7 +109,7 @@ class ReorderMixin:
         self.viewer.reordering_active = True
         self.viewer.reorder_list = []
         self.btn_reorder_zmat.setText("✅ Apply Reorder")
-        self.btn_reorder_zmat.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold;")
+        self.btn_reorder_zmat.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.viewer.update()
         self.statusBar().showMessage(
             "Reordering Z-Matrix: Click atoms in desired order. Press 'Apply Reorder' or Enter when done, Esc to cancel.", 10000
@@ -147,8 +147,8 @@ class ReorderMixin:
         reorder_list = list(self.viewer.reorder_list)
         self.viewer.reordering_active = False
         self.viewer.reorder_list = []
-        self.btn_reorder_zmat.setText("🔄 Reorder Z-Matrix")
-        self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+        self.btn_reorder_zmat.setText("🔄 Reorder ZMAT")
+        self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.viewer.update()
 
         n = len(self.zatoms)
@@ -418,8 +418,8 @@ class ReorderMixin:
         if self.viewer.reordering_active:
             self.viewer.reordering_active = False
             self.viewer.reorder_list = []
-            self.btn_reorder_zmat.setText("🔄 Reorder Z-Matrix")
-            self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+            self.btn_reorder_zmat.setText("🔄 Reorder ZMAT")
+            self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
             self.viewer.update()
             self.statusBar().showMessage("Z-matrix reordering cancelled.", 3000)
 

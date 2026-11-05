@@ -586,65 +586,89 @@ class UIMixin(UIInspectorTabsMixin):
         self.table_widget.cell_selected.connect(self._on_table_cell_selected)
         tab_table_layout.addWidget(self.table_widget, stretch=1)
 
-        # Compact 2-row Z-Matrix action bars (gives the Z-Matrix table much more vertical room)
+        # Compact & Responsive Z-Matrix Action Bars (Never shrink or clip text on small screens)
+        # Row 1: Add Atom, Add H, Delete (3 items)
         row_action_layout1 = QtWidgets.QHBoxLayout()
         row_action_layout1.setSpacing(5)
         self.btn_add_atom = QtWidgets.QPushButton("➕ Add Atom")
+        self.btn_add_atom.setStyleSheet("font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_add_atom.setMinimumWidth(75)
         self.btn_add_atom.setToolTip("Add new atom line to Z-Matrix (opens periodic table)")
         self.btn_add_atom.clicked.connect(self._on_add_line)
 
-        self.btn_del_atom = QtWidgets.QPushButton("🗑️ Delete")
-        self.btn_del_atom.setStyleSheet("background-color: #dc2626; color: #ffffff; font-weight: bold;")
-        self.btn_del_atom.setToolTip("Delete currently selected atom(s) from Z-Matrix (Shortcut: Del)")
-        self.btn_del_atom.clicked.connect(self._on_delete_selected_atom)
-
         self.btn_add_hydrogens = QtWidgets.QPushButton("💧 Add H")
-        self.btn_add_hydrogens.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
+        self.btn_add_hydrogens.setStyleSheet("background-color: #0284c7; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_add_hydrogens.setMinimumWidth(65)
         self.btn_add_hydrogens.setToolTip("Complete valence of all atoms with standard geometric hydrogens (Ctrl+H)")
         self.btn_add_hydrogens.clicked.connect(self._on_add_hydrogens)
 
+        self.btn_del_atom = QtWidgets.QPushButton("🗑️ Delete")
+        self.btn_del_atom.setStyleSheet("background-color: #dc2626; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_del_atom.setMinimumWidth(65)
+        self.btn_del_atom.setToolTip("Delete currently selected atom(s) from Z-Matrix (Shortcut: Del)")
+        self.btn_del_atom.clicked.connect(self._on_delete_selected_atom)
+
+        row_action_layout1.addWidget(self.btn_add_atom)
+        row_action_layout1.addWidget(self.btn_add_hydrogens)
+        row_action_layout1.addWidget(self.btn_del_atom)
+        tab_table_layout.addLayout(row_action_layout1)
+
+        # Row 2: Form Bond, Reorder ZMAT (2 items)
+        row_action_layout2 = QtWidgets.QHBoxLayout()
+        row_action_layout2.setSpacing(5)
         self.btn_close_ring = QtWidgets.QPushButton("🔗 Form Bond")
-        self.btn_close_ring.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold;")
+        self.btn_close_ring.setStyleSheet("background-color: #0d9488; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_close_ring.setMinimumWidth(85)
         self.btn_close_ring.setToolTip("Select 2 atoms and click to bond them (ring closure or any new bond). Keeps all existing bonds, removes the H that is replaced, and verifies valence everywhere")
         self.btn_close_ring.clicked.connect(self._on_close_ring_clicked)
 
-        self.btn_reorder_zmat = QtWidgets.QPushButton("🔄 Reorder")
-        self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+        self.btn_reorder_zmat = QtWidgets.QPushButton("🔄 Reorder ZMAT")
+        self.btn_reorder_zmat.setStyleSheet("background-color: #059669; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_reorder_zmat.setMinimumWidth(85)
         self.btn_reorder_zmat.setToolTip("Click atoms sequentially in 3D viewport to reorder Z-matrix connectivity (Molden ZMEORD)")
         self.btn_reorder_zmat.clicked.connect(self._on_reorder_zmat_clicked)
 
         self.btn_read_zmat = QtWidgets.QPushButton("📂 Open ZMAT")
-        self.btn_read_zmat.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        self.btn_read_zmat.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
         self.btn_read_zmat.setToolTip("Open and load a Z-matrix file (*.zmat, *.dat, *.inp, *.txt)")
         self.btn_read_zmat.clicked.connect(self._on_open_zmat)
         self.btn_read_zmat.setVisible(False)  # Accessible via File -> Open File (Ctrl+O) and Raw ZMAT tab
 
-        row_action_layout1.addWidget(self.btn_add_atom)
-        row_action_layout1.addWidget(self.btn_del_atom)
-        row_action_layout1.addWidget(self.btn_add_hydrogens)
-        row_action_layout1.addWidget(self.btn_close_ring)
-        row_action_layout1.addWidget(self.btn_reorder_zmat)
-        tab_table_layout.addLayout(row_action_layout1)
+        row_action_layout2.addWidget(self.btn_close_ring)
+        row_action_layout2.addWidget(self.btn_reorder_zmat)
+        tab_table_layout.addLayout(row_action_layout2)
 
+        # Row 3: Optimization Method Selector & Optimize Button
         row_action_layout_opt = QtWidgets.QHBoxLayout()
         row_action_layout_opt.setSpacing(5)
         self.combo_opt_method = QtWidgets.QComboBox()
-        self.combo_opt_method.addItem("UFF / MMFF94s (Analytical)", "uff_mmff")
-        self.combo_opt_method.addItem("Semiempirical QM (GFN0-xTB)", "semiempirical")
+        self.combo_opt_method.addItem("UFF / MMFF94s (Force Field)", "uff_mmff")
+        self.combo_opt_method.addItem("GFN0-xTB (Semiempirical QM)", "semiempirical")
+        self.combo_opt_method.setStyleSheet("font-size: 11px; padding: 3px 6px;")
         self.combo_opt_method.setToolTip(
             "Select geometry optimization & vibrational engine:\n"
-            "• UFF / MMFF94s (Analytical): Fast analytical force field with periodic torsions & Gasteiger electrostatics\n"
-            "• Semiempirical QM (GFN0-xTB): Self-Consistent Tight-Binding QM with Wiberg bond orders, HOMO-LUMO gap & SCC charges"
+            "• UFF / MMFF94s (Force Field): Fast analytical force field with periodic torsions & electrostatics\n"
+            "• GFN0-xTB (Semiempirical QM): Self-Consistent Tight-Binding QM with Wiberg bond orders & charges"
         )
         self.combo_opt_method.currentIndexChanged.connect(self._on_opt_method_changed)
 
         self.btn_optimize_ff = QtWidgets.QPushButton("⚡ Optimize")
-        self.btn_optimize_ff.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold;")
+        self.btn_optimize_ff.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px;")
+        self.btn_optimize_ff.setMinimumWidth(75)
         self.btn_optimize_ff.setToolTip("Optimize molecular geometry using the selected force field or semiempirical QM method (Ctrl+M)")
         self.btn_optimize_ff.clicked.connect(self._on_optimize_geometry)
 
+        row_action_layout_opt.addWidget(self.combo_opt_method, stretch=3)
+        row_action_layout_opt.addWidget(self.btn_optimize_ff, stretch=2)
+        tab_table_layout.addLayout(row_action_layout_opt)
+
+        # Row 4: Conformers & Variables Dropdown Button
+        row_action_layout_adv = QtWidgets.QHBoxLayout()
+        row_action_layout_adv.setSpacing(5)
+
         self.btn_conformer_search = QtWidgets.QPushButton("🔄 Conformers")
-        self.btn_conformer_search.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
+        self.btn_conformer_search.setStyleSheet("background-color: #b45309; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_conformer_search.setMinimumWidth(85)
         self.btn_conformer_search.setToolTip(
             "Avogadro / Gabedit style: Systematic & stochastic rotor conformational search.\n"
             "Finds the lowest-energy conformer and loads the ranked conformer ensemble into the Trajectory Player!"
@@ -655,7 +679,8 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_vars_menu = QtWidgets.QToolButton()
         self.btn_vars_menu.setText("🔤 Variables ▾")
         self.btn_vars_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_vars_menu.setStyleSheet("background-color: #0369a1; color: #ffffff; font-weight: bold; padding: 4px 8px; border-radius: 4px;")
+        self.btn_vars_menu.setStyleSheet("background-color: #0369a1; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 4px;")
+        self.btn_vars_menu.setMinimumWidth(85)
         self.btn_vars_menu.setToolTip("Assign or clear symbolic Z-Matrix variables (Symm. Bonds, Symm. All, All Variables, Numbers Only)")
         menu_zmat_vars = QtWidgets.QMenu(self)
 
@@ -665,7 +690,7 @@ class UIMixin(UIInspectorTabsMixin):
         row_vars_layout.setSpacing(5)
 
         self.btn_sym_bonds = QtWidgets.QPushButton("🔗 Symm. Bonds Only")
-        self.btn_sym_bonds.setStyleSheet("background-color: #0369a1; color: #ffffff; font-weight: bold;")
+        self.btn_sym_bonds.setStyleSheet("background-color: #0369a1; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_sym_bonds.setToolTip(
             "Assign symmetric variables ONLY to bond distances (e.g. R1 for C-C, R2 for C-H in benzene)\n"
             "while keeping all angles and dihedrals as fixed numerical constants."
@@ -673,17 +698,17 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_sym_bonds.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_assign_symmetric_bond_variables()))
 
         self.btn_sym_all = QtWidgets.QPushButton("🔗 Symm. All (Bonds/Angles/Dihedrals)")
-        self.btn_sym_all.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
+        self.btn_sym_all.setStyleSheet("background-color: #0284c7; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_sym_all.setToolTip("Assign shared variables to all symmetry-equivalent bonds, angles, and dihedrals")
         self.btn_sym_all.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_assign_symmetric_variables()))
 
         self.btn_indiv_vars = QtWidgets.QPushButton("🔤 All Individual Variables")
-        self.btn_indiv_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        self.btn_indiv_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_indiv_vars.setToolTip("Assign an individual variable (R1..Rn, A1..An, D1..Dn) to every coordinate")
         self.btn_indiv_vars.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_assign_individual_variables()))
 
         self.btn_clear_vars = QtWidgets.QPushButton("🔢 Numbers Only (Clear Variables)")
-        self.btn_clear_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        self.btn_clear_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_clear_vars.setToolTip("Clear all symbolic variables and use explicit numbers")
         self.btn_clear_vars.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_clear_variables()))
 
@@ -697,11 +722,9 @@ class UIMixin(UIInspectorTabsMixin):
         menu_zmat_vars.addAction(act_vars_panel)
         self.btn_vars_menu.setMenu(menu_zmat_vars)
 
-        row_action_layout_opt.addWidget(self.combo_opt_method, stretch=2)
-        row_action_layout_opt.addWidget(self.btn_optimize_ff, stretch=1)
-        row_action_layout_opt.addWidget(self.btn_conformer_search, stretch=1)
-        row_action_layout_opt.addWidget(self.btn_vars_menu)
-        tab_table_layout.addLayout(row_action_layout_opt)
+        row_action_layout_adv.addWidget(self.btn_conformer_search, stretch=1)
+        row_action_layout_adv.addWidget(self.btn_vars_menu, stretch=1)
+        tab_table_layout.addLayout(row_action_layout_adv)
 
         # Selected Atom Fine Adjustment Group (Molden Style Slider Adjustment + GaussView SmartSlides)
         self.grp_adjust = QtWidgets.QGroupBox("Interactive Parameter Tuning / SmartSlides (Selected Atom or 2/3/4-Atom Selection)")
@@ -709,17 +732,20 @@ class UIMixin(UIInspectorTabsMixin):
         self.grp_adjust.setChecked(True)
         self.grp_adjust.setToolTip("Toggle to expand or collapse Interactive Parameter Tuning / SmartSlides")
         adjust_layout = QtWidgets.QGridLayout(self.grp_adjust)
-        adjust_layout.setHorizontalSpacing(10)
-        adjust_layout.setVerticalSpacing(6)
+        adjust_layout.setHorizontalSpacing(8)
+        adjust_layout.setVerticalSpacing(5)
 
         # SmartSlides Displacement Mode & Stereocenter Inversion bar
         row_smart_mode = QtWidgets.QHBoxLayout()
         row_smart_mode.setSpacing(6)
-        row_smart_mode.addWidget(QtWidgets.QLabel("Displacement Mode:"))
+        lbl_disp = QtWidgets.QLabel("Displacement:")
+        lbl_disp.setStyleSheet("font-size: 11px; font-weight: 600;")
+        row_smart_mode.addWidget(lbl_disp)
         self.combo_smart_mode = QtWidgets.QComboBox()
-        self.combo_smart_mode.addItem("Move Substituent Group (Keep Atom 1 Fixed)", "group")
-        self.combo_smart_mode.addItem("Move Both Groups Symmetrically (50/50)", "symmetric")
+        self.combo_smart_mode.addItem("Move Substituent Group", "group")
+        self.combo_smart_mode.addItem("Move Both Symmetrically", "symmetric")
         self.combo_smart_mode.addItem("Move Single Atom Only", "atom")
+        self.combo_smart_mode.setStyleSheet("font-size: 11px; padding: 2px 4px;")
         self.combo_smart_mode.setToolTip(
             "GaussView SmartSlides mode when 2, 3, or 4 atoms are selected in the 3D viewport:\n"
             "• Move Substituent Group: Translates/rotates the connected substituent subgraph\n"
@@ -727,58 +753,67 @@ class UIMixin(UIInspectorTabsMixin):
             "• Move Single Atom Only: Moves only the terminal selected atom"
         )
         row_smart_mode.addWidget(self.combo_smart_mode, stretch=1)
+        adjust_layout.addLayout(row_smart_mode, 0, 0, 1, 3)
 
         self.btn_invert_center = QtWidgets.QPushButton("🔄 Invert Chiral Center (R/S)")
-        self.btn_invert_center.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        self.btn_invert_center.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 8px;")
         self.btn_invert_center.setToolTip(
             "Invert local tetrahedral/pyramidal stereocenter (select chiral center atom or center + 2 substituents)\n"
             "without flipping the rest of the molecule!"
         )
         self.btn_invert_center.clicked.connect(self._on_invert_stereocenter)
-        row_smart_mode.addWidget(self.btn_invert_center)
-        adjust_layout.addLayout(row_smart_mode, 0, 0, 1, 3)
+        adjust_layout.addWidget(self.btn_invert_center, 1, 0, 1, 3)
 
         # Bond length slider
-        adjust_layout.addWidget(QtWidgets.QLabel("Bond Length:"), 1, 0)
+        lbl_bond = QtWidgets.QLabel("Bond (Å):")
+        lbl_bond.setStyleSheet("font-size: 11px; font-weight: 600;")
+        adjust_layout.addWidget(lbl_bond, 2, 0)
         self.spin_bond = QtWidgets.QDoubleSpinBox()
         self.spin_bond.setRange(0.1, 10.0)
         self.spin_bond.setSingleStep(0.01)
+        self.spin_bond.setStyleSheet("font-size: 11px;")
         self.spin_bond.valueChanged.connect(self._on_spin_bond_changed)
-        adjust_layout.addWidget(self.spin_bond, 1, 1)
+        adjust_layout.addWidget(self.spin_bond, 2, 1)
 
         self.slider_bond = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_bond.setRange(50, 400) # 0.5 to 4.0 Å (step 0.01)
         self.slider_bond.sliderPressed.connect(self._push_undo_state)
         self.slider_bond.valueChanged.connect(self._on_slider_bond_changed)
-        adjust_layout.addWidget(self.slider_bond, 1, 2)
+        adjust_layout.addWidget(self.slider_bond, 2, 2)
 
         # Angle slider
-        adjust_layout.addWidget(QtWidgets.QLabel("Angle:"), 2, 0)
+        lbl_ang = QtWidgets.QLabel("Angle (°):")
+        lbl_ang.setStyleSheet("font-size: 11px; font-weight: 600;")
+        adjust_layout.addWidget(lbl_ang, 3, 0)
         self.spin_angle = QtWidgets.QDoubleSpinBox()
         self.spin_angle.setRange(0.0, 180.0)
         self.spin_angle.setSingleStep(0.5)
+        self.spin_angle.setStyleSheet("font-size: 11px;")
         self.spin_angle.valueChanged.connect(self._on_spin_angle_changed)
-        adjust_layout.addWidget(self.spin_angle, 2, 1)
+        adjust_layout.addWidget(self.spin_angle, 3, 1)
 
         self.slider_angle = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_angle.setRange(0, 1800) # 0 to 180 deg (step 0.1)
         self.slider_angle.sliderPressed.connect(self._push_undo_state)
         self.slider_angle.valueChanged.connect(self._on_slider_angle_changed)
-        adjust_layout.addWidget(self.slider_angle, 2, 2)
+        adjust_layout.addWidget(self.slider_angle, 3, 2)
 
         # Dihedral slider
-        adjust_layout.addWidget(QtWidgets.QLabel("Dihedral:"), 3, 0)
+        lbl_dih = QtWidgets.QLabel("Dihed (°):")
+        lbl_dih.setStyleSheet("font-size: 11px; font-weight: 600;")
+        adjust_layout.addWidget(lbl_dih, 4, 0)
         self.spin_dihedral = QtWidgets.QDoubleSpinBox()
         self.spin_dihedral.setRange(-180.0, 180.0)
         self.spin_dihedral.setSingleStep(1.0)
+        self.spin_dihedral.setStyleSheet("font-size: 11px;")
         self.spin_dihedral.valueChanged.connect(self._on_spin_dihedral_changed)
-        adjust_layout.addWidget(self.spin_dihedral, 3, 1)
+        adjust_layout.addWidget(self.spin_dihedral, 4, 1)
 
         self.slider_dihedral = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_dihedral.setRange(-1800, 1800) # -180 to 180 deg (step 0.1)
         self.slider_dihedral.sliderPressed.connect(self._push_undo_state)
         self.slider_dihedral.valueChanged.connect(self._on_slider_dihedral_changed)
-        adjust_layout.addWidget(self.slider_dihedral, 3, 2)
+        adjust_layout.addWidget(self.slider_dihedral, 4, 2)
 
         tab_table_layout.addWidget(self.grp_adjust)
 
