@@ -210,8 +210,13 @@ class UIInspectorTabsMixin:
         self.tabs_spectra.addTab(grp_dos, "DOS Spectrum (eV)")
 
         tab_vib_layout.addWidget(self.tabs_spectra, stretch=1)
-        self.tab_vibrations = tab_vibrations
-        self.tabs.addTab(tab_vibrations, "Vibrations")
+        self.tab_vibrations_widget = tab_vibrations
+        scroll_vib = QtWidgets.QScrollArea()
+        scroll_vib.setWidgetResizable(True)
+        scroll_vib.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_vib.setWidget(tab_vibrations)
+        self.tab_vibrations = scroll_vib
+        self.tabs.addTab(scroll_vib, "Vibrations")
 
     def _init_symmetry_tab(self):
         tab_symmetry = QtWidgets.QWidget()
@@ -417,63 +422,91 @@ class UIInspectorTabsMixin:
         ops_layout.addWidget(self.table_symmetry_ops)
 
         tab_sym_layout.addWidget(grp_ops, stretch=1)
-        self.tab_symmetry = tab_symmetry
-        self.tabs.addTab(tab_symmetry, "Symmetry")
+        self.tab_symmetry_widget = tab_symmetry
+        scroll_sym = QtWidgets.QScrollArea()
+        scroll_sym.setWidgetResizable(True)
+        scroll_sym.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_sym.setWidget(tab_symmetry)
+        self.tab_symmetry = scroll_sym
+        self.tabs.addTab(scroll_sym, "Symmetry")
 
     def _init_orbitals_tab(self):
         tab_orbitals = QtWidgets.QWidget()
         tab_mo_layout = QtWidgets.QVBoxLayout(tab_orbitals)
         tab_mo_layout.setSpacing(6)
 
-        mo_top_bar = QtWidgets.QHBoxLayout()
-        btn_open_molden_tab = QtWidgets.QPushButton("📂 Load Molden / QM Log...")
-        btn_open_molden_tab.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        # Row 1: File loading, Snapshot gallery, Clear (never crushed on small screens)
+        mo_top_bar1 = QtWidgets.QHBoxLayout()
+        mo_top_bar1.setSpacing(5)
+        btn_open_molden_tab = QtWidgets.QPushButton("📂 Load Molden / Log...")
+        btn_open_molden_tab.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        btn_open_molden_tab.setMinimumWidth(110)
         btn_open_molden_tab.setToolTip("Open any past calculation (.molden, .out, .log, .cube) to view its molecular orbital list and energy diagram")
         btn_open_molden_tab.clicked.connect(self._on_load_orbitals_prompt)
-        mo_top_bar.addWidget(btn_open_molden_tab)
+        mo_top_bar1.addWidget(btn_open_molden_tab, stretch=2)
 
         self.combo_mo_file_source = QtWidgets.QComboBox()
-        self.combo_mo_file_source.setMinimumWidth(140)
+        self.combo_mo_file_source.setMinimumWidth(120)
+        self.combo_mo_file_source.setStyleSheet("font-size: 11px;")
         self.combo_mo_file_source.setToolTip(
             "Switch the orbital table & energy ladder between Electronic MOs and Positronic MOs "
             "(or multiple stages from the same calculation)"
         )
         self.combo_mo_file_source.setVisible(False)
         self.combo_mo_file_source.currentIndexChanged.connect(self._on_mo_source_combo_changed)
-        mo_top_bar.addWidget(self.combo_mo_file_source)
+        mo_top_bar1.addWidget(self.combo_mo_file_source, stretch=1)
 
-        self.btn_quick_homo = QtWidgets.QPushButton("⚡ View HOMO")
-        self.btn_quick_homo.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_orbital_snapshot_gallery = QtWidgets.QPushButton("📸 Gallery")
+        self.btn_orbital_snapshot_gallery.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_orbital_snapshot_gallery.setMinimumWidth(75)
+        self.btn_orbital_snapshot_gallery.setToolTip("Capture all or selected orbitals in a batch snapshot contact sheet or image gallery (like Gabedit)")
+        self.btn_orbital_snapshot_gallery.clicked.connect(self._on_open_orbital_snapshot_gallery)
+        mo_top_bar1.addWidget(self.btn_orbital_snapshot_gallery, stretch=1)
+
+        btn_clear_mo = QtWidgets.QPushButton("✖ Clear")
+        btn_clear_mo.setStyleSheet("font-size: 11px; padding: 4px 6px;")
+        btn_clear_mo.setMinimumWidth(55)
+        btn_clear_mo.setToolTip("Clear 3D orbital / isosurface (Shortcut: Esc)")
+        btn_clear_mo.clicked.connect(self._on_clear_orbital_surface)
+        mo_top_bar1.addWidget(btn_clear_mo, stretch=1)
+        tab_mo_layout.addLayout(mo_top_bar1)
+
+        # Row 2: 1-Click Quick Surface Buttons
+        mo_top_bar2 = QtWidgets.QHBoxLayout()
+        mo_top_bar2.setSpacing(4)
+
+        self.btn_quick_homo = QtWidgets.QPushButton("⚡ HOMO")
+        self.btn_quick_homo.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_homo.setToolTip("Quickly evaluate and display the Highest Occupied Molecular Orbital (HOMO)")
         self.btn_quick_homo.clicked.connect(self._on_quick_view_homo)
-        mo_top_bar.addWidget(self.btn_quick_homo)
+        mo_top_bar2.addWidget(self.btn_quick_homo, stretch=1)
 
-        self.btn_quick_lumo = QtWidgets.QPushButton("⚡ View LUMO")
-        self.btn_quick_lumo.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_quick_lumo = QtWidgets.QPushButton("⚡ LUMO")
+        self.btn_quick_lumo.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_lumo.setToolTip("Quickly evaluate and display the Lowest Unoccupied Molecular Orbital (LUMO)")
         self.btn_quick_lumo.clicked.connect(self._on_quick_view_lumo)
-        mo_top_bar.addWidget(self.btn_quick_lumo)
+        mo_top_bar2.addWidget(self.btn_quick_lumo, stretch=1)
 
-        self.btn_quick_spin_dens = QtWidgets.QPushButton("🌀 Spin Density")
-        self.btn_quick_spin_dens.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_quick_spin_dens = QtWidgets.QPushButton("🌀 Spin")
+        self.btn_quick_spin_dens.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_spin_dens.setToolTip(
             "1-Click Open-Shell Spin Density (Δρ = ρ_α − ρ_β):\n"
             "Evaluate and render excess α/β spin density lobes directly in the 3D viewport"
         )
         self.btn_quick_spin_dens.clicked.connect(self._on_quick_view_spin_density)
-        mo_top_bar.addWidget(self.btn_quick_spin_dens)
+        mo_top_bar2.addWidget(self.btn_quick_spin_dens, stretch=1)
 
-        self.btn_quick_esp_map = QtWidgets.QPushButton("🌈 ESP Map")
-        self.btn_quick_esp_map.setStyleSheet("background-color: #db2777; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_quick_esp_map = QtWidgets.QPushButton("🌈 ESP")
+        self.btn_quick_esp_map.setStyleSheet("background-color: #db2777; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_esp_map.setToolTip(
             "1-Click Electrostatic Potential (ESP) Mapped Electron Density Surface:\n"
-            "Colors the electron density isosurface from Red (δ⁻ nucleophilic) to Blue (δ⁺ electrophilic)"
+            "Colors the electron density isosurface from Red (δ⁻ nucleophilic) to Blue (δ⁺ electrophilic) (Ctrl+Alt+P)"
         )
         self.btn_quick_esp_map.clicked.connect(self._on_quick_view_esp_map)
-        mo_top_bar.addWidget(self.btn_quick_esp_map)
+        mo_top_bar2.addWidget(self.btn_quick_esp_map, stretch=1)
 
-        self.btn_localize_mos = QtWidgets.QPushButton("🧲 Localize (LMO) ▾")
-        self.btn_localize_mos.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_localize_mos = QtWidgets.QPushButton("🧲 LMO ▾")
+        self.btn_localize_mos.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_localize_mos.setToolTip(
             "1-Click PySCF Unitary Orbital Localization (Pipek-Mezey or Foster-Boys):\n"
             "Transforms canonical delocalized MOs into Localized Molecular Orbitals (LMOs: σ bonds, π bonds, lone pairs)"
@@ -487,29 +520,18 @@ class UIInspectorTabsMixin:
         act_loc_canon = menu_loc.addAction("↩️ Restore Canonical MOs")
         act_loc_canon.triggered.connect(self._on_restore_canonical_orbitals)
         self.btn_localize_mos.setMenu(menu_loc)
-        mo_top_bar.addWidget(self.btn_localize_mos)
+        mo_top_bar2.addWidget(self.btn_localize_mos, stretch=1)
 
-        self.btn_positron_overlay = QtWidgets.QPushButton("⚛️ +Positron MO")
-        self.btn_positron_overlay.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px 8px;")
+        self.btn_positron_overlay = QtWidgets.QPushButton("⚛️ +Positron")
+        self.btn_positron_overlay.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_positron_overlay.setToolTip(
             "Overlay companion Positron ground-state orbital surface (gold/green) onto the current Electron MO (blue/red)"
         )
         self.btn_positron_overlay.setVisible(False)
         self.btn_positron_overlay.clicked.connect(self._on_overlay_positron_orbital)
-        mo_top_bar.addWidget(self.btn_positron_overlay)
+        mo_top_bar2.addWidget(self.btn_positron_overlay, stretch=1)
 
-        btn_clear_mo = QtWidgets.QPushButton("Clear")
-        btn_clear_mo.setToolTip("Clear 3D orbital / isosurface (Shortcut: Esc)")
-        btn_clear_mo.clicked.connect(self._on_clear_orbital_surface)
-        mo_top_bar.addWidget(btn_clear_mo)
-
-        self.btn_orbital_snapshot_gallery = QtWidgets.QPushButton("📸 Snapshot Gallery")
-        self.btn_orbital_snapshot_gallery.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; padding: 5px 8px;")
-        self.btn_orbital_snapshot_gallery.setToolTip("Capture all or selected orbitals in a batch snapshot contact sheet or image gallery (like Gabedit)")
-        self.btn_orbital_snapshot_gallery.clicked.connect(self._on_open_orbital_snapshot_gallery)
-        mo_top_bar.addWidget(self.btn_orbital_snapshot_gallery)
-
-        tab_mo_layout.addLayout(mo_top_bar)
+        tab_mo_layout.addLayout(mo_top_bar2)
 
         self.lbl_mo_status = QtWidgets.QLabel("No orbital/wavefunction data loaded. Run a calculation or open a .molden / .cube file.")
         self.lbl_mo_status.setStyleSheet("color: #64748b; font-style: italic; font-size: 11px;")
@@ -608,5 +630,10 @@ class UIInspectorTabsMixin:
         mo_params_layout.addWidget(self.combo_mo_phase_colors)
 
         tab_mo_layout.addWidget(mo_params_group)
-        self.tab_orbitals = tab_orbitals
-        self.tabs.addTab(tab_orbitals, "Molecular Orbitals")
+        self.tab_orbitals_widget = tab_orbitals
+        scroll_mo = QtWidgets.QScrollArea()
+        scroll_mo.setWidgetResizable(True)
+        scroll_mo.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll_mo.setWidget(tab_orbitals)
+        self.tab_orbitals = scroll_mo
+        self.tabs.addTab(scroll_mo, "Molecular Orbitals")

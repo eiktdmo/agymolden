@@ -39,11 +39,14 @@ def test_surfaces_menu_and_toolbar(main_win):
     assert win.btn_toolbar_esp is not None
     assert "ESP" in win.btn_toolbar_esp.text()
 
-    # 3. Verify Small-Screen Responsive Features
+    # 3. Verify Small-Screen Responsive Features & Scroll Areas
     assert hasattr(win, "scroll_tab_table")
     assert isinstance(win, MainWindow)
     assert isinstance(win.scroll_tab_table, QtWidgets.QScrollArea)
     assert win.scroll_tab_table.widgetResizable()
+    assert isinstance(win.tab_vibrations, QtWidgets.QScrollArea)
+    assert isinstance(win.tab_symmetry, QtWidgets.QScrollArea)
+    assert isinstance(win.tab_orbitals, QtWidgets.QScrollArea)
     assert win.grp_adjust.isCheckable()
     assert win.grp_adjust.isChecked()
 
@@ -119,6 +122,16 @@ def test_quick_orca_dialog_options_and_esp(main_win):
 
     # Check live preview tab updates
     assert dlg.txt_deck_preview.toPlainText() == deck2
+
+    # Verify composite method handling
+    idx_r2 = [i for i in range(dlg.combo_method.count()) if "r2SCAN-3c" in dlg.combo_method.itemText(i)][0]
+    dlg.combo_method.setCurrentIndex(idx_r2)
+    assert not dlg.combo_basis.isEnabled()
+    assert not dlg.lbl_compat_info.isHidden()
+    assert "r2SCAN-3c" in dlg.lbl_compat_info.text()
+    deck3 = dlg.get_orca_input_text()
+    assert "! r2SCAN-3c" in deck3
+    assert "def2-TZVP" not in deck3
 
     dlg.close()
     dlg.deleteLater()

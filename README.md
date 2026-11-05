@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![OpenGL](https://img.shields.io/badge/Graphics-OpenGL%203.3+-orange.svg)](https://www.khronos.org/opengl/)
-[![Tests](https://img.shields.io/badge/Tests-221%2B%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-265%20Passing-brightgreen.svg)]()
 
 **AgyMolden** is an ultra-fast, modern, native cross-platform quantum chemistry companion and molecular modeling workbench. It combines the intuitive internal coordinate (Z-matrix) editing workflows of classic Molden with a full-fledged computational chemistry environment: multi-package calculation execution, live convergence tracking, automated error diagnostics (QC Doctor), volumetric orbital & electrostatic potential (ESP) visualization, intrinsic reaction coordinate (IRC) reaction profiling, transition state IDPP path interpolation, and CREST conformer ensemble exploration.
 
@@ -61,6 +61,7 @@ Designed from the ground up with **pure Python / NumPy / SciPy / PyQt6 / PyOpenG
 
 ### 9. Molecular Cycle Welder & Ring Fusion Studio (`Ctrl+Shift+W`)
 - **Edge Annulation (Bond Welding)**: Select any bond/edge in the 3D viewport or right-click canvas to fuse an aromatic, saturated, or heterocyclic ring (Benzene, Pyridine, Pyrrole, Furan, Thiophene, Imidazole, Cyclohexyl, Cyclopentyl, Cyclobutyl, Cyclopropyl, Oxirane, or custom $N$-gon).
+- **Peri-Annulation (3-Atom Bay Fusion)**: Completes open bay pockets across $C_{\text{left}} - C_{\text{bridgehead}} - C_{\text{right}}$ triads to construct Phenalene, Acenaphthene, and extended polyaromatics with zero steric clash and valency conservation.
 - **Valency & Ortho-Hydrogen Pruning**: Automatically removes ortho-hydrogens on the fused bridgehead atoms to conserve proper valence, and generates ideal sp2/sp3 hydrogen geometries for the new ring.
 - **Bicyclic Bridgehead Formation**: Connect distant ring carbons (e.g. 1,4-cyclohexane positions) with $-\text{CH}_2-$, $-\text{CH}_2-\text{CH}_2-$, $-\text{O}-$, $-\text{NH}-$, or $-\text{CO}-$ bridges to create Norbornanes, Bicyclo[2.2.2]octanes, or Camphor-like systems.
 - **1-Click Analytical Force Field Relaxation**: Real-time analytical UFF / MMFF94 relaxation with optional parent-structure freezing.
@@ -145,6 +146,8 @@ python run.py
 | **Copy 3D Image to Clipboard** | `Ctrl + Shift + C` (Transparent background, publication quality) |
 | **Build from Name / SMILES** | `Ctrl + Shift + B` |
 | **Quick Optimize Geometry** | `Ctrl + M` or `Ctrl + Shift + O` (UFF / GFN-FF / xTB) |
+| **3D Electrostatic Potential (ESP) Map** | `Ctrl + Alt + P` (1-click ESP-mapped total electron density) |
+| **Volumetric MO & Isosurfaces Studio** | `Ctrl + Alt + O` (GaussView/Avogadro style Marching Cubes) |
 | **Weld / Fuse Molecular Rings** | `Ctrl + Shift + W` (Fuse carbocycles/heterocycles onto bonds or form bridgeheads) |
 | **Open QM Calculation Dialog** | `Ctrl + R` |
 | **Cross-Engine Benchmark Comparison**| `Ctrl + Shift + M` |

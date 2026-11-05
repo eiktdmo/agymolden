@@ -38,6 +38,36 @@ def _check_dependencies() -> None:
         sys.exit(1)
 
 
+def _log_startup_environment() -> None:
+    """Log structured diagnostic line for support & debugging."""
+    import importlib.util
+    import shutil
+    log = logging.getLogger("agymolden")
+
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    qt_ver = "unknown"
+    try:
+        from PyQt6.QtCore import PYQT_VERSION_STR
+        qt_ver = PYQT_VERSION_STR
+    except Exception:
+        pass
+
+    opts = {}
+    for pkg in ("rdkit", "pyscf", "skimage", "cclib"):
+        opts[pkg] = "yes" if importlib.util.find_spec(pkg) is not None else "no"
+
+    bins = {}
+    for b in ("orca", "g16", "g09", "xtb", "crest"):
+        bins[b] = "found" if shutil.which(b) is not None else "missing"
+
+    g_status = "yes" if bins["g16"] == "found" or bins["g09"] == "found" else "no"
+    log.info(
+        f"AgyMolden v{__version__} starting on {sys.platform} | Python {py_ver} | PyQt6 {qt_ver} | "
+        f"Libs: rdkit={opts['rdkit']}, pyscf={opts['pyscf']}, cclib={opts['cclib']} | "
+        f"Bins: orca={bins['orca']}, xtb={bins['xtb']}, gaussian={g_status}"
+    )
+
+
 def _log_file_path() -> str:
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
     if sys.platform == "win32":
@@ -125,6 +155,7 @@ def main(argv=None):
 
     _setup_logging(args.debug)
     _check_dependencies()
+    _log_startup_environment()
 
     from PyQt6 import QtWidgets, QtGui, QtCore
     from .main_window import MainWindow

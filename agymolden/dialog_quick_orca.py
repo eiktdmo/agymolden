@@ -196,6 +196,12 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         self.combo_grid.currentIndexChanged.connect(self._on_combo_options_changed)
         theory_grid.addWidget(self.combo_grid, 3, 1)
 
+        self.lbl_compat_info = QtWidgets.QLabel()
+        self.lbl_compat_info.setStyleSheet("color: #38bdf8; font-size: 11px; padding: 2px 4px;")
+        self.lbl_compat_info.setVisible(False)
+        self.lbl_compat_info.setWordWrap(True)
+        theory_grid.addWidget(self.lbl_compat_info, 4, 0, 1, 2)
+
         opts_layout.addWidget(grp_theory)
 
         # 2. Environment (Solvent & Dispersion)
@@ -419,7 +425,20 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         solv = self.combo_solvent.currentText()
 
         # xTB and composite methods have fixed basis & dispersion
-        if method in ("GFN2-xTB", "r2SCAN-3c", "B97-3c"):
+        is_composite = method in ("GFN2-xTB", "r2SCAN-3c", "B97-3c")
+        self.combo_basis.setEnabled(not is_composite)
+        self.combo_dispersion.setEnabled(not is_composite)
+        if hasattr(self, "lbl_compat_info"):
+            if is_composite:
+                self.lbl_compat_info.setText(f"ℹ️ {method} is a composite/tight-binding method with intrinsic basis set & dispersion.")
+                self.lbl_compat_info.setVisible(True)
+            elif method == "DLPNO-CCSD(T)" and not str(basis).startswith("def2"):
+                self.lbl_compat_info.setText("💡 Tip: DLPNO-CCSD(T) performs best with Karlsruhe def2 basis sets (def2-TZVP / def2-QZVP).")
+                self.lbl_compat_info.setVisible(True)
+            else:
+                self.lbl_compat_info.setVisible(False)
+
+        if is_composite:
             tokens.append(method)
         else:
             tokens.append(method)
