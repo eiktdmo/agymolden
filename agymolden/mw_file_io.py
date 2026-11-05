@@ -64,6 +64,7 @@ from .symmetry import (
 from .dialog_qm_input import QMCalculationDialog
 from .brorsen_builder import BrorsenInputBuilderDialog
 from .qm_log_parser import parse_qm_logfile, can_parse_with_cclib
+from .dialog_service import dialog_service
 
 log = logging.getLogger(__name__)
 
@@ -161,8 +162,7 @@ class FileIOMixin:
             self._remember_file(path)
             self.statusBar().showMessage(f"Loaded {os.path.basename(path)}", 4000)
         except (OSError, IOError, ValueError) as e:
-            log.exception("Error opening Z-matrix file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening File", str(e))
+            dialog_service.error(self, "Error Opening File", str(e), exc=e)
 
     def open_path(self, path: str):
         """Open a molecule file, choosing the loader from its extension."""
@@ -203,8 +203,7 @@ class FileIOMixin:
             self.load_from_smiles_or_inchi(content, name=os.path.basename(path))
             self._remember_file(path)
         except (OSError, IOError, ValueError) as e:
-            log.exception("Error loading SMILES file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening SMILES", str(e))
+            dialog_service.error(self, "Error Opening SMILES", str(e), exc=e)
 
     def _load_inchi_path(self, path: str):
         try:
@@ -213,8 +212,7 @@ class FileIOMixin:
             self.load_from_smiles_or_inchi(content, name=os.path.basename(path))
             self._remember_file(path)
         except (OSError, IOError, ValueError) as e:
-            log.exception("Error loading InChI file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening InChI", str(e))
+            dialog_service.error(self, "Error Opening InChI", str(e), exc=e)
 
     def load_from_smiles_or_inchi(self, text: str, name: str = "Structure"):
         """Generate 3D Cartesian + Z-matrix coordinates from a SMILES or InChI string."""
@@ -245,8 +243,7 @@ class FileIOMixin:
             try:
                 self.load_from_smiles_or_inchi(text.strip(), name=text.strip()[:30])
             except Exception as e:
-                log.exception("Error resolving chemical identifier")
-                QtWidgets.QMessageBox.critical(self, "Chemical Name / Identifier Error", str(e))
+                dialog_service.error(self, "Chemical Name / Identifier Error", str(e), exc=e)
 
     def _on_open_esp_2d_dialog(self):
         """Open 2D Electrostatic Potential (ESP) Contour Slicer Dialog."""
@@ -547,8 +544,7 @@ class FileIOMixin:
                 self._remember_file(path)
                 self.statusBar().showMessage(f"Loaded Gaussian Z-Matrix ({len(zatoms)} atoms) from {os.path.basename(path)}", 4500)
         except Exception as e:
-            log.exception("Error loading Gaussian input file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening Gaussian Input", str(e))
+            dialog_service.error(self, "Error Opening Gaussian Input", str(e), exc=e)
 
     def _load_openlowdin_input_path(self, path: str):
         """Parse an openLOWDIN (.lowdin) input file and load its molecular geometry."""
@@ -575,8 +571,7 @@ class FileIOMixin:
             else:
                 raise ValueError(f"No GEOMETRY coordinates found in openLOWDIN file: {os.path.basename(path)}")
         except Exception as e:
-            log.exception("Error loading openLOWDIN file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening openLOWDIN File", str(e))
+            dialog_service.error(self, "Error Opening openLOWDIN File", str(e), exc=e)
 
     def _load_pyscf_script_path(self, path: str):
         """Extract molecular geometry from a PySCF Python script (.py) and load it into the viewer."""
@@ -602,8 +597,7 @@ class FileIOMixin:
                 raise ValueError(f"No valid atomic coordinates found in {os.path.basename(path)}")
             self._apply_imported_cartesian_molecule(syms, np.array(crds, dtype=np.float64), path, label="PySCF")
         except Exception as e:
-            log.exception("Error loading PySCF script")
-            QtWidgets.QMessageBox.critical(self, "Error Opening PySCF Script", str(e))
+            dialog_service.error(self, "Error Opening PySCF Script", str(e), exc=e)
 
     def _load_brorsen_inp_path(self, path: str):
         """Directly parse and load a newBRORSEN, ORCA, or Q-Chem input file (*.inp / *.in) into AGYMolden."""
@@ -673,8 +667,7 @@ class FileIOMixin:
             else:
                 self.statusBar().showMessage(f"Loaded ORCA input geometry from {os.path.basename(path)}", 4500)
         except Exception as e:
-            log.exception("Error loading input file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening Input File", str(e))
+            dialog_service.error(self, "Error Opening Input File", str(e), exc=e)
 
     def _on_open_brorsen_input_file_direct(self, path: str):
         symbols = [a.symbol for a in self.zatoms] if self.zatoms else []
@@ -890,8 +883,7 @@ class FileIOMixin:
             if not getattr(self, "_suppress_companion_prompt", False):
                 self._check_and_prompt_companion_files(path)
         except Exception as e:
-            log.exception("Unhandled error in GUI action")
-            QtWidgets.QMessageBox.critical(self, "Error Reading QM Output", str(e))
+            dialog_service.error(self, "Error Reading QM Output", str(e), exc=e)
 
     def _on_view_qm_output_file(self):
         """Open the QM Output & Log Viewer Dialog."""
@@ -1384,14 +1376,13 @@ class FileIOMixin:
                 5000
             )
         except Exception as e:
-            log.exception("Unhandled error in GUI action")
-            QtWidgets.QMessageBox.critical(self, "Error Importing XYZ", str(e))
+            dialog_service.error(self, "Error Importing XYZ", str(e), exc=e)
 
     def _load_pdb_path(self, path: str):
         try:
             symbols, coords, bonds = parse_pdb(path)
             if len(symbols) == 0:
-                QtWidgets.QMessageBox.warning(self, "Empty File", "No atoms found in PDB file.")
+                dialog_service.warning(self, "Empty File", "No atoms found in PDB file.")
                 return
             self._push_undo_state()
             self.variables = {}
@@ -1408,14 +1399,13 @@ class FileIOMixin:
             self._remember_file(path)
             self.statusBar().showMessage(f"Loaded PDB {os.path.basename(path)} ({len(symbols)} atoms).", 4000)
         except Exception as e:
-            log.exception("Error loading PDB file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening PDB", str(e))
+            dialog_service.error(self, "Error Opening PDB", str(e), exc=e)
 
     def _load_sdf_path(self, path: str):
         try:
             symbols, coords, bonds, bo_dict = parse_mol_sdf(path)
             if len(symbols) == 0:
-                QtWidgets.QMessageBox.warning(self, "Empty File", "No atoms found in SDF / MOL file.")
+                dialog_service.warning(self, "Empty File", "No atoms found in SDF / MOL file.")
                 return
             self._push_undo_state()
             self.variables = {}
@@ -1432,14 +1422,13 @@ class FileIOMixin:
             self._remember_file(path)
             self.statusBar().showMessage(f"Loaded SDF/MOL {os.path.basename(path)} ({len(symbols)} atoms).", 4000)
         except Exception as e:
-            log.exception("Error loading SDF/MOL file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening SDF/MOL", str(e))
+            dialog_service.error(self, "Error Opening SDF/MOL", str(e), exc=e)
 
     def _load_cif_path(self, path: str):
         try:
             symbols, coords, cell = parse_cif(path)
             if len(symbols) == 0:
-                QtWidgets.QMessageBox.warning(self, "Empty File", "No atomic sites found in CIF file.")
+                dialog_service.warning(self, "Empty File", "No atomic sites found in CIF file.")
                 return
             self._push_undo_state()
             self.variables = {}
@@ -1465,8 +1454,7 @@ class FileIOMixin:
             cell_str = f"a={cell.get('a', 0):.2f} b={cell.get('b', 0):.2f} c={cell.get('c', 0):.2f} Å"
             self.statusBar().showMessage(f"Loaded CIF crystal structure {os.path.basename(path)} ({len(symbols)} sites, {cell_str}).", 5000)
         except Exception as e:
-            log.exception("Error loading CIF file")
-            QtWidgets.QMessageBox.critical(self, "Error Opening CIF", str(e))
+            dialog_service.error(self, "Error Opening CIF", str(e), exc=e)
 
     def _on_save_zmat(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -1480,8 +1468,7 @@ class FileIOMixin:
                 self._remember_file(path)
                 self.statusBar().showMessage(f"Saved Z-matrix to {os.path.basename(path)}", 4000)
             except (OSError, IOError) as e:
-                log.exception("Error saving Z-matrix file")
-                QtWidgets.QMessageBox.critical(self, "Error Saving File", str(e))
+                dialog_service.error(self, "Error Saving File", str(e), exc=e)
 
     def _on_save_zmat_format(self, fmt: str):
         default = "molecule_num.zmat" if fmt == "numeric" else "molecule_var.zmat"
@@ -1502,8 +1489,7 @@ class FileIOMixin:
             self._remember_file(path)
             self.statusBar().showMessage(f"Saved Z-matrix ({fmt}) to {os.path.basename(path)}", 4000)
         except (OSError, IOError) as e:
-            log.exception("Error saving Z-matrix formatted file")
-            QtWidgets.QMessageBox.critical(self, "Error Saving File", str(e))
+            dialog_service.error(self, "Error Saving File", str(e), exc=e)
 
     def _on_assign_symmetric_bond_variables(self):
         if len(self.zatoms) < 2:
@@ -1560,8 +1546,7 @@ class FileIOMixin:
                 write_xyz(path, symbols, self.coords)
                 self.statusBar().showMessage(f"Exported Cartesian XYZ to {os.path.basename(path)}", 4000)
             except (OSError, IOError) as e:
-                log.exception("Error exporting XYZ")
-                QtWidgets.QMessageBox.critical(self, "Error Exporting XYZ", str(e))
+                dialog_service.error(self, "Error Exporting XYZ", str(e), exc=e)
 
     def _on_export_pdb(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -1574,8 +1559,7 @@ class FileIOMixin:
                 write_pdb(path, symbols, self.coords, bonds=bonds)
                 self.statusBar().showMessage(f"Exported PDB structure to {os.path.basename(path)}", 4000)
             except (OSError, IOError) as e:
-                log.exception("Error exporting PDB")
-                QtWidgets.QMessageBox.critical(self, "Error Exporting PDB", str(e))
+                dialog_service.error(self, "Error Exporting PDB", str(e), exc=e)
 
     def _on_export_sdf(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -1589,8 +1573,7 @@ class FileIOMixin:
                 write_mol_sdf(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
                 self.statusBar().showMessage(f"Exported SDF/MOL structure to {os.path.basename(path)}", 4000)
             except (OSError, IOError) as e:
-                log.exception("Error exporting SDF/MOL")
-                QtWidgets.QMessageBox.critical(self, "Error Exporting SDF/MOL", str(e))
+                dialog_service.error(self, "Error Exporting SDF/MOL", str(e), exc=e)
 
     def _on_export_html(self):
         """Export current molecule and calculation results to standalone interactive 3D WebGL HTML."""
@@ -1652,8 +1635,7 @@ class FileIOMixin:
                 "tablet, or phone without installing Python."
             )
         except Exception as e:
-            log.exception("Unhandled error exporting HTML")
-            QtWidgets.QMessageBox.critical(self, "Error Exporting HTML", str(e))
+            dialog_service.error(self, "Error Exporting HTML", str(e), exc=e)
 
     def _on_export_reproducibility_bundle(self):
         """Export complete Supporting Information (SI) reproducibility bundle (.zip)."""
@@ -1728,8 +1710,7 @@ class FileIOMixin:
                 + (f"• Raw input file: {os.path.basename(input_path)}\n" if input_path else "")
             )
         except Exception as e:
-            log.exception("Error exporting reproducibility bundle")
-            QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export reproducibility bundle:\n{e}")
+            dialog_service.error(self, "Export Error", f"Failed to export reproducibility bundle:\n{e}", exc=e)
 
     def export_image(self, path: str, transparent: bool = False, bg_mode: Optional[str] = None, scale: int = 2, clean_only: bool = True, dpi: int = 300) -> QtGui.QImage:
         """Render and save a PNG image of the 3D molecule with customizable background (dark, white, or transparent) and embedded DPI metadata."""
@@ -1922,8 +1903,7 @@ class FileIOMixin:
                 f"Exported {img.width()}x{img.height()} ({bg_choice}, {scale_factor}x) PNG to {os.path.basename(path)}", 5000
             )
         except Exception as e:
-            log.exception("Unhandled error in GUI action")
-            QtWidgets.QMessageBox.critical(self, "Error Exporting Image", str(e))
+            dialog_service.error(self, "Error Exporting Image", str(e), exc=e)
 
     def _on_show_shortcuts(self):
         """Display an interactive dialog showing keyboard and mouse shortcuts with search filter."""

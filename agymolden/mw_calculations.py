@@ -60,6 +60,7 @@ from .symmetry import (
     get_symmetry_orbits,
     optimize_with_imposed_symmetry,
 )
+from .dialog_service import dialog_service
 
 log = logging.getLogger(__name__)
 
@@ -127,13 +128,10 @@ class CalculationsMixin:
             try:
                 self._apply_optimization(symbols, user_bonds, method, method_label, result)
             except Exception as e:
-                log.exception("Unhandled error in GUI action")
-                log.exception("Applying optimization result failed")
-                QtWidgets.QMessageBox.critical(self, "Optimization Error", f"Geometry optimization failed:\n{str(e)}")
+                dialog_service.error(self, "Optimization Error", f"Geometry optimization failed:\n{e}", exc=e)
 
         def failed(exc):
-            log.error("Geometry optimization failed", exc_info=exc)
-            QtWidgets.QMessageBox.critical(self, "Optimization Error", f"Geometry optimization failed:\n{str(exc)}")
+            dialog_service.error(self, "Optimization Error", f"Geometry optimization failed:\n{exc}", exc=exc)
 
         run_in_background(self, "Optimize Geometry", f"Optimizing geometry ({method_label})...",
                           compute, done, failed)
@@ -252,8 +250,7 @@ class CalculationsMixin:
             )
 
         def failed(exc):
-            log.error("Conformer search failed", exc_info=exc)
-            QtWidgets.QMessageBox.critical(self, "Conformer Search Error", f"Conformational search failed:\n{str(exc)}")
+            dialog_service.error(self, "Conformer Search Error", f"Conformational search failed:\n{exc}", exc=exc)
 
         run_in_background(
             self,
@@ -292,13 +289,10 @@ class CalculationsMixin:
             try:
                 self._apply_vibrations(result)
             except Exception as e:
-                log.exception("Unhandled error in GUI action")
-                log.exception("Displaying vibrations failed")
-                QtWidgets.QMessageBox.critical(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{str(e)}")
+                dialog_service.error(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{e}", exc=e)
 
         def failed(exc):
-            log.error("Vibration calculation failed", exc_info=exc)
-            QtWidgets.QMessageBox.critical(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{str(exc)}")
+            dialog_service.error(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{exc}", exc=exc)
 
         run_in_background(self, "Vibrational Modes", f"Calculating normal modes ({method_label})...",
                           compute, done, failed)
@@ -690,8 +684,7 @@ class CalculationsMixin:
             ani.save(path, writer="pillow", fps=20)
             self.statusBar().showMessage(f"Saved vibrational animation GIF to {os.path.basename(path)}", 5000)
         except Exception as e:
-            log.exception("Failed to export vibration GIF")
-            QtWidgets.QMessageBox.critical(self, "GIF Export Error", f"Could not export GIF:\n{e}")
+            dialog_service.error(self, "GIF Export Error", f"Could not export GIF:\n{e}", exc=e)
         finally:
             self.viewer.vib_phase = saved_phase
             self.viewer.vibrating = was_vibrating
@@ -976,9 +969,8 @@ class CalculationsMixin:
                     5500,
                 )
         except Exception as e:
-            log.exception("Unhandled error in GUI action")
             if switch_tab:
-                QtWidgets.QMessageBox.critical(self, "Symmetry Detection Error", f"Failed to detect symmetry:\n{str(e)}")
+                dialog_service.error(self, "Symmetry Detection Error", f"Failed to detect symmetry:\n{e}", exc=e)
         finally:
             if switch_tab:
                 QtWidgets.QApplication.restoreOverrideCursor()
@@ -2267,7 +2259,7 @@ class CalculationsMixin:
             try:
                 molden_data = parse_molden_file(molden_path)
             except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Error Reading Molden File", str(e))
+                dialog_service.error(self, "Error Reading Molden File", str(e), exc=e)
                 return
 
         # Determine homo index

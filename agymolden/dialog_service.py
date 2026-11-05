@@ -57,13 +57,30 @@ class DialogService:
             return
         QtWidgets.QMessageBox.warning(parent, title, message)
 
-    def error(self, parent: Optional[QtWidgets.QWidget], title: str, message: str) -> None:
-        """Display an error/critical dialog."""
-        self._recorded_messages.append({"level": "error", "title": title, "message": message})
-        log.error("[%s] %s", title, message)
+    def error(
+        self,
+        parent: Optional[QtWidgets.QWidget],
+        title: str,
+        message: str,
+        exc: Optional[Exception] = None,
+    ) -> None:
+        """Display an error/critical dialog with optional exception details."""
+        err_entry = {"level": "error", "title": title, "message": message, "exc": exc}
+        self._recorded_messages.append(err_entry)
+        if exc is not None:
+            log.exception("[%s] %s: %s", title, message, exc)
+        else:
+            log.error("[%s] %s", title, message)
         if self._is_headless():
             return
-        QtWidgets.QMessageBox.critical(parent, title, message)
+        msg_box = QtWidgets.QMessageBox(parent)
+        msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        if exc is not None:
+            import traceback
+            msg_box.setDetailedText("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+        msg_box.exec()
 
     def confirm(
         self,
@@ -77,7 +94,6 @@ class DialogService:
         if self._is_headless():
             if self._mock_confirm_responses:
                 return self._mock_confirm_responses.pop(0)
-            return default_yes
             return default_yes
 
         buttons = QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No

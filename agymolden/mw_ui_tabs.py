@@ -476,18 +476,21 @@ class UIInspectorTabsMixin:
         mo_top_bar2.setSpacing(4)
 
         self.btn_quick_homo = QtWidgets.QPushButton("⚡ HOMO")
+        self.btn_quick_homo.setMinimumWidth(55)
         self.btn_quick_homo.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_homo.setToolTip("Quickly evaluate and display the Highest Occupied Molecular Orbital (HOMO)")
         self.btn_quick_homo.clicked.connect(self._on_quick_view_homo)
         mo_top_bar2.addWidget(self.btn_quick_homo, stretch=1)
 
         self.btn_quick_lumo = QtWidgets.QPushButton("⚡ LUMO")
+        self.btn_quick_lumo.setMinimumWidth(55)
         self.btn_quick_lumo.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_lumo.setToolTip("Quickly evaluate and display the Lowest Unoccupied Molecular Orbital (LUMO)")
         self.btn_quick_lumo.clicked.connect(self._on_quick_view_lumo)
         mo_top_bar2.addWidget(self.btn_quick_lumo, stretch=1)
 
         self.btn_quick_spin_dens = QtWidgets.QPushButton("🌀 Spin")
+        self.btn_quick_spin_dens.setMinimumWidth(50)
         self.btn_quick_spin_dens.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_spin_dens.setToolTip(
             "1-Click Open-Shell Spin Density (Δρ = ρ_α − ρ_β):\n"
@@ -497,6 +500,7 @@ class UIInspectorTabsMixin:
         mo_top_bar2.addWidget(self.btn_quick_spin_dens, stretch=1)
 
         self.btn_quick_esp_map = QtWidgets.QPushButton("🌈 ESP")
+        self.btn_quick_esp_map.setMinimumWidth(50)
         self.btn_quick_esp_map.setStyleSheet("background-color: #db2777; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_esp_map.setToolTip(
             "1-Click Electrostatic Potential (ESP) Mapped Electron Density Surface:\n"
@@ -506,6 +510,7 @@ class UIInspectorTabsMixin:
         mo_top_bar2.addWidget(self.btn_quick_esp_map, stretch=1)
 
         self.btn_localize_mos = QtWidgets.QPushButton("🧲 LMO ▾")
+        self.btn_localize_mos.setMinimumWidth(55)
         self.btn_localize_mos.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_localize_mos.setToolTip(
             "1-Click PySCF Unitary Orbital Localization (Pipek-Mezey or Foster-Boys):\n"

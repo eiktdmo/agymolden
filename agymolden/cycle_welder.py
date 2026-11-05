@@ -95,6 +95,19 @@ RING_PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _resolve_preset(ring_preset: Optional[str]) -> Optional[str]:
+    """Resolve ring preset name robustly, supporting case-insensitivity and display strings."""
+    if not ring_preset:
+        return None
+    if ring_preset in RING_PRESETS:
+        return ring_preset
+    s = ring_preset.strip().lower()
+    for name in RING_PRESETS:
+        if name.lower() == s or s.startswith(name.lower()):
+            return name
+    return None
+
+
 def _find_attached_hydrogens(symbols: List[str], coords: np.ndarray, atom_idx: int) -> List[int]:
     """Find indices of Hydrogen atoms bonded to a given atom."""
     h_indices = []
@@ -154,8 +167,9 @@ def fuse_ring_to_bond(
         raise ValueError(f"Invalid atom indices: a1={a1}, a2={a2}")
 
     # Determine ring geometry parameters
-    if ring_preset in RING_PRESETS:
-        info = RING_PRESETS[ring_preset]
+    resolved_key = _resolve_preset(ring_preset)
+    if resolved_key is not None:
+        info = RING_PRESETS[resolved_key]
         N = info["size"]
         is_aromatic = info["aromatic"]
         sub_map = dict(info["hetero"])
@@ -318,7 +332,7 @@ def fuse_ring_to_bond(
                 out_coords.append(h2)
         elif sym == "N":
             # For pyrrole-like NH, add 1 H; for pyridine-like =N-, no H
-            if ring_preset in ("Pyrrole", "Imidazole"):
+            if resolved_key in ("Pyrrole", "Imidazole"):
                 h_pos = pt + 1.01 * v_rad
                 out_symbols.append("H")
                 out_coords.append(h_pos)
@@ -544,8 +558,9 @@ def fuse_ring_to_triad(
     plane_normal = norm_cross / norm_len
 
     # Determine ring geometry parameters
-    if ring_preset in RING_PRESETS:
-        info = RING_PRESETS[ring_preset]
+    resolved_key = _resolve_preset(ring_preset)
+    if resolved_key is not None:
+        info = RING_PRESETS[resolved_key]
         N = info["size"]
         is_aromatic = info["aromatic"]
         sub_map = dict(info["hetero"])
@@ -643,7 +658,7 @@ def fuse_ring_to_triad(
                 out_symbols.extend(["H", "H"])
                 out_coords.extend([h1, h2])
         elif sym == "N":
-            if ring_preset in ("Pyrrole", "Imidazole"):
+            if resolved_key in ("Pyrrole", "Imidazole"):
                 out_symbols.append("H")
                 out_coords.append(pt + 1.01 * v_rad)
 
