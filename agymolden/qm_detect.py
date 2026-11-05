@@ -81,6 +81,14 @@ def _probe_paths(key: str) -> List[str]:
         return [shutil.which("qchem") or ""] + _glob_candidates(
             "~/programs/qchem*/bin/qchem", "/opt/qchem*/bin/qchem",
         )
+    if key == "psi4":
+        return [shutil.which("psi4") or ""] + _glob_candidates(
+            "~/miniconda3/bin/psi4",
+            "~/anaconda3/bin/psi4",
+            "~/.conda/envs/*/bin/psi4",
+            "/usr/local/bin/psi4",
+            "/opt/psi4*/bin/psi4",
+        )
     return [shutil.which(key) or ""]
 
 
@@ -147,6 +155,10 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
         key = "qchem"
         disp = "Q-Chem"
         bin_name = "qchem"
+    elif "psi4" in code_key:
+        key = "psi4"
+        disp = "Psi4"
+        bin_name = "psi4"
     else:
         key = code_key
         disp = code_key.capitalize()
@@ -325,7 +337,7 @@ class QMEnginesStatusDialog(QtCore.QObject):
         lbl.setWordWrap(True)
         vbox.addWidget(lbl)
 
-        codes = ["orca", "pyscf", "gaussian", "openlowdin", "xtb", "qchem"]
+        codes = ["orca", "pyscf", "gaussian", "psi4", "qchem", "xtb", "openlowdin"]
         tbl = QtWidgets.QTableWidget(len(codes), 4)
         tbl.setHorizontalHeaderLabels(["QM Package", "Status", "Executable Path / Command Route", "Browse"])
         tbl.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)

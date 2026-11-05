@@ -1610,8 +1610,8 @@ class FileIOMixin:
             log.exception("Error exporting reproducibility bundle")
             QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to export reproducibility bundle:\n{e}")
 
-    def export_image(self, path: str, transparent: bool = False, bg_mode: Optional[str] = None, scale: int = 2, clean_only: bool = True) -> QtGui.QImage:
-        """Render and save a PNG image of the 3D molecule with customizable background (dark, white, or transparent)."""
+    def export_image(self, path: str, transparent: bool = False, bg_mode: Optional[str] = None, scale: int = 2, clean_only: bool = True, dpi: int = 300) -> QtGui.QImage:
+        """Render and save a PNG image of the 3D molecule with customizable background (dark, white, or transparent) and embedded DPI metadata."""
         prev_trans = getattr(self.viewer, "transparent_bg", False)
         prev_clean = getattr(self.viewer, "export_clean_mode", False)
         prev_bg_mode = getattr(self.viewer, "bg_color_mode", "dark")
@@ -1647,6 +1647,11 @@ class FileIOMixin:
                 QtCore.Qt.AspectRatioMode.KeepAspectRatio,
                 QtCore.Qt.TransformationMode.SmoothTransformation,
             )
+        if not img.isNull() and dpi > 0:
+            dpm = int(dpi / 0.0254)
+            img.setDotsPerMeterX(dpm)
+            img.setDotsPerMeterY(dpm)
+
         if path:
             img.save(path, "PNG")
         return img
@@ -1675,11 +1680,22 @@ class FileIOMixin:
         """Export publication-quality image with custom resolution and background presets."""
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("Export Publication Image (High-DPI PNG)")
-        dlg.resize(420, 240)
+        dlg.resize(460, 310)
         layout = QtWidgets.QVBoxLayout(dlg)
 
         form = QtWidgets.QFormLayout()
         form.setSpacing(12)
+
+        # Journal Presets
+        combo_preset = QtWidgets.QComboBox()
+        combo_preset.addItem("Custom Scaling / Resolution", None)
+        combo_preset.addItem("ACS Single Column (3.25 in / 8.25 cm @ 300 DPI - JACS/JOC)", {"scale": 2, "dpi": 300, "bg": "transparent"})
+        combo_preset.addItem("ACS Double Column (7.0 in / 17.8 cm @ 300 DPI)", {"scale": 4, "dpi": 300, "bg": "transparent"})
+        combo_preset.addItem("RSC Single Column (8.3 cm @ 300 DPI - Chem. Sci./PCCP)", {"scale": 2, "dpi": 300, "bg": "transparent"})
+        combo_preset.addItem("Nature / Springer (89 mm @ 300 DPI)", {"scale": 2, "dpi": 300, "bg": "white"})
+        combo_preset.addItem("TOC / Graphical Abstract Square (300 DPI)", {"scale": 3, "dpi": 300, "bg": "transparent"})
+        combo_preset.addItem("Presentation Slide Widescreen (16:9 @ 300 DPI)", {"scale": 3, "dpi": 300, "bg": "transparent"})
+        form.addRow("<b>Journal Preset:</b>", combo_preset)
 
         # Resolution preset
         combo_res = QtWidgets.QComboBox()
@@ -1690,17 +1706,46 @@ class FileIOMixin:
         combo_res.setCurrentIndex(1)  # Default 2x
         form.addRow("<b>Resolution:</b>", combo_res)
 
+        # DPI metadata
+        combo_dpi = QtWidgets.QComboBox()
+        combo_dpi.addItem("300 DPI (Standard Journal Submission)", 300)
+        combo_dpi.addItem("600 DPI (High-Density Print / Line Art)", 600)
+        combo_dpi.addItem("150 DPI (Web & Screen)", 150)
+        combo_dpi.addItem("72 DPI (Standard Web)", 72)
+        form.addRow("<b>Physical DPI:</b>", combo_dpi)
+
         # Background mode
         combo_bg = QtWidgets.QComboBox()
         combo_bg.addItem("Transparent Background (Recommended for papers/slides)", "transparent")
-        combo_bg.addItem("Dark Background (Current Viewport Theme)", "dark")
         combo_bg.addItem("Pure White Background (Print)", "white")
+        combo_bg.addItem("Dark Background (Current Viewport Theme)", "dark")
         form.addRow("<b>Background:</b>", combo_bg)
 
         # Clean mode
-        chk_clean = QtWidgets.QCheckBox("Hide selection rings, labels, and axes")
+        chk_clean = QtWidgets.QCheckBox("Hide selection rings, labels, and coordinate axes")
         chk_clean.setChecked(True)
         form.addRow("Clean Graphics:", chk_clean)
+
+        def _on_preset_selected(idx):
+            data = combo_preset.itemData(idx)
+            if data:
+                scale_val = data.get("scale", 2)
+                dpi_val = data.get("dpi", 300)
+                bg_val = data.get("bg", "transparent")
+                for i in range(combo_res.count()):
+                    if combo_res.itemData(i) == scale_val:
+                        combo_res.setCurrentIndex(i)
+                        break
+                for i in range(combo_dpi.count()):
+                    if combo_dpi.itemData(i) == dpi_val:
+                        combo_dpi.setCurrentIndex(i)
+                        break
+                for i in range(combo_bg.count()):
+                    if combo_bg.itemData(i) == bg_val:
+                        combo_bg.setCurrentIndex(i)
+                        break
+
+        combo_preset.currentIndexChanged.connect(_on_preset_selected)
 
         layout.addLayout(form)
         layout.addSpacing(10)
@@ -1723,6 +1768,7 @@ class FileIOMixin:
             return
 
         scale_factor = int(combo_res.currentData())
+        dpi_val = int(combo_dpi.currentData())
         bg_choice = combo_bg.currentData()
         clean_only = chk_clean.isChecked()
 
@@ -1741,7 +1787,14 @@ class FileIOMixin:
         transparent = (bg_choice == "transparent")
         bg_mode = "white" if bg_choice == "white" else "dark"
         try:
-            img = self.export_image(path, transparent=transparent, bg_mode=bg_mode, scale=scale_factor, clean_only=clean_only)
+            img = self.export_image(
+                path,
+                transparent=transparent,
+                bg_mode=bg_mode,
+                scale=scale_factor,
+                clean_only=clean_only,
+                dpi=dpi_val,
+            )
 
             self._remember_file(path)
             self.statusBar().showMessage(

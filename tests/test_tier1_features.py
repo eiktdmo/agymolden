@@ -18,6 +18,7 @@ from agymolden.qm_input_generator import (
     OpenLOWDINGenerator,
     XTBGenerator,
     QChemGenerator,
+    Psi4Generator,
     register_qm_generator,
     BaseQMGenerator,
 )
@@ -154,3 +155,70 @@ def test_qm_log_parsing():
     assert result.vibrational_analysis.frequencies[0] == pytest.approx(1345.12, rel=1e-3)
     assert result.vibrational_analysis.ir_intensities is not None
     assert result.vibrational_analysis.ir_intensities[0] == pytest.approx(32.5, rel=1e-2)
+
+
+def test_psi4_generator_options():
+    symbols = ["H", "H"]
+    coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]])
+    params = QMCalculationParameters(
+        job_type="Opt",
+        method="wb97x-d",
+        basis="cc-pvdz",
+        charge=0,
+        multiplicity=1,
+        solvent="Water",
+        n_procs=8,
+        memory_gb=16,
+    )
+    gen = Psi4Generator()
+    out = gen.generate_input(symbols, coords, params)
+    assert "memory 16 GB" in out
+    assert "set_num_threads(8)" in out
+    assert "basis cc-pvdz" in out
+    assert "reference rhf" in out
+    assert "optimize('wb97x-d')" in out
+    assert "pcm true" in out
+
+    # Test open-shell ROHF reference and frequency job
+    params_rad = QMCalculationParameters(
+        job_type="Freq",
+        method="b3lyp",
+        basis="6-31g*",
+        charge=0,
+        multiplicity=2,
+    )
+    out_rad = gen.generate_input(symbols, coords, params_rad)
+    assert "reference rohf" in out_rad
+    assert "frequency('b3lyp')" in out_rad
+
+
+def test_generic_runner_psi4(tmp_path):
+    from agymolden.calc_runner.generic_runner import GenericQMRunner
+    in_file = tmp_path / "test.dat"
+    in_file.write_text("molecule { H 0 0 0 \n H 0 0 0.74 }", encoding="utf-8")
+    runner = GenericQMRunner(code_key="psi4")
+    runner.custom_route = "/usr/bin/psi4"
+    exe, args, log_file, use_stdin = runner._resolve_command(str(in_file))
+    assert "/usr/bin/psi4" in exe
+    assert str(in_file) in args
+    assert str(tmp_path / "test.out") in args
+    assert log_file == str(tmp_path / "test.out")
+
+
+def test_export_image_dpi_metadata(tmp_path):
+    from PyQt6 import QtGui
+    img = QtGui.QImage(200, 200, QtGui.QImage.Format.Format_ARGB32)
+    img.fill(QtGui.QColor("white"))
+    dpi = 300
+    dpm = int(dpi / 0.0254)
+    img.setDotsPerMeterX(dpm)
+    img.setDotsPerMeterY(dpm)
+    out_file = str(tmp_path / "test_dpi.png")
+    assert img.save(out_file, "PNG")
+
+    loaded = QtGui.QImage(out_file)
+    assert not loaded.isNull()
+    assert loaded.dotsPerMeterX() == dpm
+    assert loaded.dotsPerMeterY() == dpm
+    assert round(loaded.dotsPerMeterX() * 0.0254) == 300
+

@@ -132,6 +132,9 @@ class GenericQMRunner(BaseCalcRunner):
         elif key == "qchem":
             log_file = f"{stem}.out"
             args = extra_args + [input_file, log_file]
+        elif key == "psi4":
+            log_file = f"{stem}.out"
+            args = extra_args + [input_file, log_file]
         elif key == "openlowdin":
             log_file = f"{stem}.out"
             args = extra_args + ["-i", input_file]

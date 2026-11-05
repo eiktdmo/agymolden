@@ -762,14 +762,81 @@ class QChemGenerator(BaseQMGenerator):
         return "\n".join(lines) + "\n\n"
 
 
+class Psi4Generator(BaseQMGenerator):
+    code_name = "Psi4"
+    file_extension = ".dat"
+    supports_zmatrix = True
+
+    def generate_input(self, symbols, coords, params, zatoms=None, variables=None) -> str:
+        safe_title = re.sub(r'[^A-Za-z0-9_]', '_', params.title.strip()) or "molecule"
+        lines = [
+            f"# {params.title}",
+            f"memory {params.memory_gb} GB",
+            f"set_num_threads({params.n_procs})",
+            "",
+            f"molecule {safe_title} {{",
+            f"   {params.charge} {params.multiplicity}",
+        ]
+        if self.supports_zmatrix and zatoms and len(zatoms) == len(symbols):
+            zmat_text = format_zmatrix_text(zatoms, variables)
+            for zl in zmat_text.strip().splitlines():
+                if not zl.startswith("#") and zl.strip():
+                    lines.append(f"   {zl}")
+        else:
+            for s, (x, y, z) in zip(symbols, coords):
+                lines.append(f"   {s:<2}  {x:12.6f} {y:12.6f} {z:12.6f}")
+
+        lines.extend([
+            "   units angstrom",
+            "   no_reorient",
+            "   no_com",
+            "}",
+            "",
+            "set {",
+            f"   basis {params.basis}",
+            "   scf_type df",
+        ])
+
+        ref = "rhf" if params.multiplicity == 1 else "rohf"
+        lines.append(f"   reference {ref}")
+
+        if params.solvent != "None (Gas Phase)":
+            lines.extend([
+                "   pcm true",
+                "   pcm_scf_type total",
+            ])
+
+        if params.extra_keywords.strip():
+            for kw in params.extra_keywords.split():
+                lines.append(f"   {kw}")
+
+        lines.append("}")
+        lines.append("")
+
+        job = params.job_type.lower()
+        method_str = f"'{params.method.lower()}'"
+        if "opt" in job:
+            lines.append(f"optimize({method_str})")
+        elif "freq" in job:
+            lines.append(f"frequency({method_str})")
+        elif "td" in job:
+            lines.append(f"energy({method_str})")
+        else:
+            lines.append(f"energy({method_str})")
+
+        lines.append("")
+        return "\n".join(lines) + "\n"
+
+
 # Global registry of available QM generators (ordered by default presentation and usage)
 QM_GENERATORS: Dict[str, Type[BaseQMGenerator]] = {
     "ORCA (5.x/6.x)": OrcaGenerator,
     "PySCF (Python Script)": PySCFGenerator,
     "Gaussian (09/16)": GaussianGenerator,
-    "openLOWDIN (APMO)": OpenLOWDINGenerator,
-    "xTB (Tight-Binding)": XTBGenerator,
+    "Psi4": Psi4Generator,
     "Q-Chem": QChemGenerator,
+    "xTB (Tight-Binding)": XTBGenerator,
+    "openLOWDIN (APMO)": OpenLOWDINGenerator,
 }
 
 
