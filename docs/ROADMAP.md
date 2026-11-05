@@ -45,7 +45,7 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 
 ### Tier 4: Strategic & Ecosystem Growth (Effort: XL, 1–4 weeks each)
 - [ ] **Plugin Ecosystem**: Versioned plugin API allowing user-defined Python scripts to add analysis tabs, file importers, and custom calculators.
-- [ ] **Deep Wavefunction Analysis**: Broaden integration with Multiwfn and QTAIM topology, ELF/LOL real-space grids, and energy decomposition analysis.
+- [x] **Deep Wavefunction Analysis**: Broaden integration with Multiwfn and QTAIM topology, ELF/LOL real-space grids, and Non-Covalent Interaction (NCI / RDG) color-mapped surfaces.
 - [ ] **Macromolecular & Extended Solids Support**: Accelerated spatial partitioning for systems $>10,000$ atoms and space-group symmetry replication.
 - [ ] **Automated Multi-OS Packaging**: Reproducible GitHub Actions workflow publishing standalone AppImage, macOS `.dmg`, and Windows portable executables.
 - [ ] **Empirical Usability Benchmarking**: Real-world user-experience studies measuring time-to-first-calculation for chemistry students and researchers.
