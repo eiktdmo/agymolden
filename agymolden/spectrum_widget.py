@@ -51,6 +51,97 @@ def calculate_broadened_spectrum(
     return w, abs_curve
 
 
+def export_spectrum_figure_dialog(parent: QtWidgets.QWidget, fig: Figure, default_stem: str = "spectrum") -> Optional[str]:
+    """Export Matplotlib spectrum figure to publication-quality vector (PDF, SVG, EPS) or high-DPI raster (PNG)."""
+    filter_str = (
+        "Portable Document Format (*.pdf);;"
+        "Scalable Vector Graphics (*.svg);;"
+        "High-DPI Publication PNG (*.png);;"
+        "Encapsulated PostScript (*.eps);;"
+        "All Files (*)"
+    )
+    path, _ = QtWidgets.QFileDialog.getSaveFileName(
+        parent,
+        f"Export Publication Spectrum Plot ({default_stem.upper()})",
+        f"{default_stem}.pdf",
+        filter_str,
+    )
+    if not path:
+        return None
+
+    dlg = QtWidgets.QDialog(parent)
+    dlg.setWindowTitle("Publication Figure Options")
+    dlg.resize(360, 160)
+    layout = QtWidgets.QVBoxLayout(dlg)
+
+    form = QtWidgets.QFormLayout()
+    combo_bg = QtWidgets.QComboBox()
+    combo_bg.addItem("Pure White (Standard for Papers / Print)", "white")
+    combo_bg.addItem("Transparent Background", "transparent")
+    combo_bg.addItem("Dark Theme (Current Screen View)", "dark")
+    form.addRow("Background:", combo_bg)
+
+    spin_dpi = QtWidgets.QSpinBox()
+    spin_dpi.setRange(72, 1200)
+    spin_dpi.setValue(300)
+    spin_dpi.setSingleStep(50)
+    spin_dpi.setSuffix(" DPI")
+    form.addRow("Raster DPI (for PNG):", spin_dpi)
+    layout.addLayout(form)
+
+    btn_box = QtWidgets.QDialogButtonBox(
+        QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+    )
+    btn_box.accepted.connect(dlg.accept)
+    btn_box.rejected.connect(dlg.reject)
+    layout.addWidget(btn_box)
+
+    bg_choice = "white"
+    dpi_val = 300
+    if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+        bg_choice = combo_bg.currentData()
+        dpi_val = spin_dpi.value()
+    else:
+        return None
+
+    orig_fig_fc = fig.get_facecolor()
+    orig_ax_fc = [ax.get_facecolor() for ax in fig.axes]
+
+    is_trans = (bg_choice == "transparent")
+    save_fc = "white" if bg_choice == "white" else (orig_fig_fc if bg_choice == "dark" else "none")
+
+    if bg_choice == "white":
+        fig.set_facecolor("white")
+        for ax in fig.axes:
+            ax.set_facecolor("white")
+            ax.tick_params(colors="black")
+            ax.xaxis.label.set_color("black")
+            ax.yaxis.label.set_color("black")
+            ax.title.set_color("black")
+            for spine in ax.spines.values():
+                spine.set_color("#333333")
+
+    try:
+        fig.savefig(
+            path,
+            dpi=dpi_val,
+            bbox_inches="tight",
+            facecolor=save_fc,
+            transparent=is_trans,
+        )
+    finally:
+        fig.set_facecolor(orig_fig_fc)
+        for i, ax in enumerate(fig.axes):
+            if i < len(orig_ax_fc):
+                ax.set_facecolor(orig_ax_fc[i])
+        if hasattr(parent, "_style_axes"):
+            parent._style_axes()
+        if hasattr(parent, "canvas") and hasattr(parent.canvas, "draw_idle"):
+            parent.canvas.draw_idle()
+
+    return path
+
+
 class IRSpectrumWidget(QtWidgets.QWidget):
     """Interactive Matplotlib canvas widget for IR spectra."""
     mode_clicked = QtCore.pyqtSignal(int)  # mode index 0-based
@@ -127,6 +218,12 @@ class IRSpectrumWidget(QtWidgets.QWidget):
         self.btn_export_csv.setStyleSheet("background-color: #0d9488; color: white; padding: 2px 6px; font-weight: bold;")
         self.btn_export_csv.clicked.connect(self._on_export_csv_clicked)
         ctrl_layout.addWidget(self.btn_export_csv)
+
+        self.btn_export_plot = QtWidgets.QPushButton("📷 Plot...")
+        self.btn_export_plot.setToolTip("Export publication-quality vector (PDF, SVG, EPS) or raster (PNG) spectrum figure")
+        self.btn_export_plot.setStyleSheet("background-color: #4f46e5; color: white; padding: 2px 6px; font-weight: bold;")
+        self.btn_export_plot.clicked.connect(self._on_export_plot_clicked)
+        ctrl_layout.addWidget(self.btn_export_plot)
 
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
@@ -377,6 +474,9 @@ class IRSpectrumWidget(QtWidgets.QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.get_csv_string())
 
+    def _on_export_plot_clicked(self):
+        export_spectrum_figure_dialog(self, self.fig, f"{self.plot_mode.lower()}_spectrum")
+
 
 def calculate_uv_vis_spectrum(
     wavelengths_nm: List[float],
@@ -496,6 +596,12 @@ class UVVisSpectrumWidget(QtWidgets.QWidget):
         self.btn_export_csv.setStyleSheet("background-color: #0d9488; color: white; padding: 2px 6px; font-weight: bold;")
         self.btn_export_csv.clicked.connect(self._on_export_csv_clicked)
         ctrl_layout.addWidget(self.btn_export_csv)
+
+        self.btn_export_plot = QtWidgets.QPushButton("📷 Plot...")
+        self.btn_export_plot.setToolTip("Export publication-quality UV-Vis spectrum figure (PDF, SVG, PNG, EPS)")
+        self.btn_export_plot.setStyleSheet("background-color: #4f46e5; color: white; padding: 2px 6px; font-weight: bold;")
+        self.btn_export_plot.clicked.connect(self._on_export_plot_clicked)
+        ctrl_layout.addWidget(self.btn_export_plot)
 
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
@@ -707,6 +813,9 @@ class UVVisSpectrumWidget(QtWidgets.QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.get_csv_string())
 
+    def _on_export_plot_clicked(self):
+        export_spectrum_figure_dialog(self, self.fig, "uv_vis_spectrum")
+
 
 # Standard isotropic shielding references (ppm) for Tetramethylsilane (TMS) / common nuclei
 DEFAULT_NMR_TMS_REF: dict = {
@@ -772,6 +881,12 @@ class NMRSpectrumWidget(QtWidgets.QWidget):
         self.btn_export_csv.setStyleSheet("background-color: #0d9488; color: white; padding: 2px 6px; font-weight: bold;")
         self.btn_export_csv.clicked.connect(self._on_export_csv_clicked)
         ctrl_layout.addWidget(self.btn_export_csv)
+
+        self.btn_export_plot = QtWidgets.QPushButton("📷 Plot...")
+        self.btn_export_plot.setToolTip("Export publication-quality NMR spectrum figure (PDF, SVG, PNG, EPS)")
+        self.btn_export_plot.setStyleSheet("background-color: #4f46e5; color: white; padding: 2px 6px; font-weight: bold;")
+        self.btn_export_plot.clicked.connect(self._on_export_plot_clicked)
+        ctrl_layout.addWidget(self.btn_export_plot)
 
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
@@ -963,6 +1078,9 @@ class NMRSpectrumWidget(QtWidgets.QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.get_csv_string())
 
+    def _on_export_plot_clicked(self):
+        export_spectrum_figure_dialog(self, self.fig, f"nmr_{self._active_element()}_spectrum")
+
 
 class DOSSpectrumWidget(QtWidgets.QWidget):
     """
@@ -1008,6 +1126,12 @@ class DOSSpectrumWidget(QtWidgets.QWidget):
         self.btn_export_csv.setStyleSheet("background-color: #0d9488; color: white; padding: 2px 6px; font-weight: bold;")
         self.btn_export_csv.clicked.connect(self._on_export_csv_clicked)
         ctrl_layout.addWidget(self.btn_export_csv)
+
+        self.btn_export_plot = QtWidgets.QPushButton("📷 Plot...")
+        self.btn_export_plot.setToolTip("Export publication-quality DOS spectrum figure (PDF, SVG, PNG, EPS)")
+        self.btn_export_plot.setStyleSheet("background-color: #4f46e5; color: white; padding: 2px 6px; font-weight: bold;")
+        self.btn_export_plot.clicked.connect(self._on_export_plot_clicked)
+        ctrl_layout.addWidget(self.btn_export_plot)
 
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
@@ -1156,3 +1280,6 @@ class DOSSpectrumWidget(QtWidgets.QWidget):
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.get_csv_string())
+
+    def _on_export_plot_clicked(self):
+        export_spectrum_figure_dialog(self, self.fig, "dos_spectrum")

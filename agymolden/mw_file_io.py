@@ -19,6 +19,10 @@ from .zmatrix import (
     format_zmatrix_text,
     parse_xyz,
     write_xyz,
+    parse_pdb,
+    write_pdb,
+    parse_mol_sdf,
+    write_mol_sdf,
     calculate_bond_distance,
     calculate_angle,
     calculate_dihedral,
@@ -118,11 +122,11 @@ class FileIOMixin:
             self,
             "Open File (All Supported Molecular & QM Formats)",
             self._last_dir(),
-            "All Supported Files (*.out *.log *.xyz *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "All Supported Files (*.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
             "QM Output Logs & Checkpoints (*.out *.log *.output *.fchk *.fch);;"
             "Molden & ORCA Wavefunctions (*.molden.input *.molden *.molf *.gbw);;"
+            "Molecular Structures (*.xyz *.pdb *.sdf *.mol *.sd);;"
             "QM Input Decks (*.inp *.in *.gjf *.com *.lowdin *.py);;"
-            "XYZ Coordinates (*.xyz);;"
             "Gaussian Volumetric Grids (*.cube);;"
             "Z-Matrix & Input Files (*.zmat *.dat *.inp *.txt);;"
             "All Files (*)",
@@ -164,6 +168,10 @@ class FileIOMixin:
         low = path.lower()
         if low.endswith(".xyz"):
             self._load_xyz_path(path)
+        elif low.endswith(".pdb"):
+            self._load_pdb_path(path)
+        elif low.endswith((".sdf", ".mol", ".sd")):
+            self._load_sdf_path(path)
         elif low.endswith((".log", ".out", ".fchk", ".fch")):
             self._load_qm_log_path(path)
         elif low.endswith((".smi", ".smiles")):
@@ -1376,6 +1384,54 @@ class FileIOMixin:
             log.exception("Unhandled error in GUI action")
             QtWidgets.QMessageBox.critical(self, "Error Importing XYZ", str(e))
 
+    def _load_pdb_path(self, path: str):
+        try:
+            symbols, coords, bonds = parse_pdb(path)
+            if len(symbols) == 0:
+                QtWidgets.QMessageBox.warning(self, "Empty File", "No atoms found in PDB file.")
+                return
+            self._push_undo_state()
+            self.variables = {}
+            if not bonds:
+                bonds = detect_connectivity(symbols, coords, strict=False)
+            detected_bo = detect_bond_orders(symbols, coords, bonds)
+            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+            self.viewer.update()
+            self._remember_file(path)
+            self.statusBar().showMessage(f"Loaded PDB {os.path.basename(path)} ({len(symbols)} atoms).", 4000)
+        except Exception as e:
+            log.exception("Error loading PDB file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening PDB", str(e))
+
+    def _load_sdf_path(self, path: str):
+        try:
+            symbols, coords, bonds, bo_dict = parse_mol_sdf(path)
+            if len(symbols) == 0:
+                QtWidgets.QMessageBox.warning(self, "Empty File", "No atoms found in SDF / MOL file.")
+                return
+            self._push_undo_state()
+            self.variables = {}
+            if not bonds:
+                bonds = detect_connectivity(symbols, coords, strict=False)
+                bo_dict = detect_bond_orders(symbols, coords, bonds)
+            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in bo_dict.items() if o != 1}
+            self.viewer.update()
+            self._remember_file(path)
+            self.statusBar().showMessage(f"Loaded SDF/MOL {os.path.basename(path)} ({len(symbols)} atoms).", 4000)
+        except Exception as e:
+            log.exception("Error loading SDF/MOL file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening SDF/MOL", str(e))
+
     def _on_save_zmat(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save Z-Matrix File", "molecule.zmat", "Z-Matrix (*.zmat);;Gaussian Input (*.gjf *.inp);;All Files (*)"
@@ -1470,6 +1526,35 @@ class FileIOMixin:
             except Exception as e:
                 log.exception("Unhandled error in GUI action")
                 QtWidgets.QMessageBox.critical(self, "Error Exporting XYZ", str(e))
+
+    def _on_export_pdb(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export Protein Data Bank (PDB)", "molecule.pdb", "PDB Molecular Files (*.pdb);;All Files (*)"
+        )
+        if path:
+            try:
+                symbols = [a.symbol for a in self.zatoms]
+                bonds = list(self._current_explicit_bonds())
+                write_pdb(path, symbols, self.coords, bonds=bonds)
+                self.statusBar().showMessage(f"Exported PDB structure to {os.path.basename(path)}", 4000)
+            except Exception as e:
+                log.exception("Unhandled error in GUI action")
+                QtWidgets.QMessageBox.critical(self, "Error Exporting PDB", str(e))
+
+    def _on_export_sdf(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export Structure-Data File (SDF/MOL)", "molecule.sdf", "SDF Files (*.sdf);;MOL Files (*.mol);;All Files (*)"
+        )
+        if path:
+            try:
+                symbols = [a.symbol for a in self.zatoms]
+                bonds = list(self._current_explicit_bonds())
+                bo = getattr(self.viewer, "bond_orders", {})
+                write_mol_sdf(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
+                self.statusBar().showMessage(f"Exported SDF/MOL structure to {os.path.basename(path)}", 4000)
+            except Exception as e:
+                log.exception("Unhandled error in GUI action")
+                QtWidgets.QMessageBox.critical(self, "Error Exporting SDF/MOL", str(e))
 
     def _on_export_html(self):
         """Export current molecule and calculation results to standalone interactive 3D WebGL HTML."""

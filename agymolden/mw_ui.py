@@ -1160,6 +1160,14 @@ class UIMixin(UIInspectorTabsMixin):
         act_save_xyz.triggered.connect(self._on_export_xyz)
         menu_file.addAction(act_save_xyz)
 
+        act_save_pdb = QtGui.QAction("Export Protein Data Bank (&PDB)...", self)
+        act_save_pdb.triggered.connect(self._on_export_pdb)
+        menu_file.addAction(act_save_pdb)
+
+        act_save_sdf = QtGui.QAction("Export Structure-Data File (&SDF / MOL)...", self)
+        act_save_sdf.triggered.connect(self._on_export_sdf)
+        menu_file.addAction(act_save_sdf)
+
         menu_file.addSeparator()
 
         act_export_png = QtGui.QAction("Export &Image (PNG)...", self)
