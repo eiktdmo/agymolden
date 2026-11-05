@@ -1229,6 +1229,42 @@ class CalculationsMixin:
         monitor.raise_()
         monitor.activateWindow()
 
+    def _on_open_workflow_dag(self):
+        """Open the Visual Workflow DAG Pipeline Editor (Multi-Stage QM)."""
+        from .dialog_workflow_dag import VisualWorkflowDAGDialog
+        from .forcefield import detect_connectivity, detect_bond_orders
+        from .zmatrix import cartesian_to_zmatrix, norm_bond
+
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.array(self.coords, dtype=np.float64, copy=True)
+        work_dir = os.path.join(os.getcwd(), "workflow_dag_run")
+
+        dlg = VisualWorkflowDAGDialog(
+            parent=self,
+            code_key="orca",
+            symbols=symbols,
+            coords=coords,
+            work_dir=work_dir,
+        )
+
+        def _on_adopt_geom(new_symbols, new_coords, label):
+            self._push_undo_state()
+            detected_bonds = detect_connectivity(new_symbols, new_coords, strict=False)
+            detected_bo = detect_bond_orders(new_symbols, new_coords, detected_bonds)
+            zatoms = cartesian_to_zmatrix(new_symbols, new_coords, user_bonds=detected_bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+            self.set_molecule_from_zatoms(zatoms, exact_coords=new_coords)
+            if self.viewer:
+                self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+                self.viewer.auto_center()
+                self.viewer.update()
+            self.statusBar().showMessage(f"Adopted geometry from {label} ({len(new_symbols)} atoms).", 5000)
+
+        dlg.pipelineAdoptRequested.connect(_on_adopt_geom)
+        dlg.exec()
+
     def _on_configure_qm_engines(self):
         """Open the QM Engines Detection & Route Configuration Dialog."""
         from .qm_detect import QMEnginesStatusDialog

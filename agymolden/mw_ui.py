@@ -1486,6 +1486,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_job_monitor.triggered.connect(self._on_open_job_monitor)
         menu_tools.addAction(act_job_monitor)
 
+        act_workflow_dag = QtGui.QAction("🔀 Visual &Workflow DAG Pipeline Editor (Multi-Stage QM)...", self)
+        act_workflow_dag.setShortcut("Ctrl+Shift+D")
+        act_workflow_dag.setToolTip("Design and execute chained multi-stage QM workflows (Opt → Freq → TD-DFT / TS → IRC / SP) on an interactive visual DAG canvas (Ctrl+Shift+D)")
+        act_workflow_dag.triggered.connect(self._on_open_workflow_dag)
+        menu_tools.addAction(act_workflow_dag)
+
         act_remote_transfer = QtGui.QAction("📁 Remote &File Transfer (SSH / Cluster)...", self)
         act_remote_transfer.setToolTip("Browse and transfer input and output files between local machine and remote cluster")
         act_remote_transfer.triggered.connect(self._on_open_remote_file_manager)
