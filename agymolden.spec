@@ -36,6 +36,8 @@ if os.path.isdir('agymolden/resources'):
     datas.append(('agymolden/resources', 'agymolden/resources'))
 if os.path.isdir('agymolden/data'):
     datas.append(('agymolden/data', 'agymolden/data'))
+if os.path.isdir('agymolden/builtin_plugins'):
+    datas.append(('agymolden/builtin_plugins', 'agymolden/builtin_plugins'))
 if os.path.isdir('examples'):
     datas.append(('examples', 'examples'))
 

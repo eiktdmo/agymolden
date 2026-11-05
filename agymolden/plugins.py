@@ -15,6 +15,7 @@ import numpy as np
 
 from PyQt6 import QtWidgets, QtGui, QtCore
 from .dialog_service import dialog_service
+from .plugin_api import PluginBase, PluginMetadata, PluginContext, PluginManager
 
 log = logging.getLogger(__name__)
 
@@ -106,8 +107,10 @@ class PythonScriptRunnerDialog(QtWidgets.QDialog):
         qparent = parent if parent is not None else (window if isinstance(window, QtWidgets.QWidget) else None)
         super().__init__(qparent)
         self.window = window
+        self.plugin_manager = PluginManager(window or qparent)
+        self.plugin_manager.discover_and_load_all()
         self.setWindowTitle("🐍 Python Script & Plugin Runner")
-        self.resize(650, 480)
+        self.resize(680, 520)
         self._init_ui()
 
     def _init_ui(self):
@@ -117,8 +120,8 @@ class PythonScriptRunnerDialog(QtWidgets.QDialog):
 
         # Header info
         lbl_info = QtWidgets.QLabel(
-            "Execute custom Python scripts to manipulate geometries, inspect properties, or automate workflows.<br>"
-            "Available variables: <code>window</code>, <code>symbols</code>, <code>coords</code>, <code>set_coords(new_coords)</code>, <code>set_molecule(syms, coords)</code>, <code>np</code>."
+            "Execute custom Python scripts and formal plugins to manipulate geometries, inspect properties, or automate workflows.<br>"
+            "Available variables: <code>window</code>, <code>symbols</code>, <code>coords</code>, <code>set_coords(new_coords)</code>, <code>set_molecule(syms, coords)</code>, <code>np</code>, <code>dialogs</code>."
         )
         lbl_info.setWordWrap(True)
         lbl_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
@@ -126,12 +129,25 @@ class PythonScriptRunnerDialog(QtWidgets.QDialog):
 
         # Plugin preset selector
         top_bar = QtWidgets.QHBoxLayout()
-        top_bar.addWidget(QtWidgets.QLabel("Plugins (~/.agymolden/plugins/):"))
+        top_bar.addWidget(QtWidgets.QLabel("Plugins:"))
         self.combo_plugins = QtWidgets.QComboBox()
-        self.combo_plugins.addItem("(Select a discovered plugin...)")
-        plugins = discover_user_plugins()
-        for p in plugins:
-            self.combo_plugins.addItem(os.path.basename(p), p)
+        self.combo_plugins.addItem("(Select a discovered or built-in plugin...)")
+
+        # Add registered PluginBase plugins first
+        for name, p_obj in self.plugin_manager.plugins.items():
+            meta = getattr(p_obj, "metadata", None)
+            desc = meta.description if meta else ""
+            label = f"✨ {name}"
+            mod_file = getattr(sys.modules.get(p_obj.__class__.__module__), "__file__", "")
+            self.combo_plugins.addItem(label, mod_file or name)
+
+        # Add any raw user script files
+        user_plugins = discover_user_plugins()
+        for p in user_plugins:
+            base = os.path.basename(p)
+            if not any(self.combo_plugins.itemText(i).endswith(base) for i in range(self.combo_plugins.count())):
+                self.combo_plugins.addItem(f"📄 {base}", p)
+
         self.combo_plugins.currentIndexChanged.connect(self._on_plugin_selected)
         top_bar.addWidget(self.combo_plugins, 1)
 
