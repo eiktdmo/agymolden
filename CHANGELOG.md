@@ -4,6 +4,44 @@ All notable changes to **AgyMolden** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-05
+
+### Added
+- **Native Analytical PySCF QTAIM (Quantum Theory of Atoms in Molecules) Bader Topology Engine (`agymolden/multiwfn_analysis.py`, `dialog_multiwfn.py`, `viewer.py`)**:
+  - Exact analytical GTO evaluation of electron density $\rho(\mathbf{r})$, gradient $\nabla\rho(\mathbf{r})$, and Hessian matrix $\mathcal{H}(\mathbf{r})$ via PySCF without finite-difference grid noise.
+  - Newton-Raphson critical point search with trust-region damping for $(3,-3)$ Nuclear Attractors, $(3,-1)$ Bond Critical Points (BCP), and $(3,+1)$ Ring Critical Points (RCP).
+  - Analytical computation of Laplacian $\nabla^2\rho$, Hessian eigenvalues $(\lambda_1 \le \lambda_2 \le \lambda_3)$, bond ellipticity $\epsilon = (\lambda_1 / \lambda_2) - 1$, Lagrangian kinetic energy density $G(\mathbf{r})$, potential energy density $V(\mathbf{r})$, total energy density $H(\mathbf{r}) = G(\mathbf{r}) + V(\mathbf{r})$, and bond character classification (Shared/Covalent, Polar Covalent, Closed-Shell).
+  - Bader steepest-ascent gradient bond path trajectory tracing from BCPs to nuclei.
+  - 3D Viewport rendering of $(3,-1)$ BCP spheres (vibrant cyan) and continuous gradient bond path cylinders (vibrant emerald).
+  - Seamless auto-fallback: Multiwfn is utilized if installed, otherwise high-precision native PySCF analytical solver executes automatically with zero external dependencies.
+- **Periodic Boundary Conditions (PBC) & Supercell Engine (`agymolden/pbc.py`, `dialog_pbc.py`, `mw_file_io.py`, `viewer.py`)**:
+  - `UnitCell` representation supporting triclinic, monoclinic, orthorhombic, tetragonal, trigonal, hexagonal, and cubic lattices with lengths $(a, b, c)$ and angles $(\alpha, \beta, \gamma)$.
+  - Analytical computation of Cartesian lattice vectors $\mathbf{a}, \mathbf{b}, \mathbf{c}$, reciprocal lattice vectors $\mathbf{a}^*, \mathbf{b}^*, \mathbf{c}^*$, crystallographic metric tensor $G$, and cell volume $V$.
+  - Fractional $\leftrightarrow$ Cartesian coordinate conversion and boundary wrapping.
+  - Interactive 3D wireframe bounding box rendering in the viewport with high-contrast color-coded axes ($\mathbf{a}$ red, $\mathbf{b}$ green, $\mathbf{c}$ blue) and dashed perimeter edges.
+  - $N_a \times N_b \times N_c$ supercell replication generator with KDTree boundary duplicate detection and elimination.
+  - Direct integration into CIF crystal structure loading and dedicated dialog (`dialog_pbc.py`).
+- **Visual Workflow Directed Acyclic Graph (DAG) Pipeline Editor (`agymolden/dialog_workflow_dag.py`, `mw_calculations.py`, `mw_ui.py`, `Ctrl+Shift+D`)**:
+  - Interactive visual DAG flowchart canvas rendering stage nodes with status badges (Pending, Running, Succeeded, Failed), connection arrows, and inspector selection.
+  - Built-in multi-stage recipe templates:
+    - *Opt → Freq (Minimum Guarantee)*
+    - *Opt → Freq → TD-DFT (UV-Vis Spectrum)*
+    - *TS Opt → Freq (1 Imaginary Mode) → IRC (Reaction Path)*
+    - *DFT Opt → Freq → DLPNO-CCSD(T) Benchmark Single Point*
+  - Add, delete, and reorder stages (`Move Up` / `Move Down`) with per-stage parameter overrides (Method, Basis, Solvent, Extra Keywords).
+  - Recipe persistence: Save and load workflow recipes as structured JSON files.
+  - Live execution bridge to `ChainedWorkflowPipeline` with real-time card status updates, live log stream, and 1-click adoption of final optimized geometry into the 3D editor.
+- **Interactive Onboarding Tour & First-Launch Wizard (`agymolden/dialog_onboarding.py`, `mw_ui.py`)**:
+  - 4-step guided walkthrough of core AgyMolden features with 1-click sample loaders ($H_2O$ and Benzene).
+- **Extensible Plugin API v1 (`agymolden/plugin_api.py`, `tests/test_plugins.py`)**:
+  - Lifecycle hooks (`on_load`, `run`, `on_unload`), `PluginContext`, and bundled plugins (Radius of Gyration, Principal Axes Alignment).
+- **128× Connectivity Detection Acceleration (`agymolden/forcefield.py`)**:
+  - Upgraded pairwise distance detection to $O(N \log N)$ `scipy.spatial.cKDTree` spatial indexing, accelerating 5,000-atom connectivity detection from 10.9s to 84.9ms.
+- **Modularized UI Dialog Architecture (`agymolden/dialog_steric_descriptors.py`, `dialog_ring_aromaticity.py`, `dialog_isotopologue.py`, `dialog_symmetry_matrices.py`)**:
+  - Decoupled major analysis dialogs from large mixin files into dedicated modules.
+- **Standalone PyInstaller Build Bundle (`agymolden.spec`)**:
+  - Verified standalone executable generation with headless offscreen 3D rendering verification.
+
 ## [0.6.0] - 2026-11-05
 
 ### Added
