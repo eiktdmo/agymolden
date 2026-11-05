@@ -32,6 +32,18 @@ def test_diagnose_orca_memory_error():
     assert "Insufficient Memory" in diag.title
 
 
+def test_diagnose_orca_stale_guess_geometry_mismatch():
+    log = (
+        "Guess MOs are being read from file: orca_calc.ges\n"
+        "[file orca_scf/scfguess.cpp, line 2011]: Error: Input geometry does not match current geometry\n"
+        "ORCA finished by error termination in SCF"
+    )
+    diag = diagnose_orca_error(log)
+    assert diag is not None
+    assert "Geometry Mismatch" in diag.title
+    assert ".ges" in diag.remedy
+
+
 def test_diagnose_gaussian_scf_and_opt_errors():
     from agymolden.calc_runner.diagnostics import diagnose_qm_error
 

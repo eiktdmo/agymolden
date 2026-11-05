@@ -61,6 +61,29 @@ class OrcaRunner(BaseCalcRunner):
         self._parsing_geom = False
         self._geom_buffer.clear()
 
+        # Remove stale guess (.ges, .gbw) or temp files from previous runs with different geometry
+        # unless the input explicitly requested MORead or %moinp
+        try:
+            with open(self.input_file, "r", encoding="utf-8", errors="replace") as f_in:
+                inp_text = f_in.read().lower()
+            if "moread" not in inp_text and "moinp" not in inp_text:
+                for stale_ext in (".ges", ".gbw", ".prop"):
+                    stale = f"{stem}{stale_ext}"
+                    if os.path.isfile(stale):
+                        try:
+                            os.remove(stale)
+                        except OSError:
+                            pass
+                stem_base = os.path.basename(stem)
+                for f_name in os.listdir(self.work_dir):
+                    if f_name.startswith(stem_base) and f_name.endswith(".tmp"):
+                        try:
+                            os.remove(os.path.join(self.work_dir, f_name))
+                        except OSError:
+                            pass
+        except Exception:
+            pass
+
         try:
             self._out_fh = open(self.log_file, "w", encoding="utf-8")
         except OSError as e:

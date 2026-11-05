@@ -289,7 +289,19 @@ def diagnose_orca_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnost
             )
         )
 
-    # 6. Syntax error in input file
+    # 6. MORead / Stale Guess Geometry Mismatch
+    if re.search(r"(Input geometry does not match current geometry|Error: Input geometry does not match)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Stale Molecular Orbitals Guess Geometry Mismatch",
+            summary="ORCA automatically attempted to read an initial guess from an existing .ges or .gbw file in the working directory, but the current molecule's geometry or atom count does not match that previous file.",
+            remedy=(
+                "• Delete leftover temporary files (.ges, .gbw, .tmp) with the same job name.\n"
+                "• Alternatively, save your input under a fresh job name (e.g. benzene_opt.inp instead of orca_calc.inp).\n"
+                "• If running fresh, ensure '! MORead' is not present so ORCA starts from a fresh atom-density guess."
+            )
+        )
+
+    # 7. Syntax error in input file
     if re.search(r"(INPUT ERROR|Error in input|Unknown keyword|PARSER ERROR)", raw_log, re.IGNORECASE):
         return QMDiagnosticResult(
             title="Input Syntax Error",
