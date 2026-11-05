@@ -1875,14 +1875,39 @@ class FileIOMixin:
         clean_only = chk_clean.isChecked()
 
         default_path = os.path.join(self._last_dir(), "molecule.png") if self._last_dir() else "molecule.png"
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+        path, sel_filter = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Save Image File",
             default_path,
-            "PNG Image (*.png);;All Files (*)",
+            "PNG Image (*.png);;Scalable Vector Graphics (*.svg);;All Files (*)",
         )
         if not path:
             return
+
+        if path.lower().endswith(".svg") or "svg" in sel_filter.lower():
+            if not path.lower().endswith(".svg"):
+                path += ".svg"
+            try:
+                from .svg_exporter import export_molecule_svg
+                symbols = [a.symbol for a in self.zatoms]
+                coords = np.array(self.coords, copy=True)
+                bonds = self._current_explicit_bonds() if hasattr(self, "_current_explicit_bonds") else getattr(self, "bonds", [])
+                bg = "transparent" if bg_choice == "transparent" else ("#ffffff" if bg_choice == "white" else "#111827")
+                svg_data = export_molecule_svg(
+                    symbols,
+                    coords,
+                    bonds=bonds,
+                    background=bg,
+                    dark_mode=(bg_choice == "dark"),
+                )
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(svg_data)
+                self.statusBar().showMessage(f"Exported publication vector SVG to {os.path.basename(path)}", 4000)
+                return
+            except Exception as e:
+                dialog_service.error(self, "Export SVG Error", f"Failed to export SVG vector file:\n{e}", exc=e)
+                return
+
         if not path.lower().endswith(".png"):
             path += ".png"
 
