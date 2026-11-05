@@ -33,11 +33,70 @@ def diagnose_qm_error(raw_log: str, engine: str = "orca", exit_code: int = 1) ->
         return None
 
     eng = (engine or "orca").lower()
-    if eng == "gaussian" or ("gaussian" in raw_log.lower() and "orca" not in raw_log.lower()):
+    if eng == "psi4" or ("psi4" in raw_log.lower() and "orca" not in raw_log.lower()):
+        return diagnose_psi4_error(raw_log, exit_code=exit_code)
+    elif eng == "gaussian" or ("gaussian" in raw_log.lower() and "orca" not in raw_log.lower()):
         return diagnose_gaussian_error(raw_log, exit_code=exit_code)
     elif eng == "pyscf" or ("pyscf" in raw_log.lower() and "orca" not in raw_log.lower()):
         return diagnose_pyscf_error(raw_log, exit_code=exit_code)
     return diagnose_orca_error(raw_log, exit_code=exit_code)
+
+
+def diagnose_psi4_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnosticResult]:
+    """Diagnose Psi4 calculation failures (SCF convergence, memory limits, optimizer errors)."""
+    if not raw_log:
+        return None
+
+    # 1. SCF Convergence failure
+    if re.search(r"(Could not converge SCF|SCF iterations did not converge|Convergence error)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Psi4 SCF Convergence Failure",
+            summary="The self-consistent field iterations in Psi4 failed to reach the energy and density convergence criteria.",
+            remedy=(
+                "• In the set { ... } block, increase maxiter: 'set maxiter 150'\n"
+                "• Enable second-order SCF convergence acceleration: 'set soscf true'\n"
+                "• Apply orbital damping: 'set damping_percentage 20.0'\n"
+                "• Try a more robust density fitting reference: 'set scf_type df'"
+            ),
+            suggested_keywords={"scf": "set maxiter 150\n   set soscf true"},
+        )
+
+    # 2. Geometry Optimization failure
+    if re.search(r"(Optimization failed to converge|Maxiter exceeded in optking|optking.*error)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Psi4 Optimization Did Not Converge (Optking)",
+            summary="The geometry optimization reached maximum iterations without satisfying force/gradient convergence thresholds.",
+            remedy=(
+                "• Increase geometric iterations: 'set geom_maxiter 100'\n"
+                "• Ensure initial bond lengths and angles are physical.\n"
+                "• If near a flat potential energy surface, reduce step limit: 'set intrafrag_step_limit 0.2'"
+            ),
+            suggested_keywords={"opt": "set geom_maxiter 100"},
+        )
+
+    # 3. Memory limit
+    if re.search(r"(Out of memory|memory allocation failed|bad_alloc|insufficient memory)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Psi4 Memory Limit Exceeded",
+            summary="Psi4 ran out of system memory during tensor operations or integral evaluation.",
+            remedy=(
+                "• Increase memory line at top of input file: 'memory 8 GB' or 'memory 16 GB'.\n"
+                "• Use density fitting ('set scf_type df') to avoid 4-center integral storage in memory."
+            ),
+        )
+
+    # 4. Basis set missing
+    if re.search(r"(BasisSetNotFound|Could not find basis|Basis set .* not available)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Psi4 Basis Set Not Found",
+            summary="Psi4 could not find the requested basis set for one or more elements in the molecule.",
+            remedy=(
+                "• Verify standard basis name spelling (e.g. def2-SVP, cc-pVDZ, 6-31G*, aug-cc-pVTZ).\n"
+                "• For heavy atoms, verify an ECP or relativistic basis set is available in Psi4's library."
+            ),
+        )
+
+    return None
 
 
 def diagnose_gaussian_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnosticResult]:
