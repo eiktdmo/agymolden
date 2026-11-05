@@ -399,9 +399,7 @@ class CalculationsMixin:
         )
 
     def _on_open_isotopologue_dialog(self):
-        """
-        Open the GaussView / Chemcraft-style Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Dialog.
-        """
+        """Open the Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Dialog."""
         if not getattr(self, "vibrational_analysis", None) or not self.vibrational_analysis.frequencies:
             QtWidgets.QMessageBox.information(
                 self,
@@ -410,147 +408,8 @@ class CalculationsMixin:
             )
             return
 
-        from .vibrations import COMMON_ISOTOPE_MASSES, compute_isotopologue_vibrational_shifts
-        from .elements import ELEMENT_DATA
-
-        analysis = self.vibrational_analysis
-        symbols = analysis.symbols
-        n_atoms = len(symbols)
-
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("⚗️ Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Calculator")
-        dlg.resize(680, 520)
-        layout = QtWidgets.QVBoxLayout(dlg)
-        layout.setSpacing(8)
-
-        top_bar = QtWidgets.QHBoxLayout()
-        btn_deuterate_all = QtWidgets.QPushButton("💧 Deuterate All H → ²D")
-        btn_deuterate_all.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 4px 10px;")
-        top_bar.addWidget(btn_deuterate_all)
-
-        btn_c13_all = QtWidgets.QPushButton("⚛️ Label All ¹²C → ¹³C")
-        btn_c13_all.setStyleSheet("background-color: #7c3aed; color: white; font-weight: bold; padding: 4px 10px;")
-        top_bar.addWidget(btn_c13_all)
-
-        btn_reset_iso = QtWidgets.QPushButton("↩️ Reset Standard Masses")
-        top_bar.addWidget(btn_reset_iso)
-
-        top_bar.addWidget(QtWidgets.QLabel("Temp (K):"))
-        spin_temp = QtWidgets.QDoubleSpinBox()
-        spin_temp.setRange(50.0, 1500.0)
-        spin_temp.setValue(298.15)
-        spin_temp.setDecimals(2)
-        top_bar.addWidget(spin_temp)
-        top_bar.addStretch()
-        layout.addLayout(top_bar)
-
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-
-        # Left: Atom mass table
-        tbl_atoms = QtWidgets.QTableWidget(n_atoms, 3)
-        tbl_atoms.setHorizontalHeaderLabels(["Atom", "Isotope Preset", "Mass (amu)"])
-        tbl_atoms.horizontalHeader().setStretchLastSection(True)
-        tbl_atoms.verticalHeader().setVisible(False)
-        mass_spins: List[QtWidgets.QDoubleSpinBox] = []
-
-        for i, sym in enumerate(symbols):
-            std_m = float(ELEMENT_DATA.get(sym, {}).get("mass", 12.0))
-            it_a = QtWidgets.QTableWidgetItem(f"{sym}{i + 1}")
-            it_a.setFlags(it_a.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
-            tbl_atoms.setItem(i, 0, it_a)
-
-            combo_iso = QtWidgets.QComboBox()
-            presets = COMMON_ISOTOPE_MASSES.get(sym, [(f"Standard {sym} ({std_m:.3f})", std_m)])
-            for lbl, m_val in presets:
-                combo_iso.addItem(lbl, m_val)
-            tbl_atoms.setCellWidget(i, 1, combo_iso)
-
-            sp_m = QtWidgets.QDoubleSpinBox()
-            sp_m.setRange(0.5, 300.0)
-            sp_m.setDecimals(5)
-            sp_m.setValue(std_m)
-            mass_spins.append(sp_m)
-            tbl_atoms.setCellWidget(i, 2, sp_m)
-
-            def _make_combo_cb(spin_widget, combo_widget):
-                def _cb(_idx):
-                    val = combo_widget.currentData()
-                    if val is not None:
-                        spin_widget.setValue(float(val))
-                return _cb
-
-            combo_iso.currentIndexChanged.connect(_make_combo_cb(sp_m, combo_iso))
-
-        splitter.addWidget(tbl_atoms)
-
-        # Right: Frequency Shift & KIE Summary
-        right_w = QtWidgets.QWidget()
-        r_lay = QtWidgets.QVBoxLayout(right_w)
-        r_lay.setContentsMargins(0, 0, 0, 0)
-        lbl_summary = QtWidgets.QLabel("")
-        lbl_summary.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold; padding: 8px; border-radius: 4px;")
-        lbl_summary.setWordWrap(True)
-        r_lay.addWidget(lbl_summary)
-
-        tbl_shifts = QtWidgets.QTableWidget(len(analysis.frequencies), 4)
-        tbl_shifts.setHorizontalHeaderLabels(["Mode #", "Standard (cm⁻¹)", "Isotopologue (cm⁻¹)", "Shift Δν (cm⁻¹)"])
-        tbl_shifts.horizontalHeader().setStretchLastSection(True)
-        tbl_shifts.verticalHeader().setVisible(False)
-        tbl_shifts.setAlternatingRowColors(True)
-        r_lay.addWidget(tbl_shifts, stretch=1)
-        splitter.addWidget(right_w)
-        splitter.setSizes([290, 380])
-        layout.addWidget(splitter, stretch=1)
-
-        def _recalc():
-            custom = {i: sp.value() for i, sp in enumerate(mass_spins)}
-            res = compute_isotopologue_vibrational_shifts(analysis, custom, temperature_k=spin_temp.value())
-            lbl_summary.setText(
-                f"ZPE (Standard): {res['zpe_std_kcal']:.3f} kcal/mol  |  "
-                f"ZPE (Isotopologue): {res['zpe_iso_kcal']:.3f} kcal/mol<br>"
-                f"<b>ΔZPE = {res['delta_zpe_kcal']:+.4f} kcal/mol</b>  |  "
-                f"<b>Estimated KIE (k_std / k_iso) at {spin_temp.value():.1f} K = {res['kie_estimate']:.3f}</b>"
-            )
-            for r_i, (f_std, f_iso, df) in enumerate(zip(res["std_frequencies"], res["iso_frequencies"], res["shifts_cm1"])):
-                tbl_shifts.setItem(r_i, 0, QtWidgets.QTableWidgetItem(str(r_i + 1)))
-                tbl_shifts.setItem(r_i, 1, QtWidgets.QTableWidgetItem(f"{f_std:.2f}"))
-                tbl_shifts.setItem(r_i, 2, QtWidgets.QTableWidgetItem(f"{f_iso:.2f}"))
-                it_df = QtWidgets.QTableWidgetItem(f"{df:+.2f}")
-                if abs(df) >= 1.0:
-                    it_df.setForeground(QtGui.QBrush(QtGui.QColor("#f59e0b")))
-                tbl_shifts.setItem(r_i, 3, it_df)
-
-        for sp in mass_spins:
-            sp.valueChanged.connect(lambda _v: _recalc())
-        spin_temp.valueChanged.connect(lambda _v: _recalc())
-
-        def _set_element_mass(elem: str, target_mass: float):
-            for i, sym in enumerate(symbols):
-                if sym == elem:
-                    mass_spins[i].blockSignals(True)
-                    mass_spins[i].setValue(target_mass)
-                    mass_spins[i].blockSignals(False)
-            _recalc()
-
-        btn_deuterate_all.clicked.connect(lambda: _set_element_mass("H", 2.014102))
-        btn_c13_all.clicked.connect(lambda: _set_element_mass("C", 13.003355))
-        def _reset_all():
-            for i, sym in enumerate(symbols):
-                std_m = float(ELEMENT_DATA.get(sym, {}).get("mass", 12.0))
-                mass_spins[i].blockSignals(True)
-                mass_spins[i].setValue(std_m)
-                mass_spins[i].blockSignals(False)
-            _recalc()
-        btn_reset_iso.clicked.connect(_reset_all)
-
-        _recalc()
-
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(dlg.accept)
-        b_row = QtWidgets.QHBoxLayout()
-        b_row.addStretch()
-        b_row.addWidget(btn_close)
-        layout.addLayout(b_row)
+        from .dialog_isotopologues import IsotopologueDialog
+        dlg = IsotopologueDialog(self, vibrational_analysis=self.vibrational_analysis)
         dlg.exec()
 
     def _on_spectrum_scale_changed(self, scale_fac: float):

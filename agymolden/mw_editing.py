@@ -2275,203 +2275,52 @@ class EditingMixin:
         )
 
     def _on_open_steric_descriptors_dialog(self):
-        """
-        Open the Catalysis & Organometallic Steric Descriptors Inspector (SEQCROW / SambVca style):
-        Computes Percent Buried Volume (%V_bur) + 4-quadrant breakdown around the selected atom,
-        and Verloop Sterimol (L, B1, B5) + Tolman Cone Angle along a selected 2-atom bond vector.
-        """
+        """Open the Catalysis & Organometallic Steric Descriptors Inspector (%V_bur, Sterimol, Tolman Cone Angle)."""
         if len(self.zatoms) == 0:
-            QtWidgets.QMessageBox.information(
-                self, "Steric Descriptors", "Please load or build a molecule first."
-            )
+            QtWidgets.QMessageBox.information(self, "Steric Descriptors", "Please load or build a molecule first.")
             return
 
-        from .coordination import (
-            compute_buried_volume,
-            compute_sterimol_and_cone_angle,
-            compute_coordination_geometry_indices,
-        )
+        from .dialog_steric_descriptors import StericDescriptorsDialog
         symbols = [a.symbol for a in self.zatoms]
         coords = np.array(self.coords, dtype=np.float64, copy=True)
         sel = self._get_ordered_selection()
         center_idx = sel[0] if len(sel) >= 1 else 0
         attached_idx = sel[1] if len(sel) >= 2 else (1 if len(symbols) > 1 and center_idx == 0 else 0)
 
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("🛡️ Catalysis Steric & Coordination Descriptors (%V_bur, Sterimol, τ₄/τ₅)")
-        dlg.resize(620, 480)
-        layout = QtWidgets.QVBoxLayout(dlg)
-        layout.setSpacing(8)
-
-        ctrl = QtWidgets.QGridLayout()
-        ctrl.addWidget(QtWidgets.QLabel("Central / Metal Atom:"), 0, 0)
-        combo_center = QtWidgets.QComboBox()
-        for i, s in enumerate(symbols):
-            combo_center.addItem(f"#{i + 1}: {s}", i)
-        combo_center.setCurrentIndex(center_idx)
-        ctrl.addWidget(combo_center, 0, 1)
-
-        ctrl.addWidget(QtWidgets.QLabel("Attached / Donor Atom (for Sterimol):"), 0, 2)
-        combo_att = QtWidgets.QComboBox()
-        for i, s in enumerate(symbols):
-            combo_att.addItem(f"#{i + 1}: {s}", i)
-        if 0 <= attached_idx < len(symbols):
-            combo_att.setCurrentIndex(attached_idx)
-        ctrl.addWidget(combo_att, 0, 3)
-
-        ctrl.addWidget(QtWidgets.QLabel("Sphere Radius R (Å):"), 1, 0)
-        spin_r = QtWidgets.QDoubleSpinBox()
-        spin_r.setRange(1.5, 8.0)
-        spin_r.setDecimals(2)
-        spin_r.setSingleStep(0.25)
-        spin_r.setValue(3.50)
-        ctrl.addWidget(spin_r, 1, 1)
-
-        chk_h = QtWidgets.QCheckBox("Include Hydrogens in %V_bur")
-        chk_h.setChecked(True)
-        ctrl.addWidget(chk_h, 1, 2, 1, 2)
-        layout.addLayout(ctrl)
-
-        txt_out = QtWidgets.QTextEdit()
-        txt_out.setReadOnly(True)
-        txt_out.setStyleSheet("font-family: monospace; font-size: 12px;")
-        layout.addWidget(txt_out, stretch=1)
-
-        def _recalc():
-            c_idx = int(combo_center.currentData() or 0)
-            a_idx = int(combo_att.currentData() or 0)
-            r_val = float(spin_r.value())
-            inc_h = bool(chk_h.isChecked())
-
-            vbur = compute_buried_volume(
-                symbols, coords, center_idx=c_idx, sphere_radius=r_val, include_hydrogens=inc_h
-            )
-            ster = compute_sterimol_and_cone_angle(
-                symbols, coords, primary_idx=c_idx, attached_idx=a_idx
-            )
-            geom_idx = compute_coordination_geometry_indices(symbols, coords, center_idx=c_idx)
-            q = vbur["quadrants"]
-            report = [
-                "=" * 68,
-                f"CATALYSIS STERIC & COORDINATION DESCRIPTORS  (SEQCROW / SambVca)",
-                "=" * 68,
-                f"Central Atom        : {symbols[c_idx]}{c_idx + 1}",
-                f"Coordination Index  : {geom_idx['summary']}",
-                f"Sphere Radius (R)   : {vbur['sphere_radius']:.2f} Å  (Bondi radii × 1.17, H={'ON' if inc_h else 'OFF'})",
-                "-" * 68,
-                f"  Percent Buried Volume (%V_bur) : {vbur['v_bur_pct']:6.2f} %",
-                f"  Percent Free Volume   (%V_free): {vbur['v_free_pct']:6.2f} %",
-                f"  Quadrant %V_bur Breakdown      : NW = {q['NW']:4.1f}% | NE = {q['NE']:4.1f}%",
-                f"                                   SW = {q['SW']:4.1f}% | SE = {q['SE']:4.1f}%",
-                "-" * 68,
-                f"Substituent Axis    : {symbols[c_idx]}{c_idx + 1} ──> {symbols[a_idx]}{a_idx + 1}",
-                f"  Verloop Sterimol L  (length)   : {ster['L']:6.2f} Å",
-                f"  Verloop Sterimol B1 (min width): {ster['B1']:6.2f} Å",
-                f"  Verloop Sterimol B5 (max width): {ster['B5']:6.2f} Å",
-                f"  Tolman Cone Angle   (θ)        : {ster['cone_angle_deg']:6.1f}°",
-                "=" * 68,
-            ]
-            txt_out.setPlainText("\n".join(report))
-
-        combo_center.currentIndexChanged.connect(lambda _i: _recalc())
-        combo_att.currentIndexChanged.connect(lambda _i: _recalc())
-        spin_r.valueChanged.connect(lambda _v: _recalc())
-        chk_h.toggled.connect(lambda _c: _recalc())
-        _recalc()
-
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_copy = QtWidgets.QPushButton("📋 Copy Report")
-        btn_copy.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 5px 12px;")
-        btn_copy.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(txt_out.toPlainText()))
-        btn_row.addWidget(btn_copy)
-        btn_row.addStretch()
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(dlg.accept)
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
-
+        dlg = StericDescriptorsDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            center_idx=center_idx,
+            attached_idx=attached_idx,
+        )
         dlg.exec()
 
     def _on_open_ring_aromaticity_dialog(self):
-        """
-        Open the Ring Aromaticity (HOMA Index) & Planarity Inspector Dialog (Multiwfn / Krygowski style).
-        """
+        """Open the Ring Aromaticity (HOMA Index) & Planarity Inspector Dialog (Multiwfn / Krygowski style)."""
         if len(self.zatoms) < 3:
-            QtWidgets.QMessageBox.information(
-                self, "Ring Aromaticity (HOMA)", "Please load or build a ring-containing molecule first."
-            )
+            QtWidgets.QMessageBox.information(self, "Ring Aromaticity (HOMA)", "Please load or build a ring-containing molecule first.")
             return
 
-        from .aromatic import compute_ring_homa_and_planarity
+        from .dialog_ring_aromaticity import RingAromaticityDialog
         symbols = [a.symbol for a in self.zatoms]
         coords = np.array(self.coords, dtype=np.float64, copy=True)
         bonds = self._current_explicit_bonds()
         bo = self._current_bond_orders()
-        rings_info = compute_ring_homa_and_planarity(symbols, coords, bonds, bo)
 
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("💍 Ring Aromaticity (HOMA Index) & Planarity Inspector")
-        dlg.resize(700, 420)
-        layout = QtWidgets.QVBoxLayout(dlg)
-        layout.setSpacing(8)
+        def _highlight_ring(ring_atoms):
+            self.viewer.multi_selected = ring_atoms
+            self.viewer.selected_atom_idx = ring_atoms[0] if ring_atoms else None
+            self.viewer.update()
 
-        lbl_head = QtWidgets.QLabel(
-            "<b>Kruszewski–Krygowski HOMA Aromaticity Index & Ring Planarity</b><br>"
-            "<span style='color:#94a3b8; font-size:11px;'>"
-            "HOMA = 1 − (1/n) Σ α(R_opt − R_i)²  (1.00 = Ideal Benzene, ~0.00 = Non-Aromatic, &lt;0.00 = Anti-Aromatic). "
-            "Click any ring row to highlight its atoms in the 3D viewport."
-            "</span>"
+        dlg = RingAromaticityDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            bonds=bonds,
+            bond_orders=bo,
+            on_ring_highlight=_highlight_ring,
         )
-        lbl_head.setWordWrap(True)
-        layout.addWidget(lbl_head)
-
-        tbl = QtWidgets.QTableWidget(len(rings_info), 7)
-        tbl.setHorizontalHeaderLabels([
-            "Ring #", "Size", "Ring Atoms", "HOMA Index", "Mean R (Å)", "Planarity RMSD (Å)", "Classification"
-        ])
-        tbl.horizontalHeader().setStretchLastSection(True)
-        tbl.verticalHeader().setVisible(False)
-        tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        tbl.setAlternatingRowColors(True)
-
-        for r_i, info in enumerate(rings_info):
-            tbl.setItem(r_i, 0, QtWidgets.QTableWidgetItem(str(info["ring_index"])))
-            tbl.setItem(r_i, 1, QtWidgets.QTableWidgetItem(f"{info['size']}-ring"))
-            tbl.setItem(r_i, 2, QtWidgets.QTableWidgetItem(str(info["label"])))
-            h_str = f"{info['homa']:.4f}" if info["homa"] is not None else "N/A"
-            it_h = QtWidgets.QTableWidgetItem(h_str)
-            if info["homa"] is not None and info["homa"] >= 0.70:
-                it_h.setForeground(QtGui.QBrush(QtGui.QColor("#4ade80")))
-            tbl.setItem(r_i, 3, it_h)
-            tbl.setItem(r_i, 4, QtWidgets.QTableWidgetItem(f"{info['mean_bond_ang']:.4f}"))
-            tbl.setItem(r_i, 5, QtWidgets.QTableWidgetItem(f"{info['planarity_rmsd_ang']:.4f}"))
-            tbl.setItem(r_i, 6, QtWidgets.QTableWidgetItem(str(info["status"])))
-
-        def _on_row_clicked():
-            sel_items = tbl.selectedItems()
-            if not sel_items:
-                return
-            row = tbl.row(sel_items[0])
-            if 0 <= row < len(rings_info):
-                ring_atoms = list(rings_info[row]["atoms"])
-                self.viewer.multi_selected = ring_atoms
-                self.viewer.selected_atom_idx = ring_atoms[0] if ring_atoms else None
-                self.viewer.update()
-
-        tbl.itemSelectionChanged.connect(_on_row_clicked)
-        layout.addWidget(tbl, stretch=1)
-
-        if not rings_info:
-            lbl_empty = QtWidgets.QLabel("No 3- to 8-membered rings detected in the current molecular connectivity.")
-            lbl_empty.setStyleSheet("color: #f59e0b; font-style: italic;")
-            layout.addWidget(lbl_empty)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(dlg.accept)
-        btn_row.addStretch()
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
         dlg.exec()
 
     def _on_flush_memory(self):

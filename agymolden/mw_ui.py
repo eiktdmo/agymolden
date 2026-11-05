@@ -1736,8 +1736,8 @@ class UIMixin(UIInspectorTabsMixin):
         menu_help.addAction(self.act_command_palette)
 
         act_examples = QtGui.QAction("🧪 &Example Molecule && Calculation Gallery...", self)
-        act_examples.setShortcut("F2")
-        act_examples.setToolTip("Explore bundled Molden wavefunctions, QM output logs, and Z-matrix templates (F2)")
+        act_examples.setShortcut("Ctrl+Shift+G")
+        act_examples.setToolTip("Explore bundled Molden wavefunctions, QM output logs, and Z-matrix templates (Ctrl+Shift+G)")
         act_examples.triggered.connect(self._on_open_example_gallery)
         menu_help.addAction(act_examples)
         menu_help.addSeparator()
