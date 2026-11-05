@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![OpenGL](https://img.shields.io/badge/Graphics-OpenGL%203.3+-orange.svg)](https://www.khronos.org/opengl/)
-[![Tests](https://img.shields.io/badge/Tests-265%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-313%20Passing-brightgreen.svg)]()
 
 **AgyMolden** is an ultra-fast, modern, native cross-platform quantum chemistry companion and molecular modeling workbench. It combines the intuitive internal coordinate (Z-matrix) editing workflows of classic Molden with a full-fledged computational chemistry environment: multi-package calculation execution, live convergence tracking, automated error diagnostics (QC Doctor), volumetric orbital & electrostatic potential (ESP) visualization, intrinsic reaction coordinate (IRC) reaction profiling, transition state IDPP path interpolation, and CREST conformer ensemble exploration.
 
@@ -16,13 +16,15 @@ Designed from the ground up with **pure Python / NumPy / SciPy / PyQt6 / PyOpenG
 
 ### 1. Quantum Chemistry Calculation Runner & Monitor
 - **Multi-Engine Execution**: Native integration with **Gaussian** (G16/G09), **ORCA** (4.x/5.x), **newBRORSEN** (multi-component quantum chemistry), **PySCF**, **openLOWDIN**, **xTB**, and **CREST**.
+- **HPC Cluster Batch Script Generator**: 1-click generation and customization of production workload manager submission scripts (**SLURM**, **PBS / Torque**, **LSF**, **SGE**) with scratch directory lifecycles (`$SLURM_TMPDIR`), multi-threading (`$OMP_NUM_THREADS`), automatic module loading, and submission commands.
 - **Local & Remote SSH Execution**: Launch jobs locally or stream output live from remote supercomputing clusters over asynchronous SSH with automatic remote directory syncing and artifact retrieval.
 - **Live Convergence Tracking**: Real-time visual plots of SCF energy convergence, geometry optimization step energies, and gradient / force RMS and Max thresholds.
 - **QC Doctor™ Automated Diagnostics**: Instant root-cause identification of calculation failures (SCF convergence divergence, oscillating line searches, Link 301/9999 errors, basis set deficiencies, memory faults, linear dependency) with actionable recovery recommendations.
 - **Pre-Flight Calculation Validation**: Real-time electronic parity matching ($(N_e - (2S+1-1)) \pmod 2 == 0$), atomic clash detection ($< 0.45$ Å), hardware oversubscription detection, and engine-specific keyword linting before launching calculations.
 
-### 2. Volumetric Molecular Orbitals & Electrostatic Potential (ESP)
+### 2. Volumetric Molecular Orbitals & Real-Space Wavefunction Analysis
 - **High-Performance 3D Isosurfaces**: GPU-accelerated marching cubes isosurface rendering for Molecular Orbitals (HOMO, LUMO, core, virtual) and total electron density from Molden format files.
+- **Multiwfn Real-Space Grids & NCI/RDG Engine**: Real-space calculation and visualization of Electron Localization Function (ELF), Localized Orbital Locator (LOL), Electrostatic Potential (ESP), and Non-Covalent Interactions (NCI / Reduced Density Gradient) with standard 5-zone $\operatorname{sign}(\lambda_2)\rho$ continuous color mapping (Blue = strong attractive H-bonds, Green = vdW dispersion, Red = steric repulsion).
 - **Electrostatic Potential (ESP) Mapping**: Dynamic symmetric color-normalized 3D ESP surfaces and 2D sliced planar contour maps with colorbar gradients and extrema identification ($V_{\min}$, $V_{\max}$).
 - **Interactive MO Energy Ladder**: Visual energy diagram of frontier orbitals, orbital symmetry term symbols, Mulliken / Löwdin atomic orbital decomposition, and chemical reactivity metrics (HOMO–LUMO gap, chemical hardness $\eta$, electronegativity $\chi$).
 
@@ -64,7 +66,7 @@ Designed from the ground up with **pure Python / NumPy / SciPy / PyQt6 / PyOpenG
 - **Peri-Annulation (3-Atom Bay Fusion)**: Completes open bay pockets across $C_{\text{left}} - C_{\text{bridgehead}} - C_{\text{right}}$ triads to construct Phenalene, Acenaphthene, and extended polyaromatics with zero steric clash and valency conservation.
 - **Valency & Ortho-Hydrogen Pruning**: Automatically removes ortho-hydrogens on the fused bridgehead atoms to conserve proper valence, and generates ideal sp2/sp3 hydrogen geometries for the new ring.
 - **Bicyclic Bridgehead Formation**: Connect distant ring carbons (e.g. 1,4-cyclohexane positions) with $-\text{CH}_2-$, $-\text{CH}_2-\text{CH}_2-$, $-\text{O}-$, $-\text{NH}-$, or $-\text{CO}-$ bridges to create Norbornanes, Bicyclo[2.2.2]octanes, or Camphor-like systems.
-- **1-Click Analytical Force Field Relaxation**: Real-time analytical UFF / MMFF94 relaxation with optional parent-structure freezing.
+- **1-Click Analytical & Hybrid Force Field Relaxation**: Real-time analytical UFF / MMFF94 relaxation with optional parent-structure freezing and "Auto (Hybrid MMFF / UFF)" backend with organic parameterization.
 
 ### 10. Headless CLI Suite for HPC Clusters
 Run AgyMolden headless on supercomputing clusters without an X11 display:

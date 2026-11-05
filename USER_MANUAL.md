@@ -55,16 +55,27 @@ AgyMolden maintains bidirectional synchronization across three representations o
   - **Invert Chirality / Dihedrals**: Flips all dihedral angles to generate enantiomers.
 
 ### 2.5 Force Field Optimization & Vibrational Spectroscopy
-- **Universal Force Field (UFF/MM) Geometry Optimization**:
+- **Universal Force Field (UFF/MM) & Hybrid Optimization**:
   - Harmonic bond stretching, angle bending (linear, trigonal planar, tetrahedral), torsional barriers, and non-bonded Lennard-Jones repulsion.
-  - Preserves user-drawn connectivity.
+  - Multi-engine optimization dropdown:
+    - **Analytical UFF / MMFF94s**: Fast built-in analytical force field with exact symmetry preservation and universal element coverage.
+    - **Auto (Hybrid MMFF / UFF)**: Leverages RDKit MMFF94 parameterization for organic frameworks, automatically falling back to analytical UFF for organometallics or atypical valencies.
+    - **GFN0-xTB**: Semiempirical quantum mechanics tight-binding optimization with electronic structure calculation.
+  - Preserves user-drawn connectivity and frozen atom constraints.
   - Re-aligns the relaxed molecule to standard orientation.
 - **Vibrational Normal Mode Calculation**:
   - Computes numerical Hessian matrix from the force field.
   - Mass-weighted diagonalization to obtain $3N-6$ ($3N-5$ for linear) vibrational frequencies and Cartesian normal mode displacements.
   - Interactive normal mode animator: 3D viewport animates atom oscillations with directional displacement arrows (adjustable amplitude and frequency).
 
-### 2.6 Point Group Symmetry & Group Theory Engine
+### 2.6 HPC Cluster Batch Script Generator
+- Accessible directly from the Quantum Chemistry Calculation Runner (`Ctrl+R`) via **"Generate Cluster Script (SLURM/PBS/LSF/SGE)"**:
+  - Generates production-ready submission scripts for **SLURM**, **PBS / Torque**, **IBM LSF**, and **Sun Grid Engine (SGE)**.
+  - Configurable queue/partition, walltime limits, CPU core allocations, memory quotas (MB/GB), scratch directories (`$SLURM_TMPDIR` / `/tmp`), and email notifications.
+  - Built-in scratch lifecycle management: automatic input copying, local SSD execution, output log piping, and result archive sync back to the submission directory.
+  - Copy to clipboard or export directly as `.sh` / `.slurm` / `.pbs` file.
+
+### 2.7 Point Group Symmetry & Group Theory Engine
 - Detects molecular point groups ($C_1, C_s, C_i, C_n, C_{nv}, C_{nh}, D_n, D_{nd}, D_{nh}, T_d, O_h, I_h, C_{\infty v}, D_{\infty h}$).
 - Lists all symmetry operations ($\hat{E}, \hat{C}_n, \hat{\sigma}, \hat{i}, \hat{S}_n$) and their $3\times3$ transformation matrices.
 - **Align to Standard Orientation**: Aligns highest $C_n$ axis along $Z$, secondary axes along $X$, and reflection planes in $XZ/YZ$.
