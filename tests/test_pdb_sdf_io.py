@@ -107,3 +107,41 @@ def test_spectrum_vector_exports(tmp_path):
     assert (tmp_path / "plot.svg").stat().st_size > 500
     assert (tmp_path / "plot.png").stat().st_size > 500
 
+
+def test_parse_cif_crystal_structure(tmp_path):
+    from agymolden.zmatrix import parse_cif
+    cif_content = """
+    data_rutile
+    _cell_length_a                     4.5937(5)
+    _cell_length_b                     4.5937(5)
+    _cell_length_c                     2.9587(3)
+    _cell_angle_alpha                  90.00
+    _cell_angle_beta                   90.00
+    _cell_angle_gamma                  90.00
+
+    loop_
+    _atom_site_label
+    _atom_site_type_symbol
+    _atom_site_fract_x
+    _atom_site_fract_y
+    _atom_site_fract_z
+    Ti1 Ti 0.0000 0.0000 0.0000
+    Ti2 Ti 0.5000 0.5000 0.5000
+    O1  O  0.3053 0.3053 0.0000
+    O2  O  0.6947 0.6947 0.0000
+    """
+    cif_file = tmp_path / "rutile.cif"
+    cif_file.write_text(cif_content, encoding="utf-8")
+
+    symbols, coords, cell = parse_cif(str(cif_file))
+    assert symbols == ["Ti", "Ti", "O", "O"]
+    assert coords.shape == (4, 3)
+    assert cell["a"] == pytest.approx(4.5937, rel=1e-4)
+    assert cell["c"] == pytest.approx(2.9587, rel=1e-4)
+
+    # Ti1 at (0, 0, 0)
+    np.testing.assert_allclose(coords[0], [0.0, 0.0, 0.0], atol=1e-5)
+    # Ti2 at (0.5*a, 0.5*b, 0.5*c)
+    np.testing.assert_allclose(coords[1], [0.5 * 4.5937, 0.5 * 4.5937, 0.5 * 2.9587], atol=1e-4)
+
+

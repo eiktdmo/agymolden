@@ -47,6 +47,13 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.spin_msaa.addItem("Disabled (Fastest / Low-end GPU)", 0)
         v_layout.addRow("Anti-Aliasing (MSAA):", self.spin_msaa)
 
+        self.combo_default_dpi = QtWidgets.QComboBox()
+        self.combo_default_dpi.addItem("300 DPI (Standard Journal Submission)", 300)
+        self.combo_default_dpi.addItem("600 DPI (High-Density Print / Line Art)", 600)
+        self.combo_default_dpi.addItem("150 DPI (Web & Presentation)", 150)
+        self.combo_default_dpi.addItem("72 DPI (Standard Screen)", 72)
+        v_layout.addRow("Default Export DPI:", self.combo_default_dpi)
+
         self.combo_mouse_mode = QtWidgets.QComboBox()
         self.combo_mouse_mode.addItem("AgyMolden / Standard (Left: Rotate, Right: Pan, Wheel/Mid: Zoom)", "standard")
         self.combo_mouse_mode.addItem("GaussView Preset (Left: Rotate, Right: Zoom, Mid: Pan)", "gaussview")
@@ -59,6 +66,17 @@ class PreferencesDialog(QtWidgets.QDialog):
         tab_calc = QtWidgets.QWidget()
         c_layout = QtWidgets.QFormLayout(tab_calc)
         c_layout.setSpacing(10)
+
+        self.combo_default_engine = QtWidgets.QComboBox()
+        self.combo_default_engine.addItem("ORCA (4.x / 5.x / 6.x)", "orca")
+        self.combo_default_engine.addItem("Gaussian (G16 / G09)", "gaussian")
+        self.combo_default_engine.addItem("Psi4", "psi4")
+        self.combo_default_engine.addItem("PySCF (Python Script)", "pyscf")
+        self.combo_default_engine.addItem("Q-Chem", "qchem")
+        self.combo_default_engine.addItem("xTB (Tight-Binding)", "xtb")
+        self.combo_default_engine.addItem("openLOWDIN (APMO)", "openlowdin")
+        self.combo_default_engine.addItem("newBRORSEN", "newbrorsen")
+        c_layout.addRow("Preferred Default QM Engine:", self.combo_default_engine)
 
         self.spin_cores = QtWidgets.QSpinBox()
         self.spin_cores.setRange(1, 128)
@@ -112,6 +130,16 @@ class PreferencesDialog(QtWidgets.QDialog):
         if idx_msaa >= 0:
             self.spin_msaa.setCurrentIndex(idx_msaa)
 
+        dpi = self.settings.value("export/default_dpi", 300, type=int)
+        idx_dpi = self.combo_default_dpi.findData(dpi)
+        if idx_dpi >= 0:
+            self.combo_default_dpi.setCurrentIndex(idx_dpi)
+
+        engine = self.settings.value("calc/default_engine", "orca", type=str)
+        idx_eng = self.combo_default_engine.findData(engine)
+        if idx_eng >= 0:
+            self.combo_default_engine.setCurrentIndex(idx_eng)
+
         mouse_m = self.settings.value("viewport/mouse_mode", "standard", type=str)
         idx_mouse = self.combo_mouse_mode.findData(mouse_m)
         if idx_mouse >= 0:
@@ -126,6 +154,8 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.settings.setValue("viewport/show_labels", self.chk_labels.isChecked())
         self.settings.setValue("viewport/show_indices", self.chk_indices.isChecked())
         self.settings.setValue("viewport/msaa", self.spin_msaa.currentData())
+        self.settings.setValue("export/default_dpi", self.combo_default_dpi.currentData())
+        self.settings.setValue("calc/default_engine", self.combo_default_engine.currentData())
         self.settings.setValue("viewport/mouse_mode", self.combo_mouse_mode.currentData())
 
         self.settings.setValue("calc/nprocs", self.spin_cores.value())

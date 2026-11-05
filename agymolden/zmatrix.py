@@ -979,3 +979,153 @@ def write_mol_sdf(
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
+
+def parse_cif(
+    filepath_or_content: str, is_path: bool = True
+) -> Tuple[List[str], np.ndarray, Dict[str, float]]:
+    """
+    Parse Crystallographic Information File (CIF) returning (symbols, cartesian_coords, cell_parameters).
+    Converts fractional coordinates to Cartesian Angstroms via the crystallographic metric tensor.
+    """
+    from .elements import normalize_symbol
+
+    if is_path:
+        with open(filepath_or_content, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    else:
+        text = filepath_or_content
+
+    # Helper to strip ESD parentheses: e.g. "10.234(5)" -> 10.234
+    def _clean_num(val_str: str) -> float:
+        cleaned = re.sub(r'\([0-9]+\)', '', val_str.strip())
+        return float(cleaned)
+
+    # 1. Parse unit cell dimensions
+    cell = {"a": 10.0, "b": 10.0, "c": 10.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0}
+    cell_keys = {
+        "_cell_length_a": "a",
+        "_cell_length_b": "b",
+        "_cell_length_c": "c",
+        "_cell_angle_alpha": "alpha",
+        "_cell_angle_beta": "beta",
+        "_cell_angle_gamma": "gamma",
+    }
+    for line in text.splitlines():
+        line_s = line.strip()
+        for k, prop in cell_keys.items():
+            if line_s.lower().startswith(k):
+                parts = line_s.split()
+                if len(parts) >= 2:
+                    try:
+                        cell[prop] = _clean_num(parts[1])
+                    except ValueError:
+                        pass
+
+    # 2. Compute Fractional -> Cartesian transformation matrix
+    a = cell["a"]
+    b = cell["b"]
+    c = cell["c"]
+    alpha = math.radians(cell["alpha"])
+    beta = math.radians(cell["beta"])
+    gamma = math.radians(cell["gamma"])
+
+    cos_a = math.cos(alpha)
+    cos_b = math.cos(beta)
+    cos_g = math.cos(gamma)
+    sin_g = math.sin(gamma)
+    if abs(sin_g) < 1e-6:
+        sin_g = 1e-6
+
+    term = 1.0 - cos_a ** 2 - cos_b ** 2 - cos_g ** 2 + 2.0 * cos_a * cos_b * cos_g
+    v_norm = math.sqrt(max(0.0, term))
+    vol = a * b * c * v_norm
+
+    m_frac_to_cart = np.array([
+        [a, b * cos_g, c * cos_b],
+        [0.0, b * sin_g, c * (cos_a - cos_b * cos_g) / sin_g],
+        [0.0, 0.0, vol / (a * b * sin_g) if (a * b * sin_g) != 0 else c],
+    ], dtype=np.float64)
+
+    # 3. Locate loop_ containing _atom_site_
+    lines = text.splitlines()
+    symbols: List[str] = []
+    coords_list: List[Tuple[float, float, float]] = []
+
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx].strip()
+        if line.startswith("loop_"):
+            idx += 1
+            headers = []
+            while idx < len(lines) and lines[idx].strip().startswith("_"):
+                headers.append(lines[idx].strip().lower())
+                idx += 1
+
+            if any("_atom_site" in h for h in headers):
+                col_type = -1
+                col_label = -1
+                col_fx = -1
+                col_fy = -1
+                col_fz = -1
+                col_cx = -1
+                col_cy = -1
+                col_cz = -1
+
+                for h_i, h_name in enumerate(headers):
+                    if h_name == "_atom_site_type_symbol":
+                        col_type = h_i
+                    elif h_name == "_atom_site_label":
+                        col_label = h_i
+                    elif h_name in ("_atom_site_fract_x", "_atom_site_fract_x_"):
+                        col_fx = h_i
+                    elif h_name in ("_atom_site_fract_y", "_atom_site_fract_y_"):
+                        col_fy = h_i
+                    elif h_name in ("_atom_site_fract_z", "_atom_site_fract_z_"):
+                        col_fz = h_i
+                    elif h_name == "_atom_site_cartn_x":
+                        col_cx = h_i
+                    elif h_name == "_atom_site_cartn_y":
+                        col_cy = h_i
+                    elif h_name == "_atom_site_cartn_z":
+                        col_cz = h_i
+
+                while idx < len(lines):
+                    row = lines[idx].strip()
+                    if not row or row.startswith("loop_") or row.startswith("_") or row.startswith("#"):
+                        break
+                    parts = row.split()
+                    if len(parts) >= len(headers):
+                        raw_sym = ""
+                        if 0 <= col_type < len(parts):
+                            raw_sym = parts[col_type]
+                        elif 0 <= col_label < len(parts):
+                            raw_sym = parts[col_label]
+                        clean_sym = re.sub(r'[^A-Za-z]', '', raw_sym)
+                        norm_sym = normalize_symbol(clean_sym) or "C"
+
+                        try:
+                            if col_cx >= 0 and col_cy >= 0 and col_cz >= 0:
+                                x = _clean_num(parts[col_cx])
+                                y = _clean_num(parts[col_cy])
+                                z = _clean_num(parts[col_cz])
+                            elif col_fx >= 0 and col_fy >= 0 and col_fz >= 0:
+                                xf = _clean_num(parts[col_fx])
+                                yf = _clean_num(parts[col_fy])
+                                zf = _clean_num(parts[col_fz])
+                                cart = m_frac_to_cart @ np.array([xf, yf, zf])
+                                x, y, z = float(cart[0]), float(cart[1]), float(cart[2])
+                            else:
+                                idx += 1
+                                continue
+                            symbols.append(norm_sym)
+                            coords_list.append((x, y, z))
+                        except (ValueError, IndexError):
+                            pass
+                    idx += 1
+                break
+        idx += 1
+
+    coords = np.array(coords_list, dtype=np.float64) if coords_list else np.empty((0, 3), dtype=np.float64)
+    return symbols, coords, cell
+
+

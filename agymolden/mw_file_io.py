@@ -23,6 +23,7 @@ from .zmatrix import (
     write_pdb,
     parse_mol_sdf,
     write_mol_sdf,
+    parse_cif,
     calculate_bond_distance,
     calculate_angle,
     calculate_dihedral,
@@ -122,10 +123,10 @@ class FileIOMixin:
             self,
             "Open File (All Supported Molecular & QM Formats)",
             self._last_dir(),
-            "All Supported Files (*.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "All Supported Files (*.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.cif *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
             "QM Output Logs & Checkpoints (*.out *.log *.output *.fchk *.fch);;"
             "Molden & ORCA Wavefunctions (*.molden.input *.molden *.molf *.gbw);;"
-            "Molecular Structures (*.xyz *.pdb *.sdf *.mol *.sd);;"
+            "Molecular Structures & Crystals (*.xyz *.pdb *.sdf *.mol *.sd *.cif);;"
             "QM Input Decks (*.inp *.in *.gjf *.com *.lowdin *.py);;"
             "Gaussian Volumetric Grids (*.cube);;"
             "Z-Matrix & Input Files (*.zmat *.dat *.inp *.txt);;"
@@ -172,6 +173,8 @@ class FileIOMixin:
             self._load_pdb_path(path)
         elif low.endswith((".sdf", ".mol", ".sd")):
             self._load_sdf_path(path)
+        elif low.endswith(".cif"):
+            self._load_cif_path(path)
         elif low.endswith((".log", ".out", ".fchk", ".fch")):
             self._load_qm_log_path(path)
         elif low.endswith((".smi", ".smiles")):
@@ -1431,6 +1434,33 @@ class FileIOMixin:
         except Exception as e:
             log.exception("Error loading SDF/MOL file")
             QtWidgets.QMessageBox.critical(self, "Error Opening SDF/MOL", str(e))
+
+    def _load_cif_path(self, path: str):
+        try:
+            symbols, coords, cell = parse_cif(path)
+            if len(symbols) == 0:
+                QtWidgets.QMessageBox.warning(self, "Empty File", "No atomic sites found in CIF file.")
+                return
+            self._push_undo_state()
+            self.variables = {}
+            detected_bonds = detect_connectivity(symbols, coords, strict=False)
+            detected_bo = detect_bond_orders(symbols, coords, detected_bonds)
+
+            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=detected_bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+            self.viewer.update()
+            self._remember_file(path)
+
+            cell_str = f"a={cell.get('a', 0):.2f} b={cell.get('b', 0):.2f} c={cell.get('c', 0):.2f} Å"
+            self.statusBar().showMessage(f"Loaded CIF crystal structure {os.path.basename(path)} ({len(symbols)} sites, {cell_str}).", 5000)
+        except Exception as e:
+            log.exception("Error loading CIF file")
+            QtWidgets.QMessageBox.critical(self, "Error Opening CIF", str(e))
 
     def _on_save_zmat(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
