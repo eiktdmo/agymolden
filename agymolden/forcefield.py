@@ -1,7 +1,8 @@
 """Molecular force field geometry optimization and valence hydrogen completion algorithms."""
 
 import math
-from typing import List, Tuple, Dict, Optional, Set
+from typing import List, Tuple, Dict, Optional, Set, Any
+from collections import defaultdict
 import numpy as np
 
 try:
@@ -37,6 +38,81 @@ IDEAL_ANGLES: Dict[int, float] = {
     3: 120.0,   # sp2 planar
     4: 109.47,  # tetrahedral
 }
+
+
+def _detect_pairs_spatial_hash(
+    coords: np.ndarray, r_cutoff: float = 4.8
+) -> Tuple[List[Tuple[int, int]], Any]:
+    """
+    O(N) uniform spatial hash grid partitioning for molecular systems.
+    Partitions 3D coordinates into cubic voxels of width r_cutoff to enable
+    constant-time 27-neighbor lookup for pairwise queries and ball-point proximity.
+    Vectorized with NumPy for high throughput on large ensembles (>10,000 atoms).
+    """
+    inv_r = 1.0 / r_cutoff
+    grid = defaultdict(list)
+    cell_indices = np.floor(coords * inv_r).astype(np.int32)
+    for i in range(len(coords)):
+        grid[(int(cell_indices[i, 0]), int(cell_indices[i, 1]), int(cell_indices[i, 2]))].append(i)
+
+    grid_arr = {c: np.array(atoms, dtype=np.int32) for c, atoms in grid.items()}
+    grid_coords = {c: coords[atoms] for c, atoms in grid_arr.items()}
+
+    r2_cutoff = r_cutoff * r_cutoff
+    neighbor_offsets = [
+        (dx, dy, dz)
+        for dx in (-1, 0, 1)
+        for dy in (-1, 0, 1)
+        for dz in (-1, 0, 1)
+        if (dx, dy, dz) > (0, 0, 0)
+    ]
+
+    candidate_pairs = []
+    for (cx, cy, cz), atoms in grid_arr.items():
+        c_coords = grid_coords[(cx, cy, cz)]
+        n_a = len(atoms)
+        if n_a > 1:
+            diff = c_coords[:, np.newaxis, :] - c_coords[np.newaxis, :, :]
+            d2 = np.sum(diff ** 2, axis=-1)
+            iu = np.triu_indices(n_a, k=1)
+            mask = d2[iu] <= r2_cutoff
+            if np.any(mask):
+                u_idx, v_idx = iu[0][mask], iu[1][mask]
+                for u, v in zip(atoms[u_idx], atoms[v_idx]):
+                    candidate_pairs.append((min(u, v), max(u, v)))
+
+        for dx, dy, dz in neighbor_offsets:
+            nc = (cx + dx, cy + dy, cz + dz)
+            if nc in grid_arr:
+                n_atoms = grid_arr[nc]
+                nc_coords = grid_coords[nc]
+                diff = c_coords[:, np.newaxis, :] - nc_coords[np.newaxis, :, :]
+                d2 = np.sum(diff ** 2, axis=-1)
+                mask = d2 <= r2_cutoff
+                if np.any(mask):
+                    u_idx, v_idx = np.where(mask)
+                    for u, v in zip(atoms[u_idx], n_atoms[v_idx]):
+                        candidate_pairs.append((min(u, v), max(u, v)))
+
+    def query_ball_point(x: np.ndarray, r: float) -> List[int]:
+        pt = np.asarray(x, dtype=np.float64)
+        cx, cy, cz = int(np.floor(pt[0] * inv_r)), int(np.floor(pt[1] * inv_r)), int(np.floor(pt[2] * inv_r))
+        r2_q = r * r
+        res = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    nc = (cx + dx, cy + dy, cz + dz)
+                    if nc in grid_arr:
+                        c_atoms = grid_arr[nc]
+                        c_pts = grid_coords[nc]
+                        d2 = np.sum((c_pts - pt) ** 2, axis=-1)
+                        matches = c_atoms[d2 <= r2_q]
+                        if len(matches) > 0:
+                            res.extend(matches.tolist())
+        return res
+
+    return candidate_pairs, query_ball_point
 
 
 def detect_connectivity(
@@ -80,10 +156,14 @@ def detect_connectivity(
 
     cov_radii = [get_cov_radius(s) for s in symbols]
 
-    if _HAS_CKDTREE and n >= 40:
-        # High-performance spatial indexing for medium-to-large molecules (O(N log N) scaling)
-        tree = cKDTree(coords)
-        candidate_pairs = tree.query_pairs(r=4.8)
+    if n >= 40:
+        # High-performance spatial indexing (cKDTree or O(N) uniform spatial hash partitioning)
+        if _HAS_CKDTREE:
+            tree = cKDTree(coords)
+            candidate_pairs = tree.query_pairs(r=4.8)
+            ball_query = tree.query_ball_point
+        else:
+            candidate_pairs, ball_query = _detect_pairs_spatial_hash(coords, r_cutoff=4.8)
 
         for i, j in candidate_pairs:
             si, sj = symbols[i], symbols[j]
@@ -109,7 +189,7 @@ def detect_connectivity(
                 continue
 
             r_m = cov_radii[m_idx]
-            nearby_indices = tree.query_ball_point(coords[m_idx], r=3.5)
+            nearby_indices = ball_query(coords[m_idx], r=3.5)
             best_partner = None
             best_dist = 1e9
             for j in nearby_indices:
