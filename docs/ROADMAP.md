@@ -36,10 +36,10 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 - [x] **Full Undo/Redo Test Matrix**: Ensure every builder mutation (add atom, delete, bond, reorder, substitute, weld) is reversibly covered by undo/redo.
 
 ### Tier 3: Architecture & Modeling Capabilities (Effort: L, 1–3 days each)
+- [x] **Hybrid Optimization Backends**: Provide seamless fallback between analytical UFF/MMFF94s, RDKit (when installed), and semiempirical GFN0-xTB with an inline method selector and automatic parameter fallback.
 - [ ] **Software-OpenGL CI Testing**: Run offscreen GUI tests with Mesa llvmpipe / Xvfb to capture OpenGL framebuffers and verify rendering and picking without physical GPUs.
 - [ ] **Decoupled Architecture**: Refactor large mixins (`mw_editing.py`, `mw_calculations.py`, `mw_ui.py`) into independent controllers around a central event bus.
 - [ ] **Unified Molecule State**: Establish a single authoritative `MoleculeModel` managing Cartesian coordinates, internal connectivity, bond orders, and stereocenters.
-- [ ] **Hybrid Optimization Backends**: Provide seamless fallback between analytical UFF/MMFF94s, RDKit (when installed), and semiempirical GFN0-xTB.
 - [ ] **Job Queue & Cluster Schedulers**: Integrated SLURM/PBS script generator, job submission, status polling, and automatic result loading.
 - [ ] **Advanced Volumetric Rendering**: GPU ray-casting or depth-sorted impostor spheres/cylinders, ambient occlusion, and publication-ready SVG/vector export.
 

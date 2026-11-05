@@ -744,6 +744,71 @@ def compute_gasteiger_charges(
     return np.clip(q, -1.2, 1.2)
 
 
+def optimize_geometry_rdkit_mmff(
+    symbols: List[str],
+    coords: np.ndarray,
+    bonds: Optional[List[Tuple[int, int]]] = None,
+    max_iter: int = 250,
+    frozen_indices: Optional[Set[int]] = None,
+) -> Optional[Tuple[np.ndarray, float]]:
+    """
+    Attempt molecular geometry optimization using RDKit's MMFF94 / UFF engine.
+    Returns (optimized_coords, energy_kcal_mol) if successful, or None if RDKit is
+    unavailable or cannot parameterize the system (e.g. transition metals, unusual radicals).
+    """
+    if any(s == "X" for s in symbols) or len(symbols) < 2:
+        return None
+
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, rdDetermineBonds
+
+        # Construct XYZ block
+        xyz_lines = [str(len(symbols)), "rdkit_opt"]
+        for s, pt in zip(symbols, coords):
+            xyz_lines.append(f"{s} {pt[0]:.6f} {pt[1]:.6f} {pt[2]:.6f}")
+        xyz_block = "\n".join(xyz_lines)
+
+        mol = Chem.MolFromXYZBlock(xyz_block)
+        if mol is None:
+            return None
+
+        rdDetermineBonds.DetermineBonds(mol)
+        Chem.SanitizeMol(mol)
+
+        # 1. Try MMFF94 force field first
+        mp = AllChem.MMFFGetMoleculeProperties(mol)
+        if mp is not None:
+            ff = AllChem.MMFFGetMoleculeForceField(mol, mp)
+            if ff is not None:
+                if frozen_indices:
+                    for idx in frozen_indices:
+                        if 0 <= idx < len(symbols):
+                            ff.AddFixedPoint(idx)
+                ff.Minimize(maxIts=max_iter)
+                e = ff.CalcEnergy()
+                opt_c = mol.GetConformer().GetPositions()
+                return np.array(opt_c, dtype=np.float64), float(e)
+
+        # 2. Fallback to RDKit UFF
+        uff = AllChem.UFFGetMoleculeForceField(mol)
+        if uff is not None:
+            if frozen_indices:
+                for idx in frozen_indices:
+                    if 0 <= idx < len(symbols):
+                        uff.AddFixedPoint(idx)
+            uff.Minimize(maxIts=max_iter)
+            e = uff.CalcEnergy()
+            opt_c = mol.GetConformer().GetPositions()
+            return np.array(opt_c, dtype=np.float64), float(e)
+
+    except Exception:
+        pass
+    return None
+
+
+
+
 def optimize_geometry_force_field(
     symbols: List[str],
     coords: np.ndarray,
@@ -782,6 +847,14 @@ def optimize_geometry_force_field(
             frozen_indices=frozen_indices,
         )
         return opt_c, final_e
+
+    # If method is "rdkit_mmff" or "auto_hybrid", attempt RDKit MMFF94 optimization first
+    if method in ("rdkit_mmff", "auto_hybrid"):
+        rdkit_res = optimize_geometry_rdkit_mmff(
+            symbols, coords, bonds=user_bonds, max_iter=max_iter, frozen_indices=frozen_indices
+        )
+        if rdkit_res is not None:
+            return rdkit_res
 
     # Ghost/dummy atoms (X) do not participate: optimize real atoms only, keep X fixed
     if any(s == "X" for s in symbols):

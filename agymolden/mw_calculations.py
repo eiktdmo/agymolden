@@ -69,13 +69,18 @@ class CalculationsMixin:
     def _get_selected_opt_method(self) -> str:
         if hasattr(self, "combo_opt_method") and self.combo_opt_method.currentIndex() >= 0:
             data = self.combo_opt_method.currentData()
-            if data in ("uff_mmff", "semiempirical"):
+            if data in ("auto_hybrid", "uff_mmff", "semiempirical"):
                 return data
-        return "uff_mmff"
+        return "auto_hybrid"
 
     def _on_opt_method_changed(self, idx: int):
         method = self._get_selected_opt_method()
-        label = "Semiempirical QM (GFN0-xTB)" if method == "semiempirical" else "Analytical UFF/MMFF94s"
+        if method == "semiempirical":
+            label = "Semiempirical QM (GFN0-xTB)"
+        elif method == "auto_hybrid":
+            label = "Auto Hybrid (MMFF / UFF)"
+        else:
+            label = "Analytical UFF/MMFF94s"
         if hasattr(self, "btn_calc_vibrations"):
             self.btn_calc_vibrations.setText(f"⚡ Calculate Frequencies ({label})")
         self.statusBar().showMessage(f"Selected calculation engine: {label}", 3500)
@@ -89,7 +94,12 @@ class CalculationsMixin:
             return
 
         method = self._get_selected_opt_method()
-        method_label = "Semiempirical QM (GFN0-xTB)" if method == "semiempirical" else "Analytical UFF/MMFF94s"
+        if method == "semiempirical":
+            method_label = "Semiempirical QM (GFN0-xTB)"
+        elif method == "auto_hybrid":
+            method_label = "Auto Hybrid (MMFF / UFF)"
+        else:
+            method_label = "Analytical UFF/MMFF94s"
         self._push_undo_state()
         self.statusBar().showMessage(f"Optimizing geometry using {method_label}...", 3000)
 
@@ -110,7 +120,7 @@ class CalculationsMixin:
                 )
             opt_coords, final_e = optimize_geometry_force_field(
                 symbols, c0, user_bonds=user_bonds, max_iter=iters,
-                user_bond_orders=bo, method="uff_mmff", frozen_indices=frozen
+                user_bond_orders=bo, method=method, frozen_indices=frozen
             )
             return opt_coords, final_e, {}
 

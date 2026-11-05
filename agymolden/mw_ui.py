@@ -642,12 +642,14 @@ class UIMixin(UIInspectorTabsMixin):
         row_action_layout_opt = QtWidgets.QHBoxLayout()
         row_action_layout_opt.setSpacing(5)
         self.combo_opt_method = QtWidgets.QComboBox()
-        self.combo_opt_method.addItem("UFF / MMFF94s (Force Field)", "uff_mmff")
+        self.combo_opt_method.addItem("Auto (Hybrid MMFF / UFF)", "auto_hybrid")
+        self.combo_opt_method.addItem("Analytical UFF / MMFF94s", "uff_mmff")
         self.combo_opt_method.addItem("GFN0-xTB (Semiempirical QM)", "semiempirical")
         self.combo_opt_method.setStyleSheet("font-size: 11px; padding: 3px 6px;")
         self.combo_opt_method.setToolTip(
             "Select geometry optimization & vibrational engine:\n"
-            "• UFF / MMFF94s (Force Field): Fast analytical force field with periodic torsions & electrostatics\n"
+            "• Auto (Hybrid MMFF / UFF): Tries RDKit MMFF94 for organic accuracy, auto-falling back to Analytical UFF\n"
+            "• Analytical UFF / MMFF94s: Built-in pure analytical force field (universal coverage, periodic torsions)\n"
             "• GFN0-xTB (Semiempirical QM): Self-Consistent Tight-Binding QM with Wiberg bond orders & charges"
         )
         self.combo_opt_method.currentIndexChanged.connect(self._on_opt_method_changed)
