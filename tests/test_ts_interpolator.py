@@ -108,6 +108,7 @@ def test_reaction_path_dialog_headless(qapp):
     assert dlg.path_images is not None
     assert len(dlg.path_images) == 5
     assert dlg.btn_adopt_ts.isEnabled()
+    assert dlg.btn_launch_ts_pipeline.isEnabled()
     assert dlg.btn_preview.isEnabled()
 
 

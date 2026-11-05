@@ -19,6 +19,8 @@ from agymolden.multiwfn_analysis import (
     compute_condensed_fukui,
     compute_qtaim_topology,
     compute_hirshfeld_and_cm5_charges,
+    compute_grid_cube,
+    compute_nci_analysis,
     _compute_bond_orders_pyscf,
 )
 from agymolden.dialog_multiwfn import MultiwfnAnalysisDialog
@@ -117,11 +119,30 @@ def test_compute_hirshfeld_and_cm5_charges():
 
 def test_multiwfn_dialog_initialization(qapp):
     dlg = MultiwfnAnalysisDialog(None, molden_path=H2O_MOLDEN)
-    assert dlg.tabs.count() == 4
+    assert dlg.tabs.count() == 5
     assert "Mayer & Wiberg" in dlg.tabs.tabText(0)
     assert "Conceptual DFT" in dlg.tabs.tabText(1)
     assert "QTAIM" in dlg.tabs.tabText(2)
     assert "CM5" in dlg.tabs.tabText(3)
+    assert "3D Real-Space Grids" in dlg.tabs.tabText(4)
+
+
+def test_compute_grid_cube_elf_and_nci(tmp_path):
+    if not os.path.isfile(H2O_MOLDEN):
+        pytest.skip("examples/h2o_orca.molden not found")
+
+    out_elf = str(tmp_path / "water_elf.cube")
+    res_elf = compute_grid_cube(H2O_MOLDEN, grid_type="ELF", quality="low", output_cube=out_elf)
+    assert os.path.isfile(out_elf)
+    assert res_elf.vol_data is not None
+    assert res_elf.vol_data.voxels_x == 30
+    assert float(np.min(res_elf.vol_data.grid_data)) >= 0.0
+
+    # NCI RDG & density grids
+    rdg_res, dens_res = compute_nci_analysis(H2O_MOLDEN, quality="low", output_dir=str(tmp_path))
+    assert os.path.isfile(rdg_res.cube_path)
+    assert os.path.isfile(dens_res.cube_path)
+    assert rdg_res.vol_data.voxels_x == 30
 
 
 def test_multiwfn_custom_path_and_missing_error(monkeypatch, tmp_path):

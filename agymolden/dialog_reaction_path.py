@@ -156,6 +156,13 @@ class ReactionPathDialog(QtWidgets.QDialog):
         self.btn_adopt_ts.clicked.connect(self._on_adopt_ts_guess)
         btn_row1.addWidget(self.btn_adopt_ts)
 
+        self.btn_launch_ts_pipeline = QtWidgets.QPushButton("⚡ 1-Click TS Pipeline...")
+        self.btn_launch_ts_pipeline.setEnabled(False)
+        self.btn_launch_ts_pipeline.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold;")
+        self.btn_launch_ts_pipeline.setToolTip("Launch the multi-stage TS Opt → Freq verification → IRC MEP pipeline on the TS guess")
+        self.btn_launch_ts_pipeline.clicked.connect(self._on_launch_ts_pipeline)
+        btn_row1.addWidget(self.btn_launch_ts_pipeline)
+
         a_layout.addLayout(btn_row1)
 
         btn_row2 = QtWidgets.QHBoxLayout()
@@ -321,6 +328,7 @@ class ReactionPathDialog(QtWidgets.QDialog):
 
         self.btn_preview.setEnabled(True)
         self.btn_adopt_ts.setEnabled(True)
+        self.btn_launch_ts_pipeline.setEnabled(True)
         self.btn_export_xyz.setEnabled(True)
         self.btn_orca_neb.setEnabled(True)
         self.btn_gauss_qst.setEnabled(True)
@@ -342,6 +350,30 @@ class ReactionPathDialog(QtWidgets.QDialog):
             "TS Guess Adopted",
             f"Successfully adopted Frame {mid + 1}/{len(self.path_images)} as the Transition State geometry in the 3D editor!"
         )
+
+    def _on_launch_ts_pipeline(self):
+        if self.path_images is None or len(self.path_images) == 0:
+            QtWidgets.QMessageBox.warning(self, "No Path", "Please compute a reaction path first.")
+            return
+
+        mid = len(self.path_images) // 2
+        ts_coords = self.path_images[mid]
+
+        try:
+            from .calc_runner.dialog_pipeline import WorkflowPipelineDialog
+            dlg = WorkflowPipelineDialog(
+                parent=self.parent(),
+                code_key="orca",
+                symbols=self.r_symbols,
+                coords=ts_coords,
+            )
+            for idx in range(dlg.combo_recipe.count()):
+                if "TS Opt" in dlg.combo_recipe.itemText(idx):
+                    dlg.combo_recipe.setCurrentIndex(idx)
+                    break
+            dlg.exec()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Pipeline Error", f"Failed to launch TS Workflow Pipeline:\n{e}")
 
     def _on_export_xyz(self):
         if self.path_images is None:

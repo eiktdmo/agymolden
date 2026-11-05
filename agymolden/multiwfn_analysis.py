@@ -522,3 +522,237 @@ def compute_hirshfeld_and_cm5_charges(molden_path: str) -> PartialChargesResult:
         sum_hirshfeld=sum_hirshfeld,
         raw_output=stdout,
     )
+
+
+# =========================================================================
+# Feature 5: Real-Space Grid Data (ELF, LOL, Laplacian, Density, NCI/RDG)
+# =========================================================================
+
+@dataclass
+class GridResult:
+    grid_type: str
+    cube_path: str
+    vol_data: Optional[Any] = None
+    method: str = "Multiwfn"
+    raw_output: str = ""
+
+
+_MULTIWFN_GRID_OPTIONS = {
+    "Density": "1",
+    "Gradient Norm": "2",
+    "Laplacian": "3",
+    "ELF": "9",
+    "LOL": "10",
+    "ESP": "13",
+}
+
+_MULTIWFN_QUALITY_MAP = {
+    "low": "1",
+    "medium": "2",
+    "fine": "3",
+}
+
+
+def compute_grid_cube(
+    input_path: str,
+    grid_type: str = "ELF",
+    quality: str = "medium",
+    output_cube: Optional[str] = None,
+) -> GridResult:
+    """
+    Generate 3D real-space grid data (.cube) via Multiwfn (Function 5) or native promolecular fallback.
+    Supported grid_type: 'ELF', 'LOL', 'Laplacian', 'Density', 'ESP'.
+    """
+    import tempfile
+    from .volumetric import parse_cube_file, write_cube_file, VolumetricData
+    from .zmatrix import parse_xyz
+
+    bin_path = detect_multiwfn_executable()
+    input_abs = os.path.abspath(input_path)
+    opt_val = _MULTIWFN_GRID_OPTIONS.get(grid_type, "9")
+    qual_val = _MULTIWFN_QUALITY_MAP.get(quality.lower(), "2")
+
+    if bin_path:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp = f"{input_abs}\n5\n{opt_val}\n{qual_val}\n2\nq\n"
+            try:
+                proc = subprocess.run(
+                    [bin_path],
+                    input=inp,
+                    cwd=tmpdir,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=180,
+                )
+                stdout = proc.stdout
+                # Find any generated .cube file in tmpdir
+                cube_files = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.lower().endswith(".cube")]
+                if cube_files:
+                    src_cube = cube_files[0]
+                    target_path = output_cube or os.path.splitext(input_abs)[0] + f"_{grid_type.lower()}.cube"
+                    shutil.copyfile(src_cube, target_path)
+                    vol = parse_cube_file(target_path)
+                    return GridResult(
+                        grid_type=grid_type,
+                        cube_path=target_path,
+                        vol_data=vol,
+                        method="Multiwfn Function 5",
+                        raw_output=stdout,
+                    )
+            except Exception as e:
+                log.debug("Multiwfn grid generation attempt failed: %s. Using native engine.", e)
+
+    # Native promolecular fallback
+    return _compute_native_promolecular_grid(input_abs, grid_type=grid_type, quality=quality, output_cube=output_cube)
+
+
+def _compute_native_promolecular_grid(
+    input_path: str,
+    grid_type: str = "ELF",
+    quality: str = "medium",
+    output_cube: Optional[str] = None,
+) -> GridResult:
+    """Fast, robust pure-NumPy promolecular grid generator for Density, Laplacian, ELF, and RDG."""
+    from .volumetric import VolumetricData, write_cube_file
+    from .zmatrix import parse_xyz
+
+    # Extract symbols and coordinates
+    symbols = []
+    coords = None
+
+    if input_path.lower().endswith(".molden"):
+        from .volumetric import parse_molden_file
+        m_data = parse_molden_file(input_path)
+        if m_data:
+            symbols = m_data.symbols
+            coords = m_data.coords
+    elif input_path.lower().endswith((".xyz", ".out", ".log")):
+        try:
+            from .qm_log_parser import parse_qm_logfile
+            parsed = parse_qm_logfile(input_path)
+            symbols = parsed.symbols
+            coords = parsed.trajectory_coords[-1]
+        except Exception:
+            pass
+
+    if not symbols or coords is None:
+        try:
+            syms, crds = parse_xyz(input_path, is_path=True)
+            symbols = syms
+            coords = crds
+        except Exception as e:
+            raise ValueError(f"Could not load molecular structure from '{input_path}': {e}")
+
+    n_atoms = len(symbols)
+    c_arr = np.asarray(coords, dtype=np.float64)
+
+    # Bounding box with 3.0 Angstrom padding
+    padding = 3.0
+    min_b = np.min(c_arr, axis=0) - padding
+    max_b = np.max(c_arr, axis=0) + padding
+    span = max_b - min_b
+
+    # Quality setting
+    resolutions = {"low": 30, "medium": 50, "fine": 80}
+    n_pts = resolutions.get(quality.lower(), 50)
+    step = span / (n_pts - 1)
+
+    x = np.linspace(min_b[0], max_b[0], n_pts)
+    y = np.linspace(min_b[1], max_b[1], n_pts)
+    z = np.linspace(min_b[2], max_b[2], n_pts)
+    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+    # Slater exponent parameters (zeta ~ Z_eff / a0)
+    slater_zeta = {
+        "H": 1.24, "He": 1.69, "Li": 0.65, "Be": 0.97, "B": 1.30,
+        "C": 1.625, "N": 1.95, "O": 2.275, "F": 2.60, "Ne": 2.925,
+        "Na": 0.73, "Mg": 0.95, "Al": 1.17, "Si": 1.38, "P": 1.60,
+        "S": 1.82, "Cl": 2.03, "Ar": 2.25, "Br": 2.30, "I": 2.00,
+    }
+
+    rho = np.zeros_like(X, dtype=np.float64)
+    for sym, pos in zip(symbols, c_arr):
+        zeta = slater_zeta.get(sym.capitalize(), 1.5)
+        r = np.sqrt((X - pos[0])**2 + (Y - pos[1])**2 + (Z - pos[2])**2)
+        # Spherically averaged neutral atomic Slater density
+        rho += (zeta**3 / np.pi) * np.exp(-2.0 * zeta * r)
+
+    dx, dy, dz = step[0], step[1], step[2]
+    grad_x, grad_y, grad_z = np.gradient(rho, dx, dy, dz)
+    grad_norm = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
+
+    # Compute requested property grid
+    gt = grid_type.upper()
+    if gt == "DENSITY":
+        grid_data = rho
+    elif gt == "GRADIENT NORM":
+        grid_data = grad_norm
+    elif gt == "LAPLACIAN":
+        # ∇²ρ = d²ρ/dx² + d²ρ/dy² + d²ρ/dz²
+        d2x = np.gradient(grad_x, dx, axis=0)
+        d2y = np.gradient(grad_y, dy, axis=1)
+        d2z = np.gradient(grad_z, dz, axis=2)
+        grid_data = d2x + d2y + d2z
+    elif gt in ("ELF", "LOL"):
+        # Becke-Edgecombe ELF / LOL functional ratio
+        cf = 0.3 * (3.0 * np.pi**2)**(2.0 / 3.0)
+        tau_0 = cf * (np.maximum(rho, 1e-12)**(5.0 / 3.0))
+        tau_w = (grad_norm**2) / (8.0 * np.maximum(rho, 1e-12))
+        tau = np.maximum(tau_w, 0.5 * tau_0)
+        d_val = np.maximum(0.0, tau - tau_w)
+        chi = d_val / np.maximum(tau_0, 1e-12)
+        if gt == "ELF":
+            grid_data = 1.0 / (1.0 + chi**2)
+        else:
+            # LOL = 1 / (1 + (tau / tau_0))
+            grid_data = 1.0 / (1.0 + chi)
+    elif gt in ("NCI", "RDG"):
+        # Reduced density gradient s(r) = |∇ρ| / (2 * (3*pi^2)^(1/3) * ρ^(4/3))
+        factor = 2.0 * (3.0 * np.pi**2)**(1.0 / 3.0)
+        grid_data = grad_norm / (factor * (np.maximum(rho, 1e-8)**(4.0 / 3.0)) + 1e-12)
+    else:
+        grid_data = rho
+
+    target_path = output_cube or os.path.splitext(input_path)[0] + f"_{grid_type.lower()}.cube"
+    vol = VolumetricData(
+        title=f"AgyMolden {grid_type} 3D Grid",
+        comment=f"Generated via native promolecular engine (N={n_pts}^3)",
+        symbols=symbols,
+        atom_coords=c_arr,
+        origin=min_b,
+        voxels_x=n_pts,
+        voxels_y=n_pts,
+        voxels_z=n_pts,
+        step_x=np.array([dx, 0.0, 0.0]),
+        step_y=np.array([0.0, dy, 0.0]),
+        step_z=np.array([0.0, 0.0, dz]),
+        grid_data=grid_data,
+        is_orbital=False,
+    )
+    write_cube_file(target_path, vol)
+    return GridResult(
+        grid_type=grid_type,
+        cube_path=target_path,
+        vol_data=vol,
+        method="AgyMolden Native Promolecular Engine",
+    )
+
+
+def compute_nci_analysis(
+    input_path: str,
+    quality: str = "medium",
+    output_dir: Optional[str] = None,
+) -> Tuple[GridResult, GridResult]:
+    """
+    Computes Non-Covalent Interaction (NCI) Reduced Density Gradient (RDG) and density grids.
+    Returns (rdg_result, density_result).
+    """
+    base = os.path.splitext(os.path.abspath(input_path))[0]
+    out_dir = output_dir or os.path.dirname(base)
+    rdg_path = os.path.join(out_dir, os.path.basename(base) + "_nci_rdg.cube")
+    dens_path = os.path.join(out_dir, os.path.basename(base) + "_nci_dens.cube")
+
+    res_rdg = compute_grid_cube(input_path, grid_type="RDG", quality=quality, output_cube=rdg_path)
+    res_dens = compute_grid_cube(input_path, grid_type="Density", quality=quality, output_cube=dens_path)
+    return res_rdg, res_dens

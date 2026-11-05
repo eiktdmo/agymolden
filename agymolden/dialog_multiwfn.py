@@ -22,6 +22,9 @@ from .multiwfn_analysis import (
     compute_condensed_fukui,
     compute_qtaim_topology,
     compute_hirshfeld_and_cm5_charges,
+    compute_grid_cube,
+    compute_nci_analysis,
+    GridResult,
     BondOrderResult,
     FukuiResult,
     QTAIMResult,
@@ -47,6 +50,7 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         self._fukui_res: Optional[FukuiResult] = None
         self._qtaim_res: Optional[QTAIMResult] = None
         self._charges_res: Optional[PartialChargesResult] = None
+        self._grid_res: Optional[GridResult] = None
 
         self._multiwfn_only_buttons: List[QtWidgets.QPushButton] = []
         self._setup_ui()
@@ -96,6 +100,7 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         self.tabs.addTab(self._create_fukui_tab(), "2. Conceptual DFT / Fukui")
         self.tabs.addTab(self._create_qtaim_tab(), "3. QTAIM Topology (BCP)")
         self.tabs.addTab(self._create_charges_tab(), "4. CM5 & Hirshfeld Charges")
+        self.tabs.addTab(self._create_grids_tab(), "5. 3D Real-Space Grids (ELF & NCI)")
         main_layout.addWidget(self.tabs, stretch=1)
 
         # Bottom buttons
@@ -648,3 +653,135 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         self._on_calc_fukui()
         self._on_calc_qtaim()
         self._on_calc_charges()
+
+    # ---------------------------------------------------------------------
+    # Tab 5: 3D Real-Space Grids (ELF, LOL, Laplacian, NCI)
+    # ---------------------------------------------------------------------
+    def _create_grids_tab(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(w)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        ctrl_bar = QtWidgets.QHBoxLayout()
+
+        lbl_fn = QtWidgets.QLabel("Grid Function:")
+        ctrl_bar.addWidget(lbl_fn)
+
+        self.combo_grid_fn = QtWidgets.QComboBox()
+        self.combo_grid_fn.addItems([
+            "ELF (Electron Localization Function)",
+            "LOL (Localized Orbital Locator)",
+            "Laplacian of Electron Density (∇²ρ)",
+            "Total Electron Density (ρ)",
+            "NCI (Non-Covalent Interactions - RDG)",
+        ])
+        ctrl_bar.addWidget(self.combo_grid_fn)
+
+        lbl_q = QtWidgets.QLabel("Quality:")
+        ctrl_bar.addWidget(lbl_q)
+
+        self.combo_grid_quality = QtWidgets.QComboBox()
+        self.combo_grid_quality.addItems(["Low (Fast, ~30³)", "Medium (Standard, ~50³)", "Fine (High-Res, ~80³)"])
+        self.combo_grid_quality.setCurrentIndex(1)
+        ctrl_bar.addWidget(self.combo_grid_quality)
+
+        self.btn_calc_grid = QtWidgets.QPushButton("🚀 Compute 3D Grid")
+        self.btn_calc_grid.setStyleSheet("background-color: #2563eb; color: #fff; font-weight: bold; padding: 5px 12px;")
+        self.btn_calc_grid.clicked.connect(self._on_compute_grid)
+        ctrl_bar.addWidget(self.btn_calc_grid)
+
+        self.btn_open_grid_viewer = QtWidgets.QPushButton("🌐 Open in 3D Isosurface Viewer")
+        self.btn_open_grid_viewer.setStyleSheet("background-color: #059669; color: #fff; font-weight: bold; padding: 5px 12px;")
+        self.btn_open_grid_viewer.clicked.connect(self._on_open_grid_in_viewer)
+        self.btn_open_grid_viewer.setEnabled(False)
+        ctrl_bar.addWidget(self.btn_open_grid_viewer)
+
+        ctrl_bar.addStretch()
+        layout.addLayout(ctrl_bar)
+
+        desc_lbl = QtWidgets.QLabel(
+            "<b>Real-Space Wavefunction Grids & Non-Covalent Interactions:</b><br>"
+            "• <b>ELF / LOL</b>: Reveals atomic core shells, bonding electron pairs, and lone pairs.<br>"
+            "• <b>∇²ρ Laplacian</b>: Negative values indicate covalent electron concentration; positive values indicate closed-shell depletion.<br>"
+            "• <b>NCI / RDG</b>: Visualizes weak non-covalent interactions (hydrogen bonds, π-stacking, steric repulsion)."
+        )
+        desc_lbl.setStyleSheet("font-size: 11px; margin: 4px 0;")
+        layout.addWidget(desc_lbl)
+
+        # Status & results text area
+        self.txt_grid_info = QtWidgets.QTextEdit()
+        self.txt_grid_info.setReadOnly(True)
+        self.txt_grid_info.setPlaceholderText("Grid calculation output and generated .cube file details will appear here...")
+        layout.addWidget(self.txt_grid_info, stretch=1)
+
+        return w
+
+    def _on_compute_grid(self):
+        if not self.molden_path or not os.path.isfile(self.molden_path):
+            QtWidgets.QMessageBox.warning(self, "No Wavefunction", "Please select or load a valid .molden file first.")
+            return
+
+        fn_text = self.combo_grid_fn.currentText()
+        if "ELF" in fn_text:
+            g_type = "ELF"
+        elif "LOL" in fn_text:
+            g_type = "LOL"
+        elif "Laplacian" in fn_text:
+            g_type = "Laplacian"
+        elif "Density" in fn_text:
+            g_type = "Density"
+        elif "NCI" in fn_text or "RDG" in fn_text:
+            g_type = "RDG"
+        else:
+            g_type = "ELF"
+
+        q_idx = self.combo_grid_quality.currentIndex()
+        quality_str = "low" if q_idx == 0 else ("fine" if q_idx == 2 else "medium")
+
+        self.btn_calc_grid.setEnabled(False)
+        self.txt_grid_info.setText(f"Computing {g_type} grid data ({quality_str} quality)... Please wait.")
+
+        def _worker():
+            return compute_grid_cube(self.molden_path, grid_type=g_type, quality=quality_str)
+
+        def _on_done(res: GridResult):
+            self.btn_calc_grid.setEnabled(True)
+            self._grid_res = res
+            self.btn_open_grid_viewer.setEnabled(True)
+            msg = (
+                f"✅ Grid Calculation Finished Successfully!\n\n"
+                f"• Function: {res.grid_type}\n"
+                f"• Method: {res.method}\n"
+                f"• Cube File: {res.cube_path}\n"
+            )
+            if res.vol_data:
+                vd = res.vol_data
+                msg += (
+                    f"• Dimensions: {vd.voxels_x} × {vd.voxels_y} × {vd.voxels_z}\n"
+                    f"• Min Value: {float(np.min(vd.grid_data)):.5f}\n"
+                    f"• Max Value: {float(np.max(vd.grid_data)):.5f}\n"
+                    f"• Mean Value: {float(np.mean(vd.grid_data)):.5f}\n"
+                )
+            if res.raw_output:
+                msg += f"\n--- Multiwfn Output Log ---\n{res.raw_output[:800]}"
+            self.txt_grid_info.setText(msg)
+
+        def _on_err(err):
+            self.btn_calc_grid.setEnabled(True)
+            self.txt_grid_info.setText(f"❌ Grid calculation failed: {err}")
+            QtWidgets.QMessageBox.critical(self, "Calculation Error", f"Grid generation failed:\n{friendly_error_text(err)}")
+
+        run_in_background(self, _worker, _on_done, _on_err)
+
+    def _on_open_grid_in_viewer(self):
+        if not self._grid_res or not os.path.isfile(self._grid_res.cube_path):
+            QtWidgets.QMessageBox.warning(self, "No Grid", "Please compute a grid first.")
+            return
+
+        try:
+            from .dialog_volumetric import VolumetricSurfaceDialog
+            dlg = VolumetricSurfaceDialog(self.parent(), viewer=self.viewer)
+            dlg.load_cube_path(self._grid_res.cube_path)
+            dlg.show()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Viewer Error", f"Failed to open 3D Isosurface Viewer:\n{e}")
