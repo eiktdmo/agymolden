@@ -1740,6 +1740,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_examples.setToolTip("Explore bundled Molden wavefunctions, QM output logs, and Z-matrix templates (Ctrl+Shift+G)")
         act_examples.triggered.connect(self._on_open_example_gallery)
         menu_help.addAction(act_examples)
+
+        act_tour = QtGui.QAction("🎓 &Quick Tour && Onboarding Guide...", self)
+        act_tour.setToolTip("Interactive 4-step guided walkthrough of AgyMolden core features")
+        act_tour.triggered.connect(self._on_open_onboarding_tour)
+        menu_help.addAction(act_tour)
         menu_help.addSeparator()
 
         act_about = QtGui.QAction("&About AgyMolden", self)

@@ -150,6 +150,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Check for previous crashed / unsaved session
         QtCore.QTimer.singleShot(600, self._check_and_prompt_crash_recovery)
 
+        # Check for first-launch onboarding tour
+        QtCore.QTimer.singleShot(1200, self._check_first_run_tour)
+
     def _auto_save_session(self):
         """Silently auto-save current molecule state to a hidden recovery file."""
         if not getattr(self, "zatoms", None):

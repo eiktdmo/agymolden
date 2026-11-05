@@ -2059,6 +2059,21 @@ class FileIOMixin:
         dlg = ExampleGalleryDialog(self)
         dlg.exec()
 
+    def _on_open_onboarding_tour(self):
+        """Open the interactive quick tour and onboarding guide."""
+        from .dialog_onboarding import OnboardingTourDialog
+        dlg = OnboardingTourDialog(self)
+        dlg.exec()
+
+    def _check_first_run_tour(self):
+        """Prompt onboarding tour on first launch if not previously dismissed or disabled."""
+        import os
+        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("AGYMOLDEN_HEADLESS"):
+            return
+        settings = QtCore.QSettings("AgyMolden", "Preferences")
+        if settings.value("show_onboarding_on_startup", True, type=bool) and not settings.value("has_seen_onboarding_tour", False, type=bool):
+            self._on_open_onboarding_tour()
+
     def _on_open_manual(self):
         """Open USER_MANUAL.md with the system's default viewer."""
         from .resources import find_resource
