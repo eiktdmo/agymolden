@@ -1523,6 +1523,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_iso_kie.triggered.connect(self._on_open_isotopologue_dialog)
         menu_tools.addAction(act_iso_kie)
 
+        act_pbc = QtGui.QAction("📦 &Periodic Boundary Conditions (PBC) && Supercell Generator...", self)
+        act_pbc.setToolTip("View/edit crystallographic unit cell parameters (a, b, c, α, β, γ), fractional coordinates, and replicate Nx×Ny×Nz supercells")
+        act_pbc.triggered.connect(self._on_open_pbc_dialog)
+        menu_tools.addAction(act_pbc)
+
         act_overlay = QtGui.QAction("🔬 &Compare & Align Structures (RMSD Overlay)...", self)
         act_overlay.setShortcut("Ctrl+Shift+A")
         act_overlay.setToolTip("Superimpose two structures with Kabsch SVD alignment and calculate all-atom/heavy-atom RMSD")

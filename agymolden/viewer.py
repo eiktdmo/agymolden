@@ -86,6 +86,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.show_qtaim_cps: bool = False
         self.qtaim_bond_paths: List[Any] = []        # List of 3D gradient bond path trajectories
         self.show_qtaim_bond_paths: bool = False
+        self.unit_cell: Optional[Any] = None         # UnitCell object (Periodic Boundary Conditions)
+        self.show_unit_cell: bool = True
         self.transparent_bg: bool = False
         self.bg_color_mode: str = "white"  # "dark" or "white" (default: white)
         self.mouse_mode: str = "standard"  # "standard", "gaussview", or "chemcraft"
@@ -1621,6 +1623,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             or getattr(self, "show_bond_lengths", False)
             or getattr(self, "show_axis_triad", True)
             or getattr(self, "show_scale_bar", False)
+            or (getattr(self, "show_unit_cell", True) and getattr(self, "unit_cell", None) is not None)
             or self.vibrating
             or self.partial_reorder_mode
             or self.reordering_active
@@ -1635,6 +1638,58 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             mvp = proj_mat * view_mat
             w = self.width()
             h = self.height()
+
+            # Render Periodic Boundary Conditions (PBC) Unit Cell wireframe & axis labels
+            if getattr(self, "show_unit_cell", True) and getattr(self, "unit_cell", None) is not None:
+                uc = self.unit_cell
+                edges = uc.get_box_edges() if hasattr(uc, "get_box_edges") else []
+                is_white_vp = (self.bg_color_mode == "white" and not self.transparent_bg)
+
+                pen_a = QtGui.QPen(QtGui.QColor("#ef4444"), 2.2)
+                pen_b = QtGui.QPen(QtGui.QColor("#10b981"), 2.2)
+                pen_c = QtGui.QPen(QtGui.QColor("#3b82f6"), 2.2)
+                pen_box = QtGui.QPen(
+                    QtGui.QColor("#94a3b8" if is_white_vp else "#475569"),
+                    1.4,
+                    QtCore.Qt.PenStyle.DashLine,
+                )
+
+                origin_pt = getattr(uc, "origin", (0.0, 0.0, 0.0))
+                for start_pt, end_pt, ax_label in edges:
+                    p4_s = mvp * QtGui.QVector4D(float(start_pt[0]), float(start_pt[1]), float(start_pt[2]), 1.0)
+                    p4_e = mvp * QtGui.QVector4D(float(end_pt[0]), float(end_pt[1]), float(end_pt[2]), 1.0)
+                    if p4_s.w() <= 0.05 or p4_e.w() <= 0.05:
+                        continue
+                    ndc_s = p4_s / p4_s.w()
+                    ndc_e = p4_e / p4_e.w()
+                    sx_s = int((ndc_s.x() * 0.5 + 0.5) * w)
+                    sy_s = int((-ndc_s.y() * 0.5 + 0.5) * h)
+                    sx_e = int((ndc_e.x() * 0.5 + 0.5) * w)
+                    sy_e = int((-ndc_e.y() * 0.5 + 0.5) * h)
+
+                    is_origin_edge = np.allclose(start_pt, origin_pt, atol=1e-5)
+                    if is_origin_edge and ax_label == "a":
+                        painter.setPen(pen_a)
+                    elif is_origin_edge and ax_label == "b":
+                        painter.setPen(pen_b)
+                    elif is_origin_edge and ax_label == "c":
+                        painter.setPen(pen_c)
+                    else:
+                        painter.setPen(pen_box)
+
+                    painter.drawLine(sx_s, sy_s, sx_e, sy_e)
+
+                    if is_origin_edge:
+                        painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                        if ax_label == "a":
+                            painter.setPen(QtGui.QColor("#dc2626"))
+                            painter.drawText(sx_e + 5, sy_e - 5, "a")
+                        elif ax_label == "b":
+                            painter.setPen(QtGui.QColor("#059669"))
+                            painter.drawText(sx_e + 5, sy_e - 5, "b")
+                        elif ax_label == "c":
+                            painter.setPen(QtGui.QColor("#2563eb"))
+                            painter.drawText(sx_e + 5, sy_e - 5, "c")
 
             # Render glowing high-contrast selection rings & frozen constraint rings around atoms
             if (has_selection or bool(frozen_set)) and len(render_coords) == len(self.symbols):

@@ -1453,6 +1453,12 @@ class FileIOMixin:
 
             self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
             self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+
+            from .pbc import UnitCell
+            self.unit_cell = UnitCell.from_dict(cell)
+            self.viewer.unit_cell = self.unit_cell
+            self.viewer.show_unit_cell = True
+
             self.viewer.update()
             self._remember_file(path)
 

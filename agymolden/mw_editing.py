@@ -2323,6 +2323,55 @@ class EditingMixin:
         )
         dlg.exec()
 
+    def _on_open_pbc_dialog(self):
+        """Open the Periodic Boundary Conditions (PBC) & Supercell Generator dialog."""
+        from .dialog_pbc import PBCDialog
+        from .forcefield import detect_connectivity, detect_bond_orders
+        from .zmatrix import cartesian_to_zmatrix, norm_bond
+
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.array(self.coords, dtype=np.float64, copy=True)
+        unit_cell = getattr(self, "unit_cell", None) or getattr(self.viewer, "unit_cell", None)
+
+        dlg = PBCDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            unit_cell=unit_cell,
+            viewer=self.viewer,
+        )
+
+        def _on_cell_changed(new_cell):
+            self.unit_cell = new_cell
+            if self.viewer:
+                self.viewer.unit_cell = new_cell
+                self.viewer.update()
+
+        def _on_supercell_applied(new_symbols, new_coords, new_unit_cell):
+            self._push_undo_state()
+            self.unit_cell = new_unit_cell
+            detected_bonds = detect_connectivity(new_symbols, new_coords, strict=False)
+            detected_bo = detect_bond_orders(new_symbols, new_coords, detected_bonds)
+            zatoms = cartesian_to_zmatrix(new_symbols, new_coords, user_bonds=detected_bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+            self.set_molecule_from_zatoms(zatoms, exact_coords=new_coords)
+            if self.viewer:
+                self.viewer.unit_cell = new_unit_cell
+                self.viewer.show_unit_cell = True
+                self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+                self.viewer.auto_center()
+                self.viewer.update()
+            self.statusBar().showMessage(
+                f"Generated {len(new_symbols)}-atom supercell (a={new_unit_cell.a:.2f}, b={new_unit_cell.b:.2f}, c={new_unit_cell.c:.2f} Å).",
+                5000,
+            )
+
+        dlg.cellChanged.connect(_on_cell_changed)
+        dlg.supercellApplied.connect(_on_supercell_applied)
+        dlg.exec()
+
     def _on_flush_memory(self):
         """
         Flush clipboard / memory state (Ctrl+K).
