@@ -16,24 +16,24 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 ### Tier 1: Immediate Polish & UI Quick Wins (Effort: S, < 1 hr each)
 - [x] **Repo Hygiene**: Clean loose calculation outputs, checkpoint files, and temporary artifacts out of root into `examples/` and `.gitignore`.
 - [x] **Documentation Consolidation**: Unify fragmented audit and roadmap files into `docs/ROADMAP.md` and archive historical audits in `docs/audits/`.
-- [ ] **README Accuracy**: Update test count badges (265 passing), verified Python versions, and install instructions.
-- [ ] **Startup Diagnostics**: Add a structured one-line startup log with versions (Python, PyQt6, OpenGL) and detected external quantum engines (ORCA, Gaussian, xTB, PySCF, RDKit).
-- [ ] **Shortcut Cheat Sheet Sync**: Register `Ctrl+Alt+P` (ESP 3D Map) and `Ctrl+Alt+O` (Volumetric Orbitals Studio) in the in-app shortcuts dialog.
-- [ ] **Universal Small-Screen Responsiveness**: Extend compact padding and minimum-width guarantees across all inspector tabs and child dialogs.
-- [ ] **ORCA Compatibility Guardrails**: Add tooltips for functionals/basis sets and inline warnings for invalid combinations.
+- [x] **README Accuracy**: Update test count badges (265 passing), verified Python versions, and install instructions.
+- [x] **Startup Diagnostics**: Add a structured one-line startup log with versions (Python, PyQt6, OpenGL) and detected external quantum engines (ORCA, Gaussian, xTB, PySCF, RDKit).
+- [x] **Shortcut Cheat Sheet Sync**: Register `Ctrl+Alt+P` (ESP 3D Map) and `Ctrl+Alt+O` (Volumetric Orbitals Studio) in the in-app shortcuts dialog.
+- [x] **Universal Small-Screen Responsiveness**: Extend compact padding and minimum-width guarantees across all inspector tabs and child dialogs.
+- [x] **ORCA Compatibility Guardrails**: Add tooltips for functionals/basis sets and inline warnings for invalid combinations.
 
 ### Tier 2: Code Reliability & Test Hardening (Effort: M, 2–8 hrs each)
-- [ ] **Targeted Exception Handling**: Replace 180 broad `except Exception` blocks with specific exceptions and route unexpected errors to a central `report_error()` UI toast/status bar.
+- [x] **Targeted Exception Handling**: Replace broad `except Exception` blocks with specific exceptions and route unexpected errors to a central `report_error()` / `dialog_service.error(exc=...)` dialog with technical details and tracebacks.
+- [x] **Multi-Resolution Layout Regression Tests**: Headless testing of window geometries (800×600, 1024×768, 1280×800, 1366×768, 1920×1080) verifying scroll area engagement and zero widget truncation.
+- [x] **Builder Invariant Property Testing**: Hypothesis/parametrized tests asserting that atom addition, ring fusion, and peri-annulation strictly enforce:
+  - Atomic clearance: $d_{\min} \ge 0.85\text{ \AA}$
+  - Conservation of valency
+  - Exact expected molecular formula (e.g. Naphthalene + Benzene bay fusion $\to$ 1H-Phenalene $\text{C}_{13}\text{H}_{10}$, Naphthalene + Cyclopentyl bay fusion $\to$ Acenaphthene $\text{C}_{12}\text{H}_{10}$).
+- [x] **Round-Trip Format Preservation**: Verify lossless Cartesian round-tripping across ZMAT $\leftrightarrow$ XYZ $\leftrightarrow$ SDF $\leftrightarrow$ PDB preserving interatomic distance matrices $< 10^{-3}$ Å.
 - [ ] **Type Annotation Coverage**: Progressively raise return/parameter type annotations from 22% to >60%, integrated with `mypy --check-untyped-defs`.
 - [ ] **Automated Linting & Formatting**: Enforce `ruff` and `pre-commit` hooks in CI.
-- [ ] **Multi-Resolution Layout Regression Tests**: Headless testing of window geometries (800×600, 1024×768, 1366×768) verifying scroll area engagement and zero widget truncation.
-- [ ] **Builder Invariant Property Testing**: Hypothesis/parametrized tests asserting that atom addition, ring fusion, and peri-annulation strictly enforce:
-  - Atomic clearance: $d_{\min} \ge 0.80\text{ \AA}$
-  - Conservation of valency
-  - Exact expected molecular formula (e.g. Naphthalene + Benzene bay fusion $\to$ Phenalene $\text{C}_{13}\text{H}_{10}$).
-- [ ] **Round-Trip Format Preservation**: Verify lossless Cartesian round-tripping across ZMAT $\leftrightarrow$ XYZ $\leftrightarrow$ SDF $\leftrightarrow$ PDB.
-- [ ] **Verified Input Generators**: Validate generated Gaussian, ORCA, and newBRORSEN decks against keyword syntax linting.
-- [ ] **Full Undo/Redo Test Matrix**: Ensure every builder mutation (add atom, delete, bond, reorder, substitute, weld) is reversibly covered by undo/redo.
+- [x] **Verified Input Generators**: Validate generated Gaussian, ORCA, and newBRORSEN decks against keyword syntax linting.
+- [x] **Full Undo/Redo Test Matrix**: Ensure every builder mutation (add atom, delete, bond, reorder, substitute, weld) is reversibly covered by undo/redo.
 
 ### Tier 3: Architecture & Modeling Capabilities (Effort: L, 1–3 days each)
 - [ ] **Software-OpenGL CI Testing**: Run offscreen GUI tests with Mesa llvmpipe / Xvfb to capture OpenGL framebuffers and verify rendering and picking without physical GPUs.

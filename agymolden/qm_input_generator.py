@@ -843,3 +843,15 @@ QM_GENERATORS: Dict[str, Type[BaseQMGenerator]] = {
 def register_qm_generator(name: str, generator_cls: Type[BaseQMGenerator]):
     """Allow plugins or future extensions to register new QM code generators."""
     QM_GENERATORS[name] = generator_cls
+
+
+def get_generator(name_or_alias: str) -> BaseQMGenerator:
+    """Instantiate a QM generator by name or partial alias (e.g. 'Gaussian', 'ORCA', 'PySCF')."""
+    if name_or_alias in QM_GENERATORS:
+        return QM_GENERATORS[name_or_alias]()
+    target = name_or_alias.lower().strip()
+    for key, cls in QM_GENERATORS.items():
+        if target in key.lower() or key.lower().startswith(target):
+            return cls()
+    raise KeyError(f"Unknown QM code generator: '{name_or_alias}'. Available: {list(QM_GENERATORS.keys())}")
+
