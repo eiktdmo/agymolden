@@ -124,6 +124,12 @@ def test_plugin_lifecycle_hooks():
         def on_geometry_change(self, context, symbols, coords):
             self.geom_changed_count += 1
 
+        def on_calculation_completed(self, context, result):
+            self.calc_completed_count = getattr(self, "calc_completed_count", 0) + 1
+
+        def on_file_loaded(self, context, filepath):
+            self.file_loaded_count = getattr(self, "file_loaded_count", 0) + 1
+
         def run(self, context):
             return "executed"
 
@@ -137,6 +143,12 @@ def test_plugin_lifecycle_hooks():
 
     manager.notify_geometry_changed(["H", "H"], np.zeros((2, 3)))
     assert test_plugin.geom_changed_count == 1
+
+    manager.notify_calculation_completed({"energy": -40.12})
+    assert test_plugin.calc_completed_count == 1
+
+    manager.notify_file_loaded("benzene.xyz")
+    assert test_plugin.file_loaded_count == 1
 
 
 def test_plugin_runner_dialog(qapp):

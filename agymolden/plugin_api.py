@@ -29,6 +29,31 @@ class PluginMetadata:
     menu_label: Optional[str] = None
     shortcut: Optional[str] = None
     category: str = "General"
+    api_version: str = "1.1.0"
+
+
+def register_plugin(
+    name: str,
+    version: str = "1.0.0",
+    author: str = "Community",
+    description: str = "",
+    menu_label: Optional[str] = None,
+    shortcut: Optional[str] = None,
+    category: str = "General",
+) -> Callable[[Any], Any]:
+    """Decorator to declare and register an AgyMolden plugin class with metadata."""
+    def decorator(cls: Any) -> Any:
+        cls.metadata = PluginMetadata(
+            name=name,
+            version=version,
+            author=author,
+            description=description,
+            menu_label=menu_label,
+            shortcut=shortcut,
+            category=category,
+        )
+        return cls
+    return decorator
 
 
 class PluginContext:
@@ -142,6 +167,14 @@ class PluginBase:
         """Optional hook called when the molecule geometry is edited or refreshed."""
         pass
 
+    def on_calculation_completed(self, context: PluginContext, result: Dict[str, Any]) -> None:
+        """Optional hook called when a QM or semiempirical calculation terminates."""
+        pass
+
+    def on_file_loaded(self, context: PluginContext, filepath: str) -> None:
+        """Optional hook called when a new molecule file or trajectory is opened."""
+        pass
+
     def on_unload(self, context: PluginContext) -> None:
         """Called when the plugin is deactivated or AgyMolden is closing."""
         pass
@@ -242,3 +275,23 @@ class PluginManager:
                 plugin.on_geometry_change(self.context, symbols, coords)
             except Exception as e:
                 log.warning("Plugin '%s' error in on_geometry_change: %s", name, e)
+
+    def notify_calculation_completed(self, result: Dict[str, Any]) -> None:
+        """Dispatch calculation completion events to all active plugins."""
+        if not self.context:
+            return
+        for name, plugin in self.plugins.items():
+            try:
+                plugin.on_calculation_completed(self.context, result)
+            except Exception as e:
+                log.warning("Plugin '%s' error in on_calculation_completed: %s", name, e)
+
+    def notify_file_loaded(self, filepath: str) -> None:
+        """Dispatch file loaded events to all active plugins."""
+        if not self.context:
+            return
+        for name, plugin in self.plugins.items():
+            try:
+                plugin.on_file_loaded(self.context, filepath)
+            except Exception as e:
+                log.warning("Plugin '%s' error in on_file_loaded: %s", name, e)
