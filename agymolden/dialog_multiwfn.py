@@ -135,10 +135,10 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
             self.lbl_engine.setToolTip(f"Executable path:\n{bin_path}")
             self.lbl_engine.setStyleSheet(f"font-weight: bold; color: {self._col('#15803d', '#86efac')};")
         else:
-            self.lbl_engine.setText("Multiwfn not found (QTAIM & CM5 unavailable)")
+            self.lbl_engine.setText("Multiwfn not found (Built-in PySCF QTAIM & CDFT active; CM5 requires Multiwfn)")
             self.lbl_engine.setToolTip(
-                "Bond orders and Fukui use the built-in PySCF fallback.\n"
-                "QTAIM and CM5/Hirshfeld need Multiwfn: http://sobereva.com/multiwfn\n"
+                "QTAIM topology, bond orders, Fukui and 3D real-space grids use the high-precision built-in PySCF solver.\n"
+                "CM5 and Hirshfeld charges require Multiwfn: http://sobereva.com/multiwfn\n"
                 "Use 'Set Multiwfn path...' after installing it."
             )
             self.lbl_engine.setStyleSheet(f"font-weight: bold; color: {self._col('#b45309', '#fcd34d')};")
@@ -409,7 +409,6 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         btn_calc = QtWidgets.QPushButton("Search QTAIM Critical Points (AIM)")
         btn_calc.setStyleSheet("background-color: #0369a1; color: #fff; font-weight: bold; padding: 5px 12px;")
         btn_calc.clicked.connect(self._on_calc_qtaim)
-        self._multiwfn_only_buttons.append(btn_calc)
         ctrl_bar.addWidget(btn_calc)
 
         self.btn_show_cps = QtWidgets.QPushButton("Display BCP Spheres in 3D Viewport")
@@ -417,6 +416,12 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         self.btn_show_cps.clicked.connect(self._on_toggle_qtaim_cps)
         self.btn_show_cps.setEnabled(False)
         ctrl_bar.addWidget(self.btn_show_cps)
+
+        self.btn_show_paths = QtWidgets.QPushButton("Display Bond Paths in 3D Viewport")
+        self.btn_show_paths.setToolTip("Renders Bader gradient steepest ascent bond paths between nuclei and BCPs in 3D")
+        self.btn_show_paths.clicked.connect(self._on_toggle_qtaim_paths)
+        self.btn_show_paths.setEnabled(False)
+        ctrl_bar.addWidget(self.btn_show_paths)
 
         ctrl_bar.addStretch()
 
@@ -426,9 +431,10 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         layout.addLayout(ctrl_bar)
 
         self.tbl_qtaim = QtWidgets.QTableWidget()
-        self.tbl_qtaim.setColumnCount(6)
+        self.tbl_qtaim.setColumnCount(11)
         self.tbl_qtaim.setHorizontalHeaderLabels([
-            "CP #", "Type", "Classification", "X (Å)", "Y (Å)", "Z (Å)"
+            "CP #", "Type", "Classification", "X (Å)", "Y (Å)", "Z (Å)",
+            "ρ (a.u.)", "∇²ρ (a.u.)", "Ellipticity ε", "H(r) (a.u.)", "Bond Character"
         ])
         self.tbl_qtaim.horizontalHeader().setStretchLastSection(True)
         self.tbl_qtaim.setAlternatingRowColors(True)
@@ -446,7 +452,7 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         def _on_done(res: QTAIMResult):
             self._qtaim_res = res
             self.lbl_qtaim_summary.setText(
-                f"Found {len(res.critical_points)} CPs: {res.num_bcp} Bond (BCP), {res.num_nuclear} Nuclear, "
+                f"[{res.method}] Found {len(res.critical_points)} CPs: {res.num_bcp} Bond (BCP), {res.num_nuclear} Nuclear, "
                 f"{res.num_rcp} Ring (RCP), {res.num_ccp} Cage (CCP)"
             )
             self.tbl_qtaim.setRowCount(len(res.critical_points))
@@ -454,16 +460,22 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
                 self.tbl_qtaim.setItem(row, 0, QtWidgets.QTableWidgetItem(str(cp.index)))
                 self.tbl_qtaim.setItem(row, 1, QtWidgets.QTableWidgetItem(cp.cp_type))
                 self.tbl_qtaim.setItem(row, 2, QtWidgets.QTableWidgetItem(cp.type_name))
-                self.tbl_qtaim.setItem(row, 3, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[0]:.6f}"))
-                self.tbl_qtaim.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[1]:.6f}"))
-                self.tbl_qtaim.setItem(row, 5, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[2]:.6f}"))
+                self.tbl_qtaim.setItem(row, 3, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[0]:.4f}"))
+                self.tbl_qtaim.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[1]:.4f}"))
+                self.tbl_qtaim.setItem(row, 5, QtWidgets.QTableWidgetItem(f"{cp.coords_angstrom[2]:.4f}"))
+                self.tbl_qtaim.setItem(row, 6, QtWidgets.QTableWidgetItem(f"{cp.rho:.4f}" if cp.rho > 1e-6 else "—"))
+                self.tbl_qtaim.setItem(row, 7, QtWidgets.QTableWidgetItem(f"{cp.laplacian:+.4f}" if abs(cp.laplacian) > 1e-6 else "—"))
+                self.tbl_qtaim.setItem(row, 8, QtWidgets.QTableWidgetItem(f"{cp.ellipticity:.4f}" if cp.ellipticity > 1e-6 else "—"))
+                self.tbl_qtaim.setItem(row, 9, QtWidgets.QTableWidgetItem(f"{cp.h_density:+.4f}" if abs(cp.h_density) > 1e-6 else "—"))
+                self.tbl_qtaim.setItem(row, 10, QtWidgets.QTableWidgetItem(cp.bond_character or "—"))
 
             self.btn_show_cps.setEnabled(True)
+            self.btn_show_paths.setEnabled(bool(res.bond_paths))
 
         def _on_err(e):
             QtWidgets.QMessageBox.critical(self, "QTAIM Analysis Failed", friendly_error_text(e))
 
-        run_in_background(self, "QTAIM Topology", "Searching critical points via Multiwfn...", _worker, _on_done, _on_err)
+        run_in_background(self, "QTAIM Topology", "Searching critical points via PySCF/Multiwfn...", _worker, _on_done, _on_err)
 
     def _on_toggle_qtaim_cps(self):
         if not self.viewer or not self._qtaim_res:
@@ -475,12 +487,31 @@ class MultiwfnAnalysisDialog(QtWidgets.QDialog):
         self.viewer.update()
 
         self.btn_show_cps.setText("Hide BCP Spheres in 3D Viewport" if new_state else "Display BCP Spheres in 3D Viewport")
-        QtWidgets.QMessageBox.information(
-            self,
-            "QTAIM 3D Critical Points",
-            f"{'Displaying' if new_state else 'Hidden'} {len(self._qtaim_res.critical_points)} critical points "
-            "(cyan: BCP, amber: RCP, purple: CCP) in the 3D viewer.",
-        )
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            QtWidgets.QMessageBox.information(
+                self,
+                "QTAIM 3D Critical Points",
+                f"{'Displaying' if new_state else 'Hidden'} {len(self._qtaim_res.critical_points)} critical points "
+                "(cyan: BCP, amber: RCP, purple: CCP) in the 3D viewer.",
+            )
+
+    def _on_toggle_qtaim_paths(self):
+        if not self.viewer or not self._qtaim_res:
+            return
+        current_state = getattr(self.viewer, "show_qtaim_bond_paths", False)
+        new_state = not current_state
+        self.viewer.qtaim_bond_paths = self._qtaim_res.bond_paths
+        self.viewer.show_qtaim_bond_paths = new_state
+        self.viewer.update()
+
+        self.btn_show_paths.setText("Hide Bond Paths in 3D Viewport" if new_state else "Display Bond Paths in 3D Viewport")
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            QtWidgets.QMessageBox.information(
+                self,
+                "QTAIM 3D Bond Paths",
+                f"{'Displaying' if new_state else 'Hidden'} {len(self._qtaim_res.bond_paths)} Bader gradient "
+                "steepest ascent bond paths in the 3D viewer.",
+            )
 
     # ---------------------------------------------------------------------
     # Tab 4: CM5 & Hirshfeld Partial Charges

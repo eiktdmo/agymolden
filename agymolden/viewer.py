@@ -84,6 +84,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.force_scale: float = 2.5
         self.qtaim_critical_points: List[Any] = []  # List of CriticalPoint objects from Multiwfn/QTAIM
         self.show_qtaim_cps: bool = False
+        self.qtaim_bond_paths: List[Any] = []        # List of 3D gradient bond path trajectories
+        self.show_qtaim_bond_paths: bool = False
         self.transparent_bg: bool = False
         self.bg_color_mode: str = "white"  # "dark" or "white" (default: white)
         self.mouse_mode: str = "standard"  # "standard", "gaussview", or "chemcraft"
@@ -1427,6 +1429,47 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 glUniform3f(loc_color, col[0], col[1], col[2])
                 glUniform1i(loc_hl, 0)
                 glDrawElements(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None)
+
+        # 3b-3. Render QTAIM / Bader Gradient Bond Paths (Thin cylinders)
+        if getattr(self, "show_qtaim_bond_paths", False) and getattr(self, "qtaim_bond_paths", None):
+            glBindVertexArray(self.cyl_vao)
+            path_col = (0.10, 0.85, 0.65)  # Vibrant emerald/cyan bond path
+            shaft_r = 0.035
+            z_axis = np.array([0.0, 0.0, 1.0])
+            for bpath in self.qtaim_bond_paths:
+                if not bpath or len(bpath) < 2:
+                    continue
+                for seg_i in range(len(bpath) - 1):
+                    p1 = np.array(bpath[seg_i], dtype=float)
+                    p2 = np.array(bpath[seg_i + 1], dtype=float)
+                    v_dir = p2 - p1
+                    dist = float(np.linalg.norm(v_dir))
+                    if dist < 1e-4:
+                        continue
+                    u_dir = v_dir / dist
+                    cross = np.cross(z_axis, u_dir)
+                    c_len = float(np.linalg.norm(cross))
+                    if c_len > 1e-6:
+                        axis = cross / c_len
+                        angle_deg = math.degrees(math.acos(np.clip(float(np.dot(z_axis, u_dir)), -1.0, 1.0)))
+                    elif float(np.dot(z_axis, u_dir)) < 0.0:
+                        axis = np.array([1.0, 0.0, 0.0])
+                        angle_deg = 180.0
+                    else:
+                        axis = np.array([0.0, 1.0, 0.0])
+                        angle_deg = 0.0
+
+                    m_seg = QtGui.QMatrix4x4()
+                    m_seg.translate(float(p1[0]), float(p1[1]), float(p1[2]))
+                    if angle_deg != 0.0:
+                        m_seg.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
+                    m_seg.scale(shaft_r, shaft_r, dist)
+
+                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m_seg.data())
+                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m_seg.normalMatrix().data())
+                    glUniform3f(loc_color, path_col[0], path_col[1], path_col[2])
+                    glUniform1i(loc_hl, 0)
+                    glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
 
         glBindVertexArray(0)
         glUseProgram(0)

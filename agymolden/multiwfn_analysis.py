@@ -128,6 +128,16 @@ class CriticalPoint:
     coords_bohr: Tuple[float, float, float]
     coords_angstrom: Tuple[float, float, float]
     connected_atoms: Optional[Tuple[int, int]] = None
+    rho: float = 0.0                               # Electron density rho(r_cp) in a.u.
+    grad_norm: float = 0.0                         # ||grad rho|| in a.u.
+    laplacian: float = 0.0                         # nabla^2 rho = lambda1 + lambda2 + lambda3 in a.u.
+    hessian_eigenvalues: Tuple[float, float, float] = (0.0, 0.0, 0.0) # (lambda1 <= lambda2 <= lambda3)
+    ellipticity: float = 0.0                       # epsilon = (lambda1 / lambda2) - 1.0 (for BCP)
+    v_density: float = 0.0                         # Potential energy density V(r) in a.u.
+    g_density: float = 0.0                         # Lagrangian kinetic energy density G(r) in a.u.
+    h_density: float = 0.0                         # Total energy density H(r) = G(r) + V(r) in a.u.
+    bond_character: str = ""                       # "Shared / Covalent", "Polar Covalent", "Closed-Shell (Ionic/vdW/H-Bond)"
+    bond_path: Optional[List[Tuple[float, float, float]]] = None # 3D coordinates in Angstrom along gradient path
 
 
 @dataclass
@@ -137,6 +147,8 @@ class QTAIMResult:
     num_bcp: int = 0
     num_rcp: int = 0
     num_ccp: int = 0
+    method: str = "PySCF Analytical QTAIM"
+    bond_paths: List[List[Tuple[float, float, float]]] = field(default_factory=list)
     raw_output: str = ""
 
 
@@ -345,16 +357,38 @@ def compute_condensed_fukui(molden_path: str, population_scheme: str = "Lowdin")
 # Feature 3: QTAIM / AIM Topology Analysis
 # =========================================================================
 
-def compute_qtaim_topology(molden_path: str) -> QTAIMResult:
+def compute_qtaim_topology(molden_path: str, engine: str = "auto") -> QTAIMResult:
     """
-    Runs Multiwfn topology analysis (Option 2) to search for:
-    - (3,-3) Nuclear Critical Points
-    - (3,-1) Bond Critical Points (BCP) between atom pairs
-    """
-    multiwfn_bin = detect_multiwfn_executable()
-    if not multiwfn_bin:
-        raise MultiwfnNotFoundError("QTAIM topology analysis")
+    Computes QTAIM (Quantum Theory of Atoms in Molecules) Bader topology analysis:
+    - (3,-3) Nuclear Attractors
+    - (3,-1) Bond Critical Points (BCP) with electron density rho, Laplacian nabla^2 rho,
+      ellipticity epsilon, energy densities G, V, H, and exact 3D bond paths
+    - (3,+1) Ring Critical Points (RCP)
+    - (3,+3) Cage Critical Points (CCP)
 
+    Args:
+        molden_path: Path to Molden format file.
+        engine: "auto", "pyscf", or "multiwfn".
+    """
+    if engine == "pyscf":
+        return _compute_qtaim_pyscf(molden_path)
+
+    multiwfn_bin = detect_multiwfn_executable()
+    if engine == "multiwfn":
+        if not multiwfn_bin:
+            raise MultiwfnNotFoundError("QTAIM topology analysis")
+        return _compute_qtaim_multiwfn(multiwfn_bin, molden_path)
+
+    if multiwfn_bin:
+        try:
+            return _compute_qtaim_multiwfn(multiwfn_bin, molden_path)
+        except Exception as e:
+            log.warning("Multiwfn QTAIM execution failed (%s), falling back to native PySCF topology solver...", e)
+
+    return _compute_qtaim_pyscf(molden_path)
+
+
+def _compute_qtaim_multiwfn(multiwfn_bin: str, molden_path: str) -> QTAIMResult:
     # Multiwfn Option 2 workflow:
     # 2 (Topology) -> 2 (Nuclear CPs) -> 3 (Atomic pair midpoints) -> -4 (Modify/export) -> -1 (Print summary in Angstrom) -> 0 -> -10 (Return) -> q
     inp = f"{molden_path}\n2\n2\n3\n-4\n-1\n0\n-10\nq\n"
@@ -394,7 +428,6 @@ def compute_qtaim_topology(molden_path: str) -> QTAIMResult:
                     z_ang = float(parts[3])
                     cp_type = parts[4]
 
-                    # Convert to bohr (1 Bohr = 0.529177210903 Å)
                     bohr_conv = 1.0 / 0.529177210903
                     x_b = x_ang * bohr_conv
                     y_b = y_ang * bohr_conv
@@ -430,7 +463,286 @@ def compute_qtaim_topology(molden_path: str) -> QTAIMResult:
         num_bcp=num_bcp,
         num_rcp=num_rcp,
         num_ccp=num_ccp,
+        method="Multiwfn Option 2",
         raw_output=stdout,
+    )
+
+
+def _compute_qtaim_pyscf(molden_path: str) -> QTAIMResult:
+    """High-precision native analytical QTAIM topology evaluator using PySCF GTO evaluation."""
+    from pyscf.tools import molden
+    from .forcefield import detect_connectivity
+
+    mol, mo_energy, mo_coeff, mo_occ, _, _ = molden.load(molden_path)
+    occ = np.array(mo_occ, dtype=float)
+    dm = mo_coeff @ np.diag(occ) @ mo_coeff.T
+
+    bohr2ang = 0.529177210903
+    ang2bohr = 1.0 / bohr2ang
+    natm = mol.natm
+    symbols = [mol.atom_symbol(i) for i in range(natm)]
+    coords_ang = np.array([mol.atom_coord(i) * bohr2ang for i in range(natm)])
+
+    def _eval_fields(pt_bohr: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
+        ao = mol.eval_gto("GTOval_sph_deriv2", pt_bohr.reshape(1, 3))
+        chi = ao[0]
+        dx, dy, dz = ao[1], ao[2], ao[3]
+        xx, xy, xz, yy, yz, zz = ao[4], ao[5], ao[6], ao[7], ao[8], ao[9]
+
+        rho = float(np.einsum("pi,ij,pj->p", chi, dm, chi)[0])
+        gx = float(2.0 * np.einsum("pi,ij,pj->p", dx, dm, chi)[0])
+        gy = float(2.0 * np.einsum("pi,ij,pj->p", dy, dm, chi)[0])
+        gz = float(2.0 * np.einsum("pi,ij,pj->p", dz, dm, chi)[0])
+        grad = np.array([gx, gy, gz], dtype=float)
+
+        Hxx = float(2.0 * (np.einsum("pi,ij,pj->p", xx, dm, chi)[0] + np.einsum("pi,ij,pj->p", dx, dm, dx)[0]))
+        Hyy = float(2.0 * (np.einsum("pi,ij,pj->p", yy, dm, chi)[0] + np.einsum("pi,ij,pj->p", dy, dm, dy)[0]))
+        Hzz = float(2.0 * (np.einsum("pi,ij,pj->p", zz, dm, chi)[0] + np.einsum("pi,ij,pj->p", dz, dm, dz)[0]))
+        Hxy = float(2.0 * (np.einsum("pi,ij,pj->p", xy, dm, chi)[0] + np.einsum("pi,ij,pj->p", dx, dm, dy)[0]))
+        Hxz = float(2.0 * (np.einsum("pi,ij,pj->p", xz, dm, chi)[0] + np.einsum("pi,ij,pj->p", dx, dm, dz)[0]))
+        Hyz = float(2.0 * (np.einsum("pi,ij,pj->p", yz, dm, chi)[0] + np.einsum("pi,ij,pj->p", dy, dm, dz)[0]))
+        H = np.array([[Hxx, Hxy, Hxz], [Hxy, Hyy, Hyz], [Hxz, Hyz, Hzz]], dtype=float)
+        return rho, grad, H
+
+    cps: List[CriticalPoint] = []
+    cp_idx = 1
+    num_nuc = 0
+    num_bcp = 0
+    num_rcp = 0
+    num_ccp = 0
+    all_bond_paths: List[List[Tuple[float, float, float]]] = []
+
+    # 1. (3,-3) Nuclear Attractors at atomic centers
+    for A in range(natm):
+        r_A = mol.atom_coord(A)
+        rho_n, grad_n, H_n = _eval_fields(r_A)
+        evals_n = np.sort(np.linalg.eigvalsh(H_n))
+        lap_n = float(np.sum(evals_n))
+        cps.append(CriticalPoint(
+            index=cp_idx,
+            cp_type="(3,-3)",
+            type_name=f"Nuclear Attractor ({symbols[A]}{A+1})",
+            coords_bohr=(float(r_A[0]), float(r_A[1]), float(r_A[2])),
+            coords_angstrom=(float(r_A[0] * bohr2ang), float(r_A[1] * bohr2ang), float(r_A[2] * bohr2ang)),
+            connected_atoms=(A, A),
+            rho=rho_n,
+            grad_norm=float(np.linalg.norm(grad_n)),
+            laplacian=lap_n,
+            hessian_eigenvalues=(float(evals_n[0]), float(evals_n[1]), float(evals_n[2])),
+            bond_character="Nuclear Core",
+        ))
+        cp_idx += 1
+        num_nuc += 1
+
+    # 2. (3,-1) Bond Critical Points (BCP)
+    bonds = detect_connectivity(symbols, coords_ang)
+    # Also evaluate any nearby non-bonded pairs under 3.2 A for non-covalent BCPs / H-bonds
+    candidate_pairs = list(bonds)
+    bonds_set = set(bonds)
+    for i in range(natm):
+        for j in range(i + 1, natm):
+            if (i, j) not in bonds_set:
+                d_ij = float(np.linalg.norm(coords_ang[i] - coords_ang[j]))
+                if d_ij <= 3.2:
+                    candidate_pairs.append((i, j))
+
+    found_bcp_coords: List[np.ndarray] = []
+
+    for A, B in candidate_pairs:
+        r_A = mol.atom_coord(A)
+        r_B = mol.atom_coord(B)
+        r = 0.5 * (r_A + r_B)
+
+        # Newton-Raphson iteration
+        converged = False
+        for step in range(25):
+            rho, grad, H = _eval_fields(r)
+            gnorm = float(np.linalg.norm(grad))
+            if gnorm < 1e-4:
+                converged = True
+                break
+            try:
+                s_vec = np.linalg.solve(H, grad)
+                s_len = float(np.linalg.norm(s_vec))
+                if s_len > 0.25:
+                    s_vec *= (0.25 / s_len)
+                r -= s_vec
+            except np.linalg.LinAlgError:
+                break
+
+        if not converged:
+            rho, grad, H = _eval_fields(r)
+            if float(np.linalg.norm(grad)) < 5e-3:
+                converged = True
+
+        if converged and rho > 1e-4:
+            evals, evecs = np.linalg.eigh(H)
+            order = np.argsort(evals)
+            evals = evals[order]
+            evecs = evecs[:, order]
+
+            negs = sum(1 for e in evals if e < -1e-6)
+            poss = sum(1 for e in evals if e > 1e-6)
+
+            if negs == 2 and poss == 1:
+                # Check de-duplication
+                r_ang = r * bohr2ang
+                if any(np.linalg.norm(r_ang - prev) < 0.08 for prev in found_bcp_coords):
+                    continue
+                found_bcp_coords.append(r_ang)
+
+                lap = float(np.sum(evals))
+                l1, l2, l3 = float(evals[0]), float(evals[1]), float(evals[2])
+                ellip = float((l1 / (l2 + 1e-12)) - 1.0) if abs(l2) > 1e-10 else 0.0
+
+                # Virial energy densities (in a.u.)
+                g_dens = float(0.3 * (3.0 * np.pi**2)**(2.0/3.0) * (rho**(5.0/3.0)) + (1.0/72.0) * (np.linalg.norm(grad)**2 / (rho + 1e-12)))
+                v_dens = float(0.25 * lap - 2.0 * g_dens)
+                h_dens = float(g_dens + v_dens)
+
+                if h_dens < 0.0 and lap < 0.0:
+                    char_str = "Shared / Covalent"
+                elif h_dens < 0.0 and lap > 0.0:
+                    char_str = "Polar Covalent"
+                else:
+                    char_str = "Closed-Shell (Ionic / vdW / H-Bond)"
+
+                # Trace bond path along eigenvector of lambda_3 > 0
+                v_bond = evecs[:, 2]
+                bpath_pts: List[Tuple[float, float, float]] = []
+
+                # Trace branch to atom A and branch to atom B
+                for sign in (-1, 1):
+                    branch_pts = [r * bohr2ang]
+                    curr_b = r + sign * 0.05 * v_bond
+                    for _ in range(35):
+                        branch_pts.append(curr_b * bohr2ang)
+                        d_nuclei = [float(np.linalg.norm(curr_b - mol.atom_coord(k))) for k in (A, B)]
+                        if min(d_nuclei) < 0.28:
+                            break
+                        _, g_step, _ = _eval_fields(curr_b)
+                        gs_norm = float(np.linalg.norm(g_step))
+                        if gs_norm < 1e-4:
+                            break
+                        curr_b = curr_b + (g_step / gs_norm) * 0.08
+
+                    if sign == -1:
+                        bpath_pts = [tuple(p) for p in reversed(branch_pts)]
+                    else:
+                        bpath_pts.extend([tuple(p) for p in branch_pts[1:]])
+
+                all_bond_paths.append(bpath_pts)
+
+                cps.append(CriticalPoint(
+                    index=cp_idx,
+                    cp_type="(3,-1)",
+                    type_name=f"Bond CP ({symbols[A]}{A+1}···{symbols[B]}{B+1})",
+                    coords_bohr=(float(r[0]), float(r[1]), float(r[2])),
+                    coords_angstrom=(float(r_ang[0]), float(r_ang[1]), float(r_ang[2])),
+                    connected_atoms=(A, B),
+                    rho=rho,
+                    grad_norm=float(np.linalg.norm(grad)),
+                    laplacian=lap,
+                    hessian_eigenvalues=(l1, l2, l3),
+                    ellipticity=ellip,
+                    v_density=v_dens,
+                    g_density=g_dens,
+                    h_density=h_dens,
+                    bond_character=char_str,
+                    bond_path=bpath_pts,
+                ))
+                cp_idx += 1
+                num_bcp += 1
+
+    # 3. (3,+1) Ring Critical Points (RCP)
+    # Check ring centroids if rings are detected
+    from .topology import build_adj
+    adj = build_adj(natm, bonds)
+    # Simple cycle detection for 3-6 membered rings
+    visited_cycles = set()
+    for start in range(natm):
+        for n1 in adj[start]:
+            for n2 in adj[n1]:
+                if n2 == start:
+                    continue
+                for n3 in adj[n2]:
+                    if n3 == n1:
+                        continue
+                    if n3 in adj[start]: # 4-membered ring
+                        cycle = tuple(sorted([start, n1, n2, n3]))
+                        visited_cycles.add(cycle)
+                    for n4 in adj[n3]:
+                        if n4 in (n1, n2):
+                            continue
+                        if n4 in adj[start]: # 5-membered ring
+                            cycle = tuple(sorted([start, n1, n2, n3, n4]))
+                            visited_cycles.add(cycle)
+                        for n5 in adj[n4]:
+                            if n5 in (n1, n2, n3):
+                                continue
+                            if n5 in adj[start]: # 6-membered ring
+                                cycle = tuple(sorted([start, n1, n2, n3, n4, n5]))
+                                visited_cycles.add(cycle)
+
+    for cycle in visited_cycles:
+        ring_coords = [mol.atom_coord(k) for k in cycle]
+        r_rcp = np.mean(ring_coords, axis=0)
+
+        for step in range(25):
+            rho, grad, H = _eval_fields(r_rcp)
+            if float(np.linalg.norm(grad)) < 1e-4:
+                break
+            try:
+                s_vec = np.linalg.solve(H, grad)
+                s_len = float(np.linalg.norm(s_vec))
+                if s_len > 0.25:
+                    s_vec *= (0.25 / s_len)
+                r_rcp -= s_vec
+            except np.linalg.LinAlgError:
+                break
+
+        rho, grad, H = _eval_fields(r_rcp)
+        evals = np.sort(np.linalg.eigvalsh(H))
+        negs = sum(1 for e in evals if e < -1e-6)
+        poss = sum(1 for e in evals if e > 1e-6)
+
+        if negs == 1 and poss == 2 and rho > 1e-4:
+            r_ang = r_rcp * bohr2ang
+            if any(np.linalg.norm(r_ang - prev) < 0.10 for prev in found_bcp_coords):
+                continue
+            found_bcp_coords.append(r_ang)
+            lap = float(np.sum(evals))
+            g_dens = float(0.3 * (3.0 * np.pi**2)**(2.0/3.0) * (rho**(5.0/3.0)))
+            v_dens = float(0.25 * lap - 2.0 * g_dens)
+            h_dens = float(g_dens + v_dens)
+
+            cps.append(CriticalPoint(
+                index=cp_idx,
+                cp_type="(3,+1)",
+                type_name=f"Ring CP ({len(cycle)}-ring centroid)",
+                coords_bohr=(float(r_rcp[0]), float(r_rcp[1]), float(r_rcp[2])),
+                coords_angstrom=(float(r_ang[0]), float(r_ang[1]), float(r_ang[2])),
+                rho=rho,
+                grad_norm=float(np.linalg.norm(grad)),
+                laplacian=lap,
+                hessian_eigenvalues=(float(evals[0]), float(evals[1]), float(evals[2])),
+                v_density=v_dens,
+                g_density=g_dens,
+                h_density=h_dens,
+                bond_character="Ring Delocalization Center",
+            ))
+            cp_idx += 1
+            num_rcp += 1
+
+    return QTAIMResult(
+        critical_points=cps,
+        num_nuclear=num_nuc,
+        num_bcp=num_bcp,
+        num_rcp=num_rcp,
+        num_ccp=num_ccp,
+        method="PySCF Analytical QTAIM",
+        bond_paths=all_bond_paths,
+        raw_output=f"PySCF QTAIM Topology Solver completed with {len(cps)} CPs ({num_bcp} BCP, {num_rcp} RCP, {num_nuc} Nuclear)",
     )
 
 

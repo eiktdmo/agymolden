@@ -158,9 +158,14 @@ def test_multiwfn_custom_path_and_missing_error(monkeypatch, tmp_path):
     monkeypatch.delenv("MULTIWFN_PATH")
     monkeypatch.setattr(mwa, "detect_multiwfn_executable", lambda: None)
     with pytest.raises(mwa.MultiwfnNotFoundError):
-        mwa.compute_qtaim_topology(H2O_MOLDEN)
+        mwa.compute_qtaim_topology(H2O_MOLDEN, engine="multiwfn")
     with pytest.raises(mwa.MultiwfnNotFoundError):
         mwa.compute_hirshfeld_and_cm5_charges(H2O_MOLDEN)
+
+    # auto/pyscf fallback works even if Multiwfn is missing
+    qres = mwa.compute_qtaim_topology(H2O_MOLDEN, engine="auto")
+    assert qres.method == "PySCF Analytical QTAIM"
+    assert qres.num_bcp >= 2
 
 
 def test_friendly_error_text_for_missing_pyscf():
@@ -168,3 +173,32 @@ def test_friendly_error_text_for_missing_pyscf():
 
     assert friendly_error_text(ImportError("No module named 'pyscf'")) == PYSCF_MISSING_MESSAGE
     assert friendly_error_text(ValueError("boom")) == "boom"
+
+
+def test_pyscf_qtaim_analytical_water_and_benzene():
+    import agymolden.multiwfn_analysis as mwa
+
+    # 1. Water QTAIM
+    res_h2o = mwa.compute_qtaim_topology(H2O_MOLDEN, engine="pyscf")
+    assert res_h2o.method == "PySCF Analytical QTAIM"
+    assert res_h2o.num_nuclear == 3
+    assert res_h2o.num_bcp == 2
+    assert len(res_h2o.bond_paths) == 2
+    for bcp in [cp for cp in res_h2o.critical_points if cp.cp_type == "(3,-1)"]:
+        assert bcp.rho > 0.15
+        assert bcp.grad_norm < 1e-3
+        assert bcp.bond_character != ""
+        assert bcp.bond_path is not None
+        assert len(bcp.bond_path) >= 5
+
+    # 2. Benzene QTAIM (checks ring critical point RCP)
+    c6h6_molden = os.path.join(os.path.dirname(__file__), "..", "examples", "C6H6_OPT_HF_cc-pvdz_hf_electrons.molden")
+    if os.path.isfile(c6h6_molden):
+        res_c6h6 = mwa.compute_qtaim_topology(c6h6_molden, engine="pyscf")
+        assert res_c6h6.num_nuclear == 12
+        assert res_c6h6.num_bcp >= 12   # 6 C-C + 6 C-H
+        assert res_c6h6.num_rcp >= 1    # Ring centroid
+        rcps = [cp for cp in res_c6h6.critical_points if cp.cp_type == "(3,+1)"]
+        assert len(rcps) >= 1
+        assert rcps[0].rho > 0.01
+        assert rcps[0].grad_norm < 1e-3
