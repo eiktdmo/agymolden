@@ -1,25 +1,28 @@
 name: Build Standalone Binaries
 
 on:
-      workflow_dispatch:
-    
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
 jobs:
-      build:
-        name: Build on ${{ matrix.os }}
-        runs-on: ${{ matrix.os }}
-        strategy:
-          fail-fast: false
-          matrix:
-            include:
-              - os: windows-latest
-                artifact_name: agymolden-windows-x64
-                archive_file: dist/agymolden-windows-x64.zip
-              - os: ubuntu-22.04
-                artifact_name: agymolden-linux-x64
-                archive_file: dist/agymolden-linux-x64.tar.gz
-              - os: macos-latest
-                artifact_name: agymolden-macos
-                archive_file: dist/agymolden-macos.tar.gz
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: agymolden-windows-x64
+            archive_file: dist/agymolden-windows-x64.zip
+          - os: ubuntu-22.04
+            artifact_name: agymolden-linux-x64
+            archive_file: dist/agymolden-linux-x64.tar.gz
+          - os: macos-latest
+            artifact_name: agymolden-macos
+            archive_file: dist/agymolden-macos.tar.gz
 
         steps:
           - name: Checkout Repository
