@@ -273,134 +273,12 @@ class CalculationsMixin:
 
     def _on_calculate_vibrations(self):
         """Calculate normal vibrational frequencies and displacements using selected UFF/MMFF94s or Semiempirical QM engine."""
-        if len(self.zatoms) < 2:
-            QtWidgets.QMessageBox.information(
-                self, "Vibrational Modes", "At least 2 atoms are required to calculate vibrational modes."
-            )
-            return
-
-        method = self._get_selected_opt_method()
-        method_label = "Semiempirical QM (GFN0-xTB)" if method == "semiempirical" else "Analytical UFF/MMFF94s"
-        self.statusBar().showMessage(f"Calculating vibrational Hessian and normal modes ({method_label})...", 4000)
-
-        symbols = [a.symbol for a in self.zatoms]
-        user_bonds = self._current_explicit_bonds()
-        bo = dict(getattr(self.viewer, 'bond_orders', {}))
-        start_coords = np.array(self.coords, copy=True)
-
-        def compute():
-            # Compute vibrations at current geometry
-            return compute_force_field_vibrations(
-                symbols, start_coords, user_bonds=user_bonds, optimize_first=False,
-                method=method, user_bond_orders=bo
-            )
-
-        def done(result):
-            try:
-                self._apply_vibrations(result)
-            except Exception as e:
-                dialog_service.error(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{e}", exc=e)
-
-        def failed(exc):
-            dialog_service.error(self, "Vibration Calculation Error", f"Failed to compute vibrations:\n{exc}", exc=exc)
-
-        run_in_background(self, "Vibrational Modes", f"Calculating normal modes ({method_label})...",
-                          compute, done, failed)
+        from .controllers import VibrationController
+        VibrationController(self).calculate_vibrations()
 
     def _apply_vibrations(self, result):
-        eq_coords, analysis = result
-        self.vibrational_analysis = analysis
-
-        symbols = [a.symbol for a in self.zatoms]
-        sym_res = getattr(self, "_current_sym_res", None)
-        scale_fac = self.spectrum_widget.scale_factor if hasattr(self, "spectrum_widget") else 1.0
-
-        # Populate table
-        self.table_vibrations.setRowCount(analysis.n_modes)
-        for row, freq in enumerate(analysis.frequencies):
-            item_idx = QtWidgets.QTableWidgetItem(str(row + 1))
-            item_idx.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            item_idx.setForeground(QtGui.QBrush(QtGui.QColor("#90caf9")))
-
-            item_freq = QtWidgets.QTableWidgetItem(f"{freq:.2f}")
-            item_freq.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-
-            scaled_freq = freq * scale_fac
-            item_scaled = QtWidgets.QTableWidgetItem(f"{scaled_freq:.2f}")
-            item_scaled.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-            item_scaled.setForeground(QtGui.QBrush(QtGui.QColor("#38bdf8")))
-
-            # Classify mode symmetry irrep
-            irrep_label = "-"
-            if row < len(analysis.displacements):
-                disp = analysis.displacements[row]
-                irrep_label = classify_vibrational_mode_irrep(symbols, self.coords, disp, sym_res)
-            item_irrep = QtWidgets.QTableWidgetItem(irrep_label)
-            item_irrep.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            item_irrep.setForeground(QtGui.QBrush(QtGui.QColor("#f59e0b" if irrep_label != "-" else "#64748b")))
-            item_irrep.setFont(QtGui.QFont("Monospace", 9, QtGui.QFont.Weight.Bold))
-
-            motion_label = ""
-            if row < len(analysis.displacements):
-                try:
-                    from .vibrations import assign_normal_mode_motion
-                    motion_label = assign_normal_mode_motion(symbols, self.coords, analysis.displacements[row], freq_cm1=freq)
-                except Exception:
-                    motion_label = ""
-
-            if freq < -5.0:
-                status_text = f"TS Imaginary ({motion_label})" if motion_label else "Imaginary / Transition State"
-                color_status = "#f87171"  # red
-            elif abs(freq) <= 15.0:
-                status_text = "Translation / Rotation"
-                color_status = "#94a3b8"  # slate
-            else:
-                status_text = motion_label if motion_label else "Genuine Vibration"
-                color_status = "#4ade80"  # green
-
-            item_status = QtWidgets.QTableWidgetItem(status_text)
-            item_status.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            item_status.setForeground(QtGui.QBrush(QtGui.QColor(color_status)))
-
-            self.table_vibrations.setItem(row, 0, item_idx)
-            self.table_vibrations.setItem(row, 1, item_freq)
-            self.table_vibrations.setItem(row, 2, item_scaled)
-            self.table_vibrations.setItem(row, 3, item_irrep)
-            self.table_vibrations.setItem(row, 4, item_status)
-
-        # Switch to Vibrational Modes tab
-        idx = self.tabs.indexOf(getattr(self, "tab_vibrations", None))
-        if idx >= 0:
-            self.tabs.setCurrentIndex(idx)
-        else:
-            self.tabs.setCurrentIndex(3)
-
-        # Select first genuine vibrational mode (skip first 6 translations/rotations if present)
-        first_vib_row = min(6, max(0, analysis.n_modes - 1))
-        for r, f in enumerate(analysis.frequencies):
-            if f > 20.0:
-                first_vib_row = r
-                break
-        self.table_vibrations.selectRow(first_vib_row)
-
-        # Update synthetic IR / Raman spectrum widget
-        if hasattr(self, "spectrum_widget"):
-            intensities = getattr(analysis, "ir_intensities", None)
-            raman = getattr(analysis, "raman_activities", None)
-            method = getattr(self, "_last_qm_method", "")
-            basis = getattr(self, "_last_qm_basis", "")
-            self.spectrum_widget.set_vibrational_data(
-                analysis.frequencies,
-                intensities,
-                method=method,
-                basis=basis,
-                raman_activities=raman,
-            )
-            self.spectrum_widget.set_active_mode(first_vib_row)
-
-        self.statusBar().showMessage(
-            f"Calculated {analysis.n_modes} normal modes ({analysis.source}). Select a mode to simulate.", 5000
-        )
+        from .controllers import VibrationController
+        VibrationController(self).apply_vibrations(result)
 
     def _on_open_isotopologue_dialog(self):
         """Open the Isotopologue Vibrational Shift & Kinetic Isotope Effect (KIE) Dialog."""
@@ -418,41 +296,13 @@ class CalculationsMixin:
 
     def _on_spectrum_scale_changed(self, scale_fac: float):
         """Update the Scaled Frequency column in table_vibrations when NIST scale factor changes."""
-        if not self.vibrational_analysis:
-            return
-        for row, freq in enumerate(self.vibrational_analysis.frequencies):
-            scaled_freq = freq * scale_fac
-            it = self.table_vibrations.item(row, 2)
-            if it:
-                it.setText(f"{scaled_freq:.2f}")
-            else:
-                new_it = QtWidgets.QTableWidgetItem(f"{scaled_freq:.2f}")
-                new_it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-                new_it.setForeground(QtGui.QBrush(QtGui.QColor("#38bdf8")))
-                self.table_vibrations.setItem(row, 2, new_it)
+        from .controllers import VibrationController
+        VibrationController(self).on_spectrum_scale_changed(scale_fac)
 
     def _on_spectrum_mode_clicked(self, mode_idx: int):
         """Called when user clicks on an IR/Raman spectrum peak in the matplotlib plot."""
-        if hasattr(self, "table_vibrations") and 0 <= mode_idx < self.table_vibrations.rowCount():
-            self.table_vibrations.selectRow(mode_idx)
-            # Auto-start or update vibration simulation immediately upon clicking the peak
-            if self.vibrational_analysis and 0 <= mode_idx < self.vibrational_analysis.n_modes:
-                freq = self.vibrational_analysis.frequencies[mode_idx]
-                disp = self.vibrational_analysis.displacements[mode_idx]
-                amp = getattr(self, "slider_vib_amp", None)
-                amp_val = (amp.value() / 100.0) if amp is not None else 0.5
-                self.viewer.start_vibration(mode_idx, freq, disp, amplitude=amp_val)
-                if hasattr(self, "btn_play_vibration"):
-                    self.btn_play_vibration.setText("⏸ Pause Simulation")
-                    self.btn_play_vibration.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
-                if hasattr(self, "btn_stop_vibration"):
-                    self.btn_stop_vibration.setEnabled(True)
-                ir_int = ""
-                if self.vibrational_analysis.ir_intensities and mode_idx < len(self.vibrational_analysis.ir_intensities):
-                    ir_int = f" | IR Int: {self.vibrational_analysis.ir_intensities[mode_idx]:.1f} km/mol"
-                self.statusBar().showMessage(
-                    f"Animating Mode #{mode_idx + 1}: {freq:.1f} cm⁻¹{ir_int}", 4000
-                )
+        from .controllers import VibrationController
+        VibrationController(self).on_spectrum_mode_clicked(mode_idx)
 
     def _on_nmr_atom_clicked(self, atom_idx: int):
         """Highlight the clicked NMR nucleus in the 3D viewport and Z-Matrix table."""
@@ -471,72 +321,18 @@ class CalculationsMixin:
 
     def _on_vibration_mode_selected(self):
         """Called when a mode row is selected in the vibrations table."""
-        if not self.vibrational_analysis:
-            return
-
-        selected = self.table_vibrations.selectedItems()
-        if not selected:
-            return
-
-        row = selected[0].row()
-        if row < 0 or row >= self.vibrational_analysis.n_modes:
-            return
-
-        freq = self.vibrational_analysis.frequencies[row]
-        disp = self.vibrational_analysis.displacements[row]
-
-        if hasattr(self, "spectrum_widget"):
-            self.spectrum_widget.set_active_mode(row)
-
-        self.btn_play_vibration.setEnabled(True)
-        self.lbl_vib_info.setText(
-            f"Mode #{row + 1}: Frequency = {freq:.2f} cm⁻¹ (Max atom displacement: {np.max(np.linalg.norm(disp, axis=1)):.3f})"
-        )
-
-        amp = self.slider_vib_amp.value() / 100.0
-        # If already vibrating, seamlessly update mode; otherwise set mode so static 3D vectors are displayed
-        if self.viewer.vibrating:
-            self.viewer.start_vibration(row, freq, disp, amplitude=amp)
-            self.btn_play_vibration.setText("⏸ Pause Simulation")
-            self.btn_play_vibration.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
-            self.btn_stop_vibration.setEnabled(True)
-        else:
-            self.viewer.set_vibration_mode(row, freq, disp, amplitude=amp)
+        from .controllers import VibrationController
+        VibrationController(self).on_vibration_mode_selected()
 
     def _on_toggle_vibration_play(self):
         """Toggle simulation playback of selected vibrational mode."""
-        if not self.vibrational_analysis:
-            return
-
-        selected = self.table_vibrations.selectedItems()
-        if not selected:
-            return
-        row = selected[0].row()
-
-        if self.viewer.vibrating:
-            # Stop simulation
-            self.viewer.stop_vibration()
-            self.btn_play_vibration.setText("▶ Start Simulation")
-            self.btn_play_vibration.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
-            self.btn_stop_vibration.setEnabled(False)
-            self.statusBar().showMessage("Paused vibrational mode simulation.", 2500)
-        else:
-            freq = self.vibrational_analysis.frequencies[row]
-            disp = self.vibrational_analysis.displacements[row]
-            amp = self.slider_vib_amp.value() / 100.0
-            self.viewer.start_vibration(row, freq, disp, amplitude=amp)
-            self.btn_play_vibration.setText("⏸ Pause Simulation")
-            self.btn_play_vibration.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
-            self.btn_stop_vibration.setEnabled(True)
-            self.statusBar().showMessage(f"Simulating Mode #{row + 1}: {freq:.1f} cm⁻¹", 4000)
+        from .controllers import VibrationController
+        VibrationController(self).toggle_vibration_play()
 
     def _on_stop_vibration(self):
         """Stop vibration and restore equilibrium structure."""
-        self.viewer.stop_vibration()
-        self.btn_play_vibration.setText("▶ Start Simulation")
-        self.btn_play_vibration.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
-        self.btn_stop_vibration.setEnabled(False)
-        self.statusBar().showMessage("Stopped vibrational simulation. Structure at equilibrium.", 2500)
+        from .controllers import VibrationController
+        VibrationController(self).stop_vibration()
 
     def _on_vib_amplitude_changed(self, val: int):
         amp = val / 100.0
@@ -573,27 +369,8 @@ class CalculationsMixin:
 
     def _on_vib_scrub_changed(self, val: int):
         """Interactively deform the molecule along the selected normal mode coordinate."""
-        frac = val / 100.0  # -1.0 to +1.0
-        if hasattr(self, "lbl_vib_scrub"):
-            self.lbl_vib_scrub.setText(f"{frac:+.2f}×")
-
-        if not getattr(self, "vibrational_analysis", None) or self.viewer.vib_displacements is None:
-            return
-
-        # If continuous simulation is active, stop it so manual scrubbing takes direct control
-        if getattr(self.viewer, "vibrating", False):
-            self.viewer.stop_vibration()
-            if hasattr(self, "btn_play_vibration"):
-                self.btn_play_vibration.setText("▶ Start Simulation")
-                self.btn_play_vibration.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
-
-        amp = (self.slider_vib_amp.value() / 100.0) if hasattr(self, "slider_vib_amp") else 0.50
-        disp = np.asarray(self.viewer.vib_displacements, dtype=np.float64)
-        if len(disp) == len(self.coords):
-            # Compute shifted phase such that sin(vib_phase) == frac
-            self.viewer.vib_phase = math.asin(np.clip(frac, -1.0, 1.0))
-            self.viewer.vib_amplitude = amp
-            self.viewer.update()
+        from .controllers import VibrationController
+        VibrationController(self).scrub_vibration(val)
 
     def _on_adopt_vibrational_displacement(self, sign: float = 1.0):
         """
@@ -601,106 +378,13 @@ class CalculationsMixin:
         Displaces the equilibrium molecular geometry along the currently selected normal mode
         by `sign * amplitude * disp` and adopts it as the new molecular coordinates (with full Undo support).
         """
-        if not getattr(self, "vibrational_analysis", None) or self.viewer.vib_displacements is None:
-            QtWidgets.QMessageBox.information(
-                self, "Follow Normal Mode", "Please calculate or load vibrational modes and select a mode in the table first."
-            )
-            return
-
-        disp = np.asarray(self.viewer.vib_displacements, dtype=np.float64)
-        if len(disp) != len(self.zatoms):
-            return
-
-        amp = (self.slider_vib_amp.value() / 100.0) if hasattr(self, "slider_vib_amp") else 0.50
-        mode_idx = (self.viewer.vib_mode_idx or 0) + 1
-        freq = self.viewer.vib_frequency
-
-        self._on_stop_vibration()
-        self._push_undo_state()
-
-        symbols = [a.symbol for a in self.zatoms]
-        user_bonds = self._current_explicit_bonds()
-        old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-        new_coords = np.array(self.coords, dtype=np.float64) + (float(sign) * amp) * disp
-        new_zatoms = cartesian_to_zmatrix(
-            symbols, new_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
-        )
-        self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
-        if old_bo:
-            self.viewer.bond_orders = old_bo
-            self.viewer.update()
-
-        dir_str = "+" if sign >= 0 else "-"
-        self.statusBar().showMessage(
-            f"Adopted {dir_str}{amp:.2f}× displaced geometry along Mode #{mode_idx} ({freq:.1f} cm⁻¹). Ready to re-optimize!",
-            5000,
-        )
+        from .controllers import VibrationController
+        VibrationController(self).adopt_vibrational_displacement(sign)
 
     def _on_export_vibration_gif(self):
         """Export one full oscillation cycle of the active vibrational mode as an animated GIF."""
-        if not self.vibrational_analysis or self.viewer.vib_displacements is None:
-            QtWidgets.QMessageBox.information(
-                self, "Export Vibrational Animation", "Please calculate or load vibrational modes and select a mode first."
-            )
-            return
-
-        mode_num = (self.viewer.vib_mode_idx or 0) + 1
-        default_name = f"vibration_mode_{mode_num}.gif"
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Vibrational Animation (GIF)", default_name, "Animated GIF (*.gif);;All Files (*)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".gif"):
-            path += ".gif"
-
-        was_vibrating = self.viewer.vibrating
-        saved_phase = self.viewer.vib_phase
-        self.viewer.vib_timer.stop()
-        self.viewer.vibrating = True
-
-        n_frames = 24
-        frames_rgb = []
-        try:
-            for k in range(n_frames):
-                self.viewer.vib_phase = (2.0 * math.pi * k) / n_frames
-                self.viewer.repaint()
-                if self.viewer.isValid() and self.viewer.context() is not None:
-                    qimg = self.viewer.grabFramebuffer().convertToFormat(QtGui.QImage.Format.Format_RGBA8888)
-                else:
-                    w = max(400, self.viewer.width())
-                    h = max(300, self.viewer.height())
-                    qimg = QtGui.QImage(w, h, QtGui.QImage.Format.Format_RGBA8888)
-                    qimg.fill(QtGui.QColor(30, 33, 41))
-                w, h = qimg.width(), qimg.height()
-                ptr = qimg.bits()
-                ptr.setsize(h * w * 4)
-                arr = np.frombuffer(ptr, dtype=np.uint8).reshape((h, w, 4)).copy()
-                frames_rgb.append(arr[:, :, :3])
-
-            import matplotlib.animation as mpl_anim
-            from matplotlib.figure import Figure
-            h, w, _ = frames_rgb[0].shape
-            fig = Figure(figsize=(w / 100.0, h / 100.0), dpi=100)
-            ax = fig.add_axes([0, 0, 1, 1])
-            ax.axis("off")
-            im = ax.imshow(frames_rgb[0])
-
-            def _update_frame(idx):
-                im.set_data(frames_rgb[idx])
-                return [im]
-
-            ani = mpl_anim.FuncAnimation(fig, _update_frame, frames=len(frames_rgb), interval=50, blit=True)
-            ani.save(path, writer="pillow", fps=20)
-            self.statusBar().showMessage(f"Saved vibrational animation GIF to {os.path.basename(path)}", 5000)
-        except Exception as e:
-            dialog_service.error(self, "GIF Export Error", f"Could not export GIF:\n{e}", exc=e)
-        finally:
-            self.viewer.vib_phase = saved_phase
-            self.viewer.vibrating = was_vibrating
-            if was_vibrating:
-                self.viewer.vib_timer.start()
-            self.viewer.update()
+        from .controllers import VibrationController
+        VibrationController(self).export_vibration_gif()
 
     def _populate_available_symmetries(
         self,
