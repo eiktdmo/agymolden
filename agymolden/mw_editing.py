@@ -81,7 +81,10 @@ class EditingMixin:
         elem = dlg.chosen_element
         if not elem:
             return
-        coord_tpl = getattr(dlg, "chosen_coordination", "auto") or "auto"
+        self._on_select_brush_element(elem, coord_tpl=getattr(dlg, "chosen_coordination", "auto") or "auto")
+
+    def _on_select_brush_element(self, elem: str, coord_tpl: str = "auto"):
+        """Set active element brush for 3D dragging, canvas double-clicking, and atom mutations."""
         self.last_coordination_template = coord_tpl
         self.last_added_element = elem
         self.viewer.brush_element = elem
@@ -90,6 +93,7 @@ class EditingMixin:
         self.last_added_fragment = None
         self.pending_add_atom_mode = True
         self._update_viewer_drag_label()
+        self.statusBar().showMessage(f"Active Drawing Brush: {elem}", 2500)
 
         n = len(self.zatoms)
         if n == 0:
@@ -103,6 +107,46 @@ class EditingMixin:
                 bds = []
                 if auto_h and dirs:
                     d_len = estimate_bond_length(elem, "H")
+                    for d in dirs:
+                        syms.append("H")
+                        pts.append(d * d_len)
+                        bds.append((0, len(syms) - 1))
+                self.set_molecule_from_cartesian(syms, np.array(pts), bonds=bds)
+            else:
+                self.set_molecule_from_cartesian([elem], np.array([[0.0, 0.0, 0.0]]))
+                if auto_h:
+                    self._add_hydrogens_to_atom(0)
+
+    def _on_quick_stamp_fragment(self, frag_name: str):
+        """1-Click stamp functional group or ring onto selected atom or spawn in space."""
+        from .fragments import FRAGMENTS
+        if frag_name not in FRAGMENTS:
+            return
+
+        frag = FRAGMENTS[frag_name]
+        idx = self.viewer.selected_atom_idx
+
+        self._push_undo_state()
+        if idx is not None and 0 <= idx < len(self.zatoms):
+            # Stamp onto selected anchor atom
+            conn_idx = int(frag.get("connect_idx", 0))
+            self._attach_fragment_to_atom_or_orbit(idx, frag, conn_idx=conn_idx, relax_iters=100)
+            self.statusBar().showMessage(f"Stamped {frag_name} onto Atom #{idx + 1}", 3500)
+        else:
+            # Spawn fragment directly into empty viewport
+            syms = list(frag["symbols"])
+            pts = np.array(frag["coords"], dtype=np.float64)
+            if len(self.zatoms) == 0:
+                self.set_molecule_from_cartesian(syms, pts)
+                self.statusBar().showMessage(f"Created {frag_name} in empty viewport", 3500)
+            else:
+                # Offset fragment away from existing center of mass
+                com = np.mean(self.coords, axis=0)
+                pts_offset = pts + com + np.array([3.5, 0.0, 0.0])
+                all_syms = [a.symbol for a in self.zatoms] + syms
+                all_coords = np.vstack([self.coords, pts_offset])
+                self.set_molecule_from_cartesian(all_syms, all_coords)
+                self.statusBar().showMessage(f"Added {frag_name} fragment to viewport", 3500)
                     for k_i, dv in enumerate(dirs):
                         syms.append("H")
                         pts.append(dv * d_len)

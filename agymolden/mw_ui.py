@@ -134,6 +134,35 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_mode_toggle.toggled.connect(self._on_toggle_interaction_mode)
         view_ctrls.addWidget(self.btn_mode_toggle)
 
+        # Quick Element Brush Palette (Avogadro / GaussView style)
+        self.btn_group_elements = QtWidgets.QButtonGroup(self)
+        self.btn_group_elements.setExclusive(True)
+        common_elements = [("C", "#475569"), ("H", "#94a3b8"), ("O", "#ef4444"), ("N", "#3b82f6"), ("P", "#f97316"), ("S", "#eab308"), ("F", "#10b981"), ("Cl", "#22c55e")]
+        for sym, color in common_elements:
+            b_el = QtWidgets.QPushButton(sym)
+            b_el.setCheckable(True)
+            b_el.setFixedWidth(24)
+            b_el.setToolTip(f"Select {sym} as active drawing & mutation element brush")
+            if sym == "C":
+                b_el.setChecked(True)
+            b_el.setStyleSheet(f"QPushButton:checked {{ background-color: {color}; color: white; font-weight: bold; border: 1px solid #ffffff; }}")
+            b_el.clicked.connect(lambda _c=False, s=sym: self._on_select_brush_element(s))
+            self.btn_group_elements.addButton(b_el)
+            view_ctrls.addWidget(b_el)
+
+        # Quick Stamp Menu (Benzene, Cyclohexane, Methyl, etc.)
+        self.btn_quick_stamp = QtWidgets.QToolButton()
+        self.btn_quick_stamp.setText("📌 Stamp ▾")
+        self.btn_quick_stamp.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_quick_stamp.setToolTip("GaussView / Avogadro style: Stamp functional groups or rings onto selected atom in 1 click")
+        self.btn_quick_stamp.setStyleSheet("background-color: #334155; color: white; font-weight: 600; padding: 2px 6px;")
+        menu_stamp = QtWidgets.QMenu(self)
+        for st_name in ["Phenyl (-C6H5)", "Methyl (-CH3)", "Hydroxyl (-OH)", "Amino (-NH2)", "Carbonyl (=O)", "Nitro (-NO2)", "Carboxyl (-COOH)", "Water (H2O)"]:
+            act = menu_stamp.addAction(st_name)
+            act.triggered.connect(lambda _c=False, n=st_name: self._on_quick_stamp_fragment(n))
+        self.btn_quick_stamp.setMenu(menu_stamp)
+        view_ctrls.addWidget(self.btn_quick_stamp)
+
         self.chk_auto_h = QtWidgets.QCheckBox("Adjust H")
         self.chk_auto_h.setChecked(True)
         self.chk_auto_h.setStyleSheet("font-weight: 600; padding: 2px 4px;")
