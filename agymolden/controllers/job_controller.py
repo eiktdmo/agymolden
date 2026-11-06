@@ -199,9 +199,13 @@ class JobController:
         monitor = getattr(self.mw, "_job_monitor_dlg", None)
         if monitor is None:
             runner = _make_runner(self.mw)
-            monitor = JobMonitorDialog(self.mw, runner=runner)
-            monitor.live_step_received.connect(self.mw._on_live_calc_step)
-            monitor.calculation_completed.connect(self.mw._on_live_calc_completed)
+            if hasattr(self.mw, "dock_manager"):
+                dock = self.mw.dock_manager.get_or_create_job_monitor(runner=runner)
+                monitor = dock.monitor
+            else:
+                monitor = JobMonitorDialog(self.mw, runner=runner)
+                monitor.live_step_received.connect(self.mw._on_live_calc_step)
+                monitor.calculation_completed.connect(self.mw._on_live_calc_completed)
             self.mw._job_monitor_dlg = monitor
         else:
             monitor.runner = _make_runner(monitor)

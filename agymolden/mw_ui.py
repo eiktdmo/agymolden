@@ -1161,6 +1161,10 @@ class UIMixin(UIInspectorTabsMixin):
                 self.combo_frag_connect.setCurrentIndex(default_idx)
             self.combo_frag_connect.blockSignals(False)
 
+        # Initialize Dockable Workspace System
+        from .dock_panels import WorkspaceDockManager
+        self.dock_manager = WorkspaceDockManager(self)
+
     def _create_menus(self):
         menubar = self.menuBar()
 
@@ -1886,6 +1890,38 @@ class UIMixin(UIInspectorTabsMixin):
         act_reset_cam.triggered.connect(self.viewer.auto_center)
         menu_projections.addAction(act_reset_cam)
         menu_view.addAction(act_reset_cam)
+
+        menu_view.addSeparator()
+
+        # Dockable Workspace Panels Submenu
+        menu_docks = menu_view.addMenu("🗂️ &Dockable Workspace Panels...")
+
+        act_dock_job = QtGui.QAction("⚡ Calculation &Job Monitor Dock", self)
+        act_dock_job.setToolTip("Dock or show the real-time QM calculation job monitor panel")
+        act_dock_job.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_job_monitor().show())
+        menu_docks.addAction(act_dock_job)
+
+        act_dock_log = QtGui.QAction("📄 QM &Output Log Viewer Dock", self)
+        act_dock_log.setToolTip("Dock or show the QM output log viewer and QC Doctor panel")
+        act_dock_log.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_output_viewer().show())
+        menu_docks.addAction(act_dock_log)
+
+        menu_docks.addSeparator()
+
+        act_float_all = QtGui.QAction("🖥️ Multi-Monitor: &Float All Panels", self)
+        act_float_all.setToolTip("Detach all docks into independent floating windows for multi-monitor scientific workflows")
+        act_float_all.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.float_all_docks())
+        menu_docks.addAction(act_float_all)
+
+        act_dock_all = QtGui.QAction("📌 &Snap All Panels into Main Window", self)
+        act_dock_all.setToolTip("Dock all floating panels back inside the main window")
+        act_dock_all.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.dock_all_panels())
+        menu_docks.addAction(act_dock_all)
+
+        act_reset_layout = QtGui.QAction("🔄 &Reset Workspace Layout", self)
+        act_reset_layout.setToolTip("Reset dock panels to default hidden/docked state")
+        act_reset_layout.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.reset_layout())
+        menu_docks.addAction(act_reset_layout)
 
         # Help Menu
         menu_help = menubar.addMenu("&Help")

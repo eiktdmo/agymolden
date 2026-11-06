@@ -781,9 +781,14 @@ class FileIOMixin:
                 return
 
         self._last_loaded_qm_log_path = path
-        from .dialog_output_viewer import QMOutputViewerDialog
-        dlg = QMOutputViewerDialog(self, file_path=path)
-        dlg.exec()
+        if hasattr(self, "dock_manager"):
+            dock = self.dock_manager.get_or_create_output_viewer(path)
+            dock.show()
+            dock.raise_()
+        else:
+            from .dialog_output_viewer import QMOutputViewerDialog
+            dlg = QMOutputViewerDialog(self, file_path=path)
+            dlg.exec()
 
     def _check_and_prompt_companion_files(self, base_file_path: str):
         """

@@ -156,19 +156,29 @@ class FragmentController:
         frozen = set(getattr(self.mw, "frozen_atoms", set()))
 
         self.mw._push_undo_state()
-        dlg = DihedralScanDialog(
-            self.mw,
-            symbols=symbols,
-            coords=self.mw.coords,
-            bonds=bonds,
-            atom_indices=(i1, i2, i3, i4),
-            user_bond_orders=bo,
-            frozen_indices=frozen,
-        )
-
         def on_conformer_selected(new_coords):
             self.mw._apply_smartslide_coords(new_coords, [i1, i2, i3, i4])
             self.mw._update_adjust_panel()
 
-        dlg.conformer_selected.connect(on_conformer_selected)
-        dlg.exec()
+        if hasattr(self.mw, "dock_manager"):
+            dock = self.mw.dock_manager.open_dihedral_scan(
+                symbols=symbols,
+                coords=self.mw.coords,
+                bonds=bonds,
+                atom_indices=(i1, i2, i3, i4),
+                user_bond_orders=bo,
+                frozen_indices=frozen,
+                on_conformer_selected=on_conformer_selected,
+            )
+        else:
+            dlg = DihedralScanDialog(
+                self.mw,
+                symbols=symbols,
+                coords=self.mw.coords,
+                bonds=bonds,
+                atom_indices=(i1, i2, i3, i4),
+                user_bond_orders=bo,
+                frozen_indices=frozen,
+            )
+            dlg.conformer_selected.connect(on_conformer_selected)
+            dlg.exec()
