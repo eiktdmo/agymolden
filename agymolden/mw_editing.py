@@ -2667,107 +2667,19 @@ class EditingMixin:
         self.statusBar().showMessage("Inverted all dihedrals (enantiomer/chirality flipped)", 3000)
 
     def _on_invert_stereocenter(self):
-        """
-        Invert a local tetrahedral or pyramidal stereocenter (R/S swap of two substituent subgraphs)
-        if 1 or 3 atoms are selected, or invert global chirality if 0 atoms are selected.
-        """
-        from .smartslides import invert_chiral_center
-        if not self.zatoms:
-            return
-        sel = self._get_ordered_selection()
-        if not sel:
-            self._on_invert_chirality()
-            return
-        self._push_undo_state()
-        symbols = [a.symbol for a in self.zatoms]
-        bonds = self._current_explicit_bonds()
-        old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-        new_coords, desc = invert_chiral_center(symbols, self.coords, bonds, sel)
-        new_zatoms = cartesian_to_zmatrix(
-            symbols, new_coords, existing_zatoms=self.zatoms, user_bonds=bonds
-        )
-        self.set_molecule_from_zatoms(new_zatoms, exact_coords=new_coords)
-        if old_bo:
-            self.viewer.bond_orders = old_bo
-        self.viewer.multi_selected = list(sel)
-        self.viewer.selected_atom_idx = sel[0]
-        self.viewer.update()
-        self.statusBar().showMessage(desc, 4500)
+        """Invert the chiral stereocenter configuration at selected atom or active selection."""
+        from .controllers import FragmentController
+        FragmentController(self).invert_stereocenter()
 
     def _on_fragment_category_changed(self, category: str):
         """Filter the fragment combo box by the chosen category."""
-        from .fragment_library import get_fragments_by_category
-        if not hasattr(self, "combo_fragment"):
-            return
-        names = get_fragments_by_category(category)
-        prev = self.combo_fragment.currentText()
-        self.combo_fragment.blockSignals(True)
-        self.combo_fragment.clear()
-        self.combo_fragment.addItems(names)
-        if prev in names:
-            self.combo_fragment.setCurrentText(prev)
-        self.combo_fragment.blockSignals(False)
-        if self.combo_fragment.count() > 0:
-            self._on_fragment_combo_changed(self.combo_fragment.currentText())
+        from .controllers import FragmentController
+        FragmentController(self).on_fragment_category_changed(category)
 
     def _on_save_custom_fragment(self):
         """Save the selected subgraph (or entire molecule) to the persistent Custom User Library."""
-        from .fragment_library import save_custom_fragment
-        if len(self.zatoms) == 0:
-            QtWidgets.QMessageBox.information(
-                self, "Save Custom Fragment", "Please build or load a molecule first."
-            )
-            return
-
-        sel = self._get_ordered_selection()
-        if not sel:
-            sel = list(range(len(self.zatoms)))
-
-        default_name = f"Custom ({'-'.join(self.zatoms[i].symbol for i in sel[:3])})"
-        name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Save to Custom Fragment Library",
-            f"Enter a name for this fragment ({len(sel)} atoms; Atom #{sel[0]+1} {self.zatoms[sel[0]].symbol} is anchor):",
-            QtWidgets.QLineEdit.EchoMode.Normal,
-            default_name,
-        )
-        if not ok or not name.strip():
-            return
-
-        clean_name = name.strip()
-        symbols = [self.zatoms[i].symbol for i in sel]
-        sub_coords = self.coords[sel]
-        pos_map = {old: k for k, old in enumerate(sel)}
-        sub_bonds = [
-            (pos_map[u], pos_map[v])
-            for u, v in self._current_explicit_bonds()
-            if u in pos_map and v in pos_map
-        ]
-        sub_bo = {
-            norm_bond(pos_map[u], pos_map[v]): o
-            for (u, v), o in self._current_bond_orders().items()
-            if u in pos_map and v in pos_map
-        }
-
-        save_custom_fragment(
-            clean_name, symbols, sub_coords, bonds=sub_bonds, bond_orders=sub_bo, connect_idx=0
-        )
-
-        # Refresh fragment dropdown and select the newly saved custom fragment
-        if hasattr(self, "combo_frag_category"):
-            self._on_fragment_category_changed(self.combo_frag_category.currentText())
-        if hasattr(self, "combo_fragment"):
-            idx_f = self.combo_fragment.findText(clean_name)
-            if idx_f < 0 and hasattr(self, "combo_frag_category"):
-                self.combo_frag_category.setCurrentText("Custom User Library")
-                idx_f = self.combo_fragment.findText(clean_name)
-            if idx_f >= 0:
-                self.combo_fragment.setCurrentIndex(idx_f)
-
-        self.statusBar().showMessage(
-            f"Saved '{clean_name}' ({len(sel)} atoms) to Custom User Library (~/.config/AgyMolden/custom_fragments.json).",
-            5000,
-        )
+        from .controllers import FragmentController
+        FragmentController(self).save_custom_fragment()
 
     def _update_frozen_buttons_ui(self):
         froz = set(getattr(self, "frozen_atoms", set()) or set())
@@ -2806,56 +2718,8 @@ class EditingMixin:
 
     def _on_open_dihedral_scan_dialog(self):
         """Open interactive 1D Dihedral Rotor Conformer Scan dialog with embedded PES plotter."""
-        from .dialog_conformer_scan import DihedralScanDialog
-        n = len(self.zatoms)
-        if n < 4:
-            QtWidgets.QMessageBox.information(
-                self,
-                "1D Dihedral Rotor Scan",
-                "At least 4 atoms are required to perform a dihedral torsion scan.",
-            )
-            return
-
-        sel = self._get_ordered_selection()
-        if len(sel) < 4:
-            # Try using currently selected atom's Z-matrix dihedral references if idx >= 3
-            idx = self.viewer.selected_atom_idx
-            if idx is not None and idx >= 3:
-                a = self.zatoms[idx]
-                if a.ref1 is not None and a.ref2 is not None and a.ref3 is not None:
-                    sel = [a.ref3, a.ref2, a.ref1, idx]
-        if len(sel) < 4:
-            QtWidgets.QMessageBox.information(
-                self,
-                "1D Dihedral Rotor Scan",
-                "Please select 4 atoms (Shift+Click in the 3D viewport) defining the dihedral torsion (i - j - k - l), "
-                "or select an atom (row ≥ 4) in the Z-Matrix table.",
-            )
-            return
-
-        i1, i2, i3, i4 = sel[0], sel[1], sel[2], sel[3]
-        symbols = [a.symbol for a in self.zatoms]
-        bonds = self._current_explicit_bonds()
-        bo = self._current_bond_orders()
-        frozen = set(getattr(self, "frozen_atoms", set()))
-
-        self._push_undo_state()
-        dlg = DihedralScanDialog(
-            self,
-            symbols=symbols,
-            coords=self.coords,
-            bonds=bonds,
-            atom_indices=(i1, i2, i3, i4),
-            user_bond_orders=bo,
-            frozen_indices=frozen,
-        )
-
-        def on_conformer_selected(new_coords):
-            self._apply_smartslide_coords(new_coords, [i1, i2, i3, i4])
-            self._update_adjust_panel()
-
-        dlg.conformer_selected.connect(on_conformer_selected)
-        dlg.exec()
+        from .controllers import FragmentController
+        FragmentController(self).open_dihedral_scan_dialog()
 
     def _on_add_hydrogens(self):
         """Complete valence of selected atoms (or all atoms if none selected) by adding hydrogens geometrically."""

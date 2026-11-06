@@ -10,6 +10,7 @@ from .vibration_controller import VibrationController
 from .orbital_controller import OrbitalController
 from .ring_controller import RingController
 from .job_controller import JobController
+from .fragment_controller import FragmentController
 
 __all__ = [
     "ExportController",
@@ -18,4 +19,5 @@ __all__ = [
     "OrbitalController",
     "RingController",
     "JobController",
+    "FragmentController",
 ]

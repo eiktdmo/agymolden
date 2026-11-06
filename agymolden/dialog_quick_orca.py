@@ -650,6 +650,33 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Molecule", "Please build or load a molecule first before running ORCA.")
             return
 
+        from agymolden.qm_detect import detect_qm_executable
+        info = detect_qm_executable("orca")
+        if not info.found:
+            msg = (
+                "<b>ORCA executable was not detected on your system.</b><br><br>"
+                "To run this calculation locally, ORCA must be installed and placed in your system PATH, "
+                "or configured in AgyMolden's QM Engine settings.<br><br>"
+                "<b>Options:</b><br>"
+                "• Click <b>Configure Route</b> to browse for your ORCA executable folder.<br>"
+                "• Click <b>Save Input Only</b> to write the .inp deck to disk without running locally (e.g. to transfer to a supercomputer/cluster)."
+            )
+            dlg_box = QtWidgets.QMessageBox(self)
+            dlg_box.setWindowTitle("ORCA Not Detected")
+            dlg_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            dlg_box.setText(msg)
+            btn_cfg = dlg_box.addButton("⚙️ Configure Route...", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+            btn_save = dlg_box.addButton("💾 Save Input Only", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+            btn_cancel = dlg_box.addButton("Cancel", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+            dlg_box.exec()
+
+            if dlg_box.clickedButton() == btn_cfg:
+                from agymolden.qm_detect import QMEnginesStatusDialog
+                QMEnginesStatusDialog.show_dialog(self)
+                return
+            elif dlg_box.clickedButton() == btn_cancel:
+                return
+
         sanity = self._run_preflight_sanity()
         issues = list(sanity.get("errors", [])) + list(sanity.get("warnings", []))
         if issues:

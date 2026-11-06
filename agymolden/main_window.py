@@ -605,6 +605,28 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                     self.btn_preflight_badge.setToolTip(f"Pre-flight OK: {formula} ready for calculations (No clashes detected).")
 
         self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {n_electrons} e⁻  |  {len(symbols)} atoms{aro_str}{clash_str}")
+        self._update_env_badge()
+
+    def _update_env_badge(self):
+        """Update the status bar QM engine / Python environment badge."""
+        if not hasattr(self, "lbl_active_env"):
+            return
+        from .qm_detect import detect_qm_executable
+        orca_info = detect_qm_executable("orca")
+        if orca_info.found:
+            self.lbl_active_env.setText("⚡ ORCA: Ready")
+            self.lbl_active_env.setStyleSheet(
+                "background-color: #064e3b; color: #34d399; border: 1px solid #059669; "
+                "border-radius: 3px; padding: 1px 6px; font-weight: bold; font-size: 11px; margin-right: 6px;"
+            )
+            self.lbl_active_env.setToolTip(f"Active QM: ORCA found at {orca_info.resolved_path}. Click to configure engines.")
+        else:
+            self.lbl_active_env.setText("⚠️ QM: No Local ORCA")
+            self.lbl_active_env.setStyleSheet(
+                "background-color: #451a03; color: #fbbf24; border: 1px solid #d97706; "
+                "border-radius: 3px; padding: 1px 6px; font-weight: bold; font-size: 11px; margin-right: 6px;"
+            )
+            self.lbl_active_env.setToolTip("ORCA not found in PATH. Click to select path or configure remote SSH execution.")
 
     def load_preset_molecule(self, name: str):
         if name in SAMPLE_MOLECULES:

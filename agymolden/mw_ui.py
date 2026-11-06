@@ -2078,6 +2078,17 @@ class UIMixin(UIInspectorTabsMixin):
         self.lbl_chem_summary.setStyleSheet("color: #38bdf8; font-weight: bold; padding: 0 10px;")
         self.statusBar().addPermanentWidget(self.lbl_chem_summary)
 
+        # Permanent Active Engine / Python Environment Badge on Status Bar
+        self.lbl_active_env = QtWidgets.QLabel("QM: Ready")
+        self.lbl_active_env.setToolTip("Active Quantum Chemistry Engine & Python Environment. Click to configure routes.")
+        self.lbl_active_env.setStyleSheet(
+            "background-color: #0f172a; color: #10b981; border: 1px solid #334155; "
+            "border-radius: 3px; padding: 1px 6px; font-weight: bold; font-size: 11px; margin-right: 6px;"
+        )
+        self.lbl_active_env.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.lbl_active_env.mousePressEvent = lambda ev: self._on_configure_qm_engines()
+        self.statusBar().addPermanentWidget(self.lbl_active_env)
+
     def _collect_command_palette_actions(self) -> List[Tuple[str, str, QtGui.QAction]]:
         """Collect all menu actions as (clean_label, shortcut_str, QAction) tuples for the Command Palette."""
         items: List[Tuple[str, str, QtGui.QAction]] = []
