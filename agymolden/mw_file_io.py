@@ -1647,6 +1647,37 @@ class FileIOMixin:
             except (OSError, IOError) as e:
                 dialog_service.error(self, "Error Exporting SDF/MOL", str(e), exc=e)
 
+    def _on_export_cif(self):
+        """Export current molecule and unit cell parameters to standard CIF syntax."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(self, "Export CIF", "No molecule to export.")
+            return
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export Crystallographic Information File (CIF)", "structure.cif", "CIF Files (*.cif);;All Files (*)"
+        )
+        if not path:
+            return
+
+        from .zmatrix import write_cif_file
+        symbols = [a.symbol for a in self.zatoms]
+        cell_dict = None
+        if hasattr(self, "unit_cell") and self.unit_cell is not None:
+            cell_dict = {
+                "a": self.unit_cell.a,
+                "b": self.unit_cell.b,
+                "c": self.unit_cell.c,
+                "alpha": self.unit_cell.alpha,
+                "beta": self.unit_cell.beta,
+                "gamma": self.unit_cell.gamma,
+            }
+
+        try:
+            write_cif_file(path, symbols, self.coords, cell=cell_dict)
+            self.statusBar().showMessage(f"Exported CIF crystal file to {os.path.basename(path)}", 4000)
+        except Exception as e:
+            dialog_service.error(self, "Error Exporting CIF", str(e), exc=e)
+
     def _on_export_html(self):
         """Export current molecule and calculation results to standalone interactive 3D WebGL HTML."""
         from .html_export import generate_interactive_html

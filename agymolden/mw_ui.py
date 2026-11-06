@@ -1229,6 +1229,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_save_sdf.triggered.connect(self._on_export_sdf)
         menu_file.addAction(act_save_sdf)
 
+        act_save_cif = QtGui.QAction("Export Crystallographic File (&CIF)...", self)
+        act_save_cif.setToolTip("Export molecular coordinates and unit cell parameters to standard CIF syntax")
+        act_save_cif.triggered.connect(self._on_export_cif)
+        menu_file.addAction(act_save_cif)
+
         menu_file.addSeparator()
 
         act_export_png = QtGui.QAction("Export &Image (PNG)...", self)

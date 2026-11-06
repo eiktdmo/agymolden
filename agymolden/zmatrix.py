@@ -1129,3 +1129,103 @@ def parse_cif(
     return symbols, coords, cell
 
 
+def format_cif_text(
+    symbols: List[str],
+    coords: np.ndarray,
+    cell: Optional[Dict[str, float]] = None,
+    data_name: str = "AgyMolden_Structure",
+) -> str:
+    """
+    Export molecular coordinates and crystallographic unit cell parameters to standard CIF syntax.
+    Converts Cartesian coordinates (Å) to fractional coordinates [x, y, z] using cell parameters.
+    """
+    if cell is None:
+        # Default cubic bounding cell with 10 Å margin if no periodic cell specified
+        min_c = np.min(coords, axis=0) if len(coords) > 0 else np.zeros(3)
+        max_c = np.max(coords, axis=0) if len(coords) > 0 else np.ones(3)
+        span = np.maximum(max_c - min_c + 10.0, 15.0)
+        cell = {
+            "a": float(span[0]),
+            "b": float(span[1]),
+            "c": float(span[2]),
+            "alpha": 90.0,
+            "beta": 90.0,
+            "gamma": 90.0,
+        }
+
+    a = float(cell.get("a", 10.0))
+    b = float(cell.get("b", 10.0))
+    c = float(cell.get("c", 10.0))
+    alpha = math.radians(float(cell.get("alpha", 90.0)))
+    beta = math.radians(float(cell.get("beta", 90.0)))
+    gamma = math.radians(float(cell.get("gamma", 90.0)))
+
+    cos_a = math.cos(alpha)
+    cos_b = math.cos(beta)
+    cos_g = math.cos(gamma)
+    sin_g = math.sin(gamma)
+    if abs(sin_g) < 1e-6:
+        sin_g = 1e-6
+
+    term = 1.0 - cos_a ** 2 - cos_b ** 2 - cos_g ** 2 + 2.0 * cos_a * cos_b * cos_g
+    v_norm = math.sqrt(max(0.0, term))
+    vol = a * b * c * v_norm
+
+    m_frac_to_cart = np.array([
+        [a, b * cos_g, c * cos_b],
+        [0.0, b * sin_g, c * (cos_a - cos_b * cos_g) / sin_g],
+        [0.0, 0.0, vol / (a * b * sin_g) if (a * b * sin_g) != 0 else c],
+    ], dtype=np.float64)
+
+    # Invert to convert Cart -> Frac
+    try:
+        m_cart_to_frac = np.linalg.inv(m_frac_to_cart)
+    except np.linalg.LinAlgError:
+        m_cart_to_frac = np.diag([1.0 / a, 1.0 / b, 1.0 / c])
+
+    lines = [
+        f"data_{re.sub(r'[^A-Za-z0-9_]', '_', data_name)}",
+        "_audit_creation_method  'AgyMolden Molecular Workbench'",
+        "_symmetry_space_group_name_H-M  'P 1'",
+        "_symmetry_Int_Tables_number     1",
+        "",
+        f"_cell_length_a     {a:10.4f}",
+        f"_cell_length_b     {b:10.4f}",
+        f"_cell_length_c     {c:10.4f}",
+        f"_cell_angle_alpha  {cell.get('alpha', 90.0):10.4f}",
+        f"_cell_angle_beta   {cell.get('beta', 90.0):10.4f}",
+        f"_cell_angle_gamma  {cell.get('gamma', 90.0):10.4f}",
+        "",
+        "loop_",
+        "  _atom_site_label",
+        "  _atom_site_type_symbol",
+        "  _atom_site_fract_x",
+        "  _atom_site_fract_y",
+        "  _atom_site_fract_z",
+        "  _atom_site_occupancy",
+    ]
+
+    for i, (sym, pos) in enumerate(zip(symbols, coords)):
+        frac = m_cart_to_frac @ pos
+        # Wrap or keep fractional
+        lbl = f"{sym}{i + 1}"
+        lines.append(f"  {lbl:<6s} {sym:<3s} {frac[0]:12.6f} {frac[1]:12.6f} {frac[2]:12.6f}   1.0000")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_cif_file(
+    path: str,
+    symbols: List[str],
+    coords: np.ndarray,
+    cell: Optional[Dict[str, float]] = None,
+    data_name: str = "AgyMolden_Structure",
+):
+    """Write molecular geometry and unit cell parameters to a .cif file."""
+    txt = format_cif_text(symbols, coords, cell=cell, data_name=data_name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(txt)
+
+
+

@@ -108,6 +108,12 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         btn_load_molden.clicked.connect(self._on_open_molden)
         f_layout.addWidget(btn_load_molden)
 
+        btn_export_cube = QtWidgets.QPushButton("💾 Export .cube...")
+        btn_export_cube.setStyleSheet("background-color: #059669; font-weight: bold; padding: 6px;")
+        btn_export_cube.setToolTip("Export currently evaluated 3D volumetric grid (orbital, density, ESP, or math difference) to a standard Gaussian .cube file")
+        btn_export_cube.clicked.connect(self._on_export_current_cube)
+        f_layout.addWidget(btn_export_cube)
+
         layout.addWidget(grp_file)
 
         # Molecular Property Buttons (ESP, Spin Density, CHELPG)
@@ -600,6 +606,33 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             )
         except Exception as err:
             QtWidgets.QMessageBox.critical(self, "Grid Calculation Error", str(err))
+
+    def _on_export_current_cube(self):
+        """Export the currently evaluated volumetric grid data to a standard Gaussian .cube file."""
+        if self.current_vol_data is None:
+            QtWidgets.QMessageBox.information(
+                self, "Export Cube", "No active volumetric grid to export. Please load or evaluate an orbital or density surface first."
+            )
+            return
+
+        default_name = "volumetric_grid.cube"
+        if getattr(self.current_vol_data, "title", None):
+            safe_title = re.sub(r'[^A-Za-z0-9_]', '_', self.current_vol_data.title)
+            default_name = f"{safe_title}.cube"
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export Gaussian Cube File", default_name, "Cube Files (*.cube);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            write_cube_file(path, self.current_vol_data)
+            QtWidgets.QMessageBox.information(
+                self, "Cube Exported", f"Successfully exported 3D grid ({self.current_vol_data.voxels_x}×{self.current_vol_data.voxels_y}×{self.current_vol_data.voxels_z}) to:\n{path}"
+            )
+        except Exception as err:
+            QtWidgets.QMessageBox.critical(self, "Export Failed", f"Could not write cube file:\n{err}")
 
     def _get_default_molden_dir_or_file(self) -> str:
         """Return the most recently generated/used Molden file or directory so it is pre-selected in the file dialog."""
