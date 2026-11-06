@@ -1844,27 +1844,18 @@ class EditingMixin:
         """Detect and highlight severe non-bonded steric clashes with interatomic distance < 0.70 * (r_vdw1 + r_vdw2)."""
         if len(self.coords) < 2:
             return
-        from .elements import get_vdw_radius
+        from .spatial_index import find_steric_clashes
         symbols = [a.symbol for a in self.zatoms]
         bonds = set(self._current_explicit_bonds())
-        clashes = []
-        n = len(self.coords)
-        for i in range(n):
-            for j in range(i + 1, n):
-                if norm_bond(i, j) in bonds:
-                    continue
-                d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
-                vdw_sum = get_vdw_radius(symbols[i]) + get_vdw_radius(symbols[j])
-                if d < vdw_sum * 0.70:
-                    clashes.append((i, j, d, vdw_sum))
+        raw_clashes = find_steric_clashes(symbols, self.coords, bonds=bonds, threshold_ratio=0.70)
 
-        if clashes:
-            clash_atoms = sorted({idx for c in clashes for idx in (c[0], c[1])})
+        if raw_clashes:
+            clash_atoms = sorted({idx for c in raw_clashes for idx in (c[0], c[1])})
             self.viewer.multi_selected = clash_atoms
             self.viewer.selected_atom_idx = clash_atoms[0]
             self.viewer.update()
-            c_desc = ", ".join(f"{symbols[u]}{u+1}···{symbols[v]}{v+1} ({d:.2f} Å)" for u, v, d, _ in clashes[:4])
-            self.statusBar().showMessage(f"⚠️ Detected {len(clashes)} severe steric clash(es): {c_desc} (Selected in 3D)", 5000)
+            c_desc = ", ".join(f"{u_sym}{u+1}···{v_sym}{v+1} ({d:.2f} Å)" for u, v, u_sym, v_sym, d, _ in raw_clashes[:4])
+            self.statusBar().showMessage(f"⚠️ Detected {len(raw_clashes)} severe steric clash(es): {c_desc} (Selected in 3D)", 5000)
         else:
             self.statusBar().showMessage("✅ Clean geometry: Zero severe steric clashes detected (all non-bonded distances > 70% Σr_vdw).", 3500)
 

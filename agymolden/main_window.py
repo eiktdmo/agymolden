@@ -561,24 +561,11 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         except Exception:
             aro_str = ""
 
-        # Steric clash detection (atoms closer than 60% of covalent radii sum or < 0.72 A)
-        clashes = []
-        n_at = min(len(self.zatoms), len(self.coords))
-        if n_at >= 2:
-            for i in range(n_at):
-                sym_i = self.zatoms[i].symbol
-                if sym_i == "X":
-                    continue
-                r_i = get_cov_radius(sym_i)
-                for j in range(i + 1, n_at):
-                    sym_j = self.zatoms[j].symbol
-                    if sym_j == "X":
-                        continue
-                    r_j = get_cov_radius(sym_j)
-                    d = float(np.linalg.norm(self.coords[i] - self.coords[j]))
-                    min_allowed = max(0.70, (r_i + r_j) * 0.58)
-                    if d < min_allowed:
-                        clashes.append((i, j, sym_i, sym_j, d))
+        # Fast steric clash detection (atoms closer than 58% of covalent radii sum or < 0.70 A)
+        from .spatial_index import find_steric_clashes
+        symbols_all = [a.symbol for a in self.zatoms]
+        raw_clashes = find_steric_clashes(symbols_all, self.coords, bonds=None, threshold_ratio=0.58, min_absolute_dist=0.70)
+        clashes = [(c[0], c[1], c[2], c[3], c[4]) for c in raw_clashes]
 
         clash_str = ""
         if clashes:
