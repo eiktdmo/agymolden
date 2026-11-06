@@ -1746,16 +1746,22 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         mode_str = "Orthographic (Parallel)" if is_ortho else "Perspective"
         self.statusBar().showMessage(f"Camera Projection: {mode_str}", 2500)
 
+    def _on_open_cluster_script_generator(self):
+        """Open HPC cluster batch submission script generator (SLURM / PBS / LSF / SGE)."""
+        from .dialog_cluster_script import ClusterScriptDialog
+        dlg = ClusterScriptDialog(self, input_filename="calculation.inp")
+        dlg.exec()
+
     def _on_open_command_palette(self):
         """Open modern searchable Command Palette (Ctrl+K)."""
         from .dialog_command_palette import CommandPaletteDialog, CommandItem
 
         commands = [
             # Calculations & Execution
-            CommandItem("Run ORCA Calculation", "Calculate", "Ctrl+R", self._on_quick_orca, "orca dft dft-d opt freq sp"),
+            CommandItem("Run ORCA Calculation", "Calculate", "Ctrl+R", self._on_quick_run_orca, "orca dft dft-d opt freq sp"),
             CommandItem("Open Universal Job Monitor & Convergence", "Calculate", "Ctrl+J", self._on_open_job_monitor, "monitor scf plot live logs"),
             CommandItem("HPC Batch Script Generator (SLURM / PBS)", "Calculate", "", self._on_open_cluster_script_generator, "cluster slurm pbs sge hpc submit"),
-            CommandItem("Generate Quantum Chemistry Input Deck", "Calculate", "", self._on_generate_qm_input, "input deck orca gaussian pyscf psi4"),
+            CommandItem("Generate Quantum Chemistry Input Deck", "Calculate", "Ctrl+G", self._on_open_qm_dialog, "input deck orca gaussian pyscf psi4"),
             CommandItem("Optimize Geometry (Force Field / xTB)", "Calculate", "Ctrl+Shift+O", self._on_optimize_geometry, "minimize uff mmff xtb relax"),
             CommandItem("Workflow Pipeline / Multi-Stage Recipe", "Calculate", "", self._on_open_workflow_pipeline_dialog, "pipeline recipe sequence multistep"),
             CommandItem("Visual Workflow DAG Studio", "Calculate", "", self._on_open_workflow_dag_dialog, "dag graph workflow pipeline stages"),
