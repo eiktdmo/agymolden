@@ -119,12 +119,13 @@ class FileIOMixin:
         self.statusBar().showMessage("Cleared molecule (empty workspace, ready for Add Line)", 3000)
 
     def _on_open_universal_file(self):
-        """Universal file opener supporting QM logs, XYZ, Molden, ORCA (.molden.input, .gbw), Cube, and Z-Matrix files sorted newest-first."""
+        """Universal file opener supporting Project bundles, QM logs, XYZ, Molden, ORCA (.molden.input, .gbw), Cube, and Z-Matrix files sorted newest-first."""
         dlg = QtWidgets.QFileDialog(
             self,
             "Open File (All Supported Molecular & QM Formats)",
             self._last_dir(),
-            "All Supported Files (*.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.cif *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "All Supported Files (*.agyproj *.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.cif *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "AgyMolden Project Bundles (*.agyproj);;"
             "QM Output Logs & Checkpoints (*.out *.log *.output *.fchk *.fch);;"
             "Molden & ORCA Wavefunctions (*.molden.input *.molden *.molf *.gbw);;"
             "Molecular Structures & Crystals (*.xyz *.pdb *.sdf *.mol *.sd *.cif);;"
@@ -167,7 +168,9 @@ class FileIOMixin:
     def open_path(self, path: str):
         """Open a molecule file, choosing the loader from its extension."""
         low = path.lower()
-        if low.endswith(".xyz"):
+        if low.endswith(".agyproj"):
+            self._load_project_bundle_path(path)
+        elif low.endswith(".xyz"):
             self._load_xyz_path(path)
         elif low.endswith(".pdb"):
             self._load_pdb_path(path)
@@ -1465,6 +1468,65 @@ class FileIOMixin:
             self.statusBar().showMessage(f"Loaded CIF crystal structure {os.path.basename(path)} ({len(symbols)} sites, {cell_str}).", 5000)
         except Exception as e:
             dialog_service.error(self, "Error Opening CIF", str(e), exc=e)
+
+    def _on_save_project_bundle(self):
+        """Save complete modeling session into an .agyproj bundle."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(
+                self, "Save Project", "No molecule to save in the project bundle."
+            )
+            return
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save AgyMolden Project Bundle", "session.agyproj", "AgyMolden Project (*.agyproj);;All Files (*)"
+        )
+        if not path:
+            return
+
+        from .project_bundle import save_project_bundle
+
+        calc_hist = getattr(self, "calculation_history", [])
+        viewer_st = {
+            "theme": getattr(self, "current_theme", "white"),
+            "style": getattr(self, "current_style", "Ball & Stick"),
+            "show_labels": getattr(self.viewer, "show_atom_labels", False),
+        }
+
+        try:
+            save_project_bundle(
+                filepath=path,
+                zatoms=self.zatoms,
+                coords=self.coords,
+                variables=self.variables,
+                cross_bonds=list(self.cross_bonds),
+                calculation_history=calc_hist,
+                viewer_state=viewer_st,
+                metadata={"num_atoms": len(self.zatoms)},
+            )
+            self._remember_file(path)
+            self.statusBar().showMessage(f"Saved project session to {os.path.basename(path)}", 5000)
+        except Exception as e:
+            dialog_service.error(self, "Error Saving Project Bundle", str(e), exc=e)
+
+    def _load_project_bundle_path(self, path: str):
+        from .project_bundle import load_project_bundle
+        try:
+            data = load_project_bundle(path)
+            if not data or not data.get("zatoms"):
+                dialog_service.error(self, "Error Opening Project", "Invalid or empty project bundle.")
+                return
+
+            self._push_undo_state()
+            self.cross_bonds = set(data.get("cross_bonds", []))
+            self.variables = data.get("variables", {})
+            self.set_molecule_from_zatoms(data["zatoms"])
+            if "calculation_history" in data:
+                self.calculation_history = data["calculation_history"]
+
+            self._remember_file(path)
+            self.statusBar().showMessage(f"Loaded project bundle {os.path.basename(path)} ({len(self.zatoms)} atoms).", 5000)
+        except Exception as e:
+            dialog_service.error(self, "Error Opening Project Bundle", str(e), exc=e)
 
     def _on_save_zmat(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(

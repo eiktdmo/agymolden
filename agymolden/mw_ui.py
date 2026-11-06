@@ -1197,6 +1197,11 @@ class UIMixin(UIInspectorTabsMixin):
 
         menu_file.addSeparator()
 
+        act_save_proj = QtGui.QAction("Save Project Bundle (.agyproj)...", self)
+        act_save_proj.setToolTip("Save full molecular model, Z-matrix, calculation history, and view settings into a portable project bundle")
+        act_save_proj.triggered.connect(self._on_save_project_bundle)
+        menu_file.addAction(act_save_proj)
+
         act_save_zmat = QtGui.QAction("Save Z-Matrix (&ZMAT)...", self)
         act_save_zmat.setShortcut("Ctrl+S")
         act_save_zmat.triggered.connect(self._on_save_zmat)
