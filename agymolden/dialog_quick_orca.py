@@ -228,15 +228,14 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         opts_layout.addWidget(grp_env)
 
         # 3. Properties to Calculate
-        grp_props = QtWidgets.QGroupBox("3. Properties to Compute")
+        grp_props = QtWidgets.QGroupBox("3. Properties & Wavefunction Output")
         props_layout = QtWidgets.QGridLayout(grp_props)
         props_layout.setVerticalSpacing(4)
 
-        self.chk_esp = QtWidgets.QCheckBox("🌈 Generate 3D Electrostatic Potential (ESP) Cube File")
-        self.chk_esp.setToolTip("Appends %plots esp(\"esp.cube\") = true; end to evaluate the 3D ESP grid for isosurface plotting")
-        self.chk_esp.setChecked(True)
-        self.chk_esp.toggled.connect(self._update_deck_preview)
-        props_layout.addWidget(self.chk_esp, 0, 0)
+        self.chk_molden = QtWidgets.QCheckBox("📁 Auto-Generate Molden File (.molden.input / .molden)")
+        self.chk_molden.setToolTip("Automatically run orca_2mkl upon completion to generate .molden.input / .molden file for 3D orbital, ESP, and property analysis")
+        self.chk_molden.setChecked(True)
+        props_layout.addWidget(self.chk_molden, 0, 0)
 
         self.chk_nmr = QtWidgets.QCheckBox("🧲 NMR Chemical Shielding Tensors (! NMR)")
         self.chk_nmr.toggled.connect(self._on_combo_options_changed)
@@ -247,6 +246,8 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         props_layout.addWidget(self.chk_polar, 1, 0)
 
         self.chk_mo_cubes = QtWidgets.QCheckBox("🌐 Export Frontier Orbitals (HOMO & LUMO Cube Files)")
+        self.chk_mo_cubes.setToolTip("Appends %plots Format Cube; mo(\"homo.cube\", ...); mo(\"lumo.cube\", ...); end to evaluate 3D MO cube grids")
+        self.chk_mo_cubes.setChecked(False)
         self.chk_mo_cubes.toggled.connect(self._update_deck_preview)
         props_layout.addWidget(self.chk_mo_cubes, 1, 1)
 
@@ -495,23 +496,22 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         lines.append(f"%maxcore {self.spn_mem.value()}")
 
-        # Check for ESP or MO cubes
-        plot_items = []
-        if self.chk_esp.isChecked():
-            plot_items.append("  dim1 40")
-            plot_items.append("  dim2 40")
-            plot_items.append("  dim3 40")
-            plot_items.append('  esp("esp.cube") = true;')
-        if self.chk_mo_cubes.isChecked():
-            plot_items.append("  dim1 40")
-            plot_items.append("  dim2 40")
-            plot_items.append("  dim3 40")
-            plot_items.append('  mo("homo.cube") = true;')
-            plot_items.append('  mo("lumo.cube") = true;')
+        # Check for MO cubes (valid ORCA %plots block syntax)
+        if hasattr(self, "chk_mo_cubes") and self.chk_mo_cubes.isChecked():
+            from .chemistry_checker import check_calculation_sanity
+            symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
+            res_s = check_calculation_sanity(symbols, charge=self.spn_charge.value(), multiplicity=self.spn_mult.value())
+            n_elec = res_s.get("info", {}).get("n_electrons", 10)
+            homo_idx = max(0, (n_elec // 2) - 1)
+            lumo_idx = homo_idx + 1
 
-        if plot_items:
             lines.append("%plots")
-            lines.extend(plot_items)
+            lines.append("  Format Cube")
+            lines.append("  dim1 40")
+            lines.append("  dim2 40")
+            lines.append("  dim3 40")
+            lines.append(f'  mo("homo.cube", {homo_idx}, 0);')
+            lines.append(f'  mo("lumo.cube", {lumo_idx}, 0);')
             lines.append("end")
 
         lines.append("")

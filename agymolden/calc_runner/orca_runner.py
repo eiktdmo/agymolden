@@ -127,9 +127,15 @@ class OrcaRunner(BaseCalcRunner):
             if os.path.isfile(gbw_file) and orca_2mkl and os.path.isfile(orca_2mkl):
                 try:
                     import subprocess
-                    subprocess.run([orca_2mkl, stem, "-molden"], cwd=self.work_dir, capture_output=True, timeout=30)
+                    stem_base = os.path.basename(stem)
+                    res_mkl = subprocess.run([orca_2mkl, stem_base, "-molden"], cwd=self.work_dir, capture_output=True, timeout=30)
                     molden_inp = f"{stem}.molden.input"
                     molden_std = f"{stem}.molden"
+                    if not os.path.isfile(molden_inp):
+                        # Also check if it was output with full path
+                        alt_inp = os.path.join(self.work_dir, f"{stem_base}.molden.input")
+                        if os.path.isfile(alt_inp):
+                            molden_inp = alt_inp
                     if os.path.isfile(molden_inp) and not os.path.isfile(molden_std):
                         shutil.copy2(molden_inp, molden_std)
                 except (subprocess.SubprocessError, OSError) as e:

@@ -288,6 +288,11 @@ class QMCalculationDialog(QtWidgets.QDialog):
         self.chk_zmatrix.toggled.connect(self._update_preview)
         t2_layout.addRow("Geometry Representation:", self.chk_zmatrix)
 
+        self.chk_molden_out = QtWidgets.QCheckBox("Auto-Generate Molden File (.molden / .molden.input)")
+        self.chk_molden_out.setChecked(True)
+        self.chk_molden_out.setToolTip("Automatically run orca_2mkl (for ORCA) or companion converter upon job completion to generate Molden files for orbital and property analysis")
+        t2_layout.addRow("Wavefunction Analysis:", self.chk_molden_out)
+
         self.txt_title = QtWidgets.QLineEdit("AgyMolden generated calculation")
         self.txt_title.textChanged.connect(self._update_preview)
         t2_layout.addRow("Title / Comment:", self.txt_title)
