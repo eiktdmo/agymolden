@@ -2013,6 +2013,15 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_toolbar_sym.clicked.connect(lambda _checked=False: self._on_detect_symmetry(switch_tab=True))
         toolbar_qm.addWidget(self.btn_toolbar_sym)
 
+        toolbar_qm.addSeparator()
+
+        btn_cmd_palette = QtWidgets.QToolButton()
+        btn_cmd_palette.setText("⚡ Command Palette")
+        btn_cmd_palette.setToolTip("Search all tools, calculation engines, and dialogs (Ctrl+K)")
+        btn_cmd_palette.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold; padding: 2px 8px; border: 1px solid #334155; border-radius: 4px;")
+        btn_cmd_palette.clicked.connect(self._on_open_command_palette)
+        toolbar_qm.addWidget(btn_cmd_palette)
+
         # Permanent Chemical Summary Label on Status Bar
         self.lbl_chem_summary = QtWidgets.QLabel("Empty Molecule")
         self.lbl_chem_summary.setStyleSheet("color: #38bdf8; font-weight: bold; padding: 0 10px;")
