@@ -174,6 +174,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.sphere_scale: float = 0.35
         self.cylinder_radius: float = 0.08
         self.style_mode: str = "Ball & Stick" # Ball & Stick, Spacefill, Wireframe
+        self.use_modern_shaders: bool = True
+        self.show_publication_outlines: bool = False
 
         # Camera state
         self.rot_x: float = 15.0

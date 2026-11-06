@@ -47,9 +47,9 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.spin_msaa.addItem("Disabled (Fastest / Low-end GPU)", 0)
         v_layout.addRow("Anti-Aliasing (MSAA):", self.spin_msaa)
 
-        self.chk_modern_shaders = QtWidgets.QCheckBox("Enable Modern Impostor Shaders (Experimental)")
+        self.chk_modern_shaders = QtWidgets.QCheckBox("Enable Modern Impostor Shaders (Dual-Source Glossy)")
         self.chk_modern_shaders.setToolTip(
-            "Render glossy, depth-correct sphere and cylinder impostors using GPU fragment shaders (Avogadro / ChimeraX style).\n"
+            "Render glossy, depth-correct sphere and cylinder impostors using GPU fragment shaders (ChimeraX/PyMOL style).\n"
             "Uncheck to keep 100% legacy OpenGL fixed-function rendering."
         )
         v_layout.addRow("", self.chk_modern_shaders)
@@ -137,7 +137,7 @@ class PreferencesDialog(QtWidgets.QDialog):
         if idx_msaa >= 0:
             self.spin_msaa.setCurrentIndex(idx_msaa)
 
-        self.chk_modern_shaders.setChecked(self.settings.value("viewport/modern_shaders", False, type=bool))
+        self.chk_modern_shaders.setChecked(self.settings.value("viewport/modern_shaders", True, type=bool))
 
         dpi = self.settings.value("export/default_dpi", 300, type=int)
         idx_dpi = self.combo_default_dpi.findData(dpi)
