@@ -44,3 +44,4 @@ scratch_calculations/
 
 # Local scratch outputs (moved from project root)
 scratch/
+orca_calc*
