@@ -204,3 +204,78 @@ H 0.0 0.0 0.74
     assert len(runner.steps) >= 1
     assert runner.steps[-1].energy is not None
 
+
+def test_job_monitor_auto_load_results_and_companion_files(qapp, tmp_path, monkeypatch):
+    from agymolden.calc_runner.dialog_job_monitor import JobMonitorDialog
+    from agymolden.calc_runner.base import BaseCalcRunner, JobStatus
+
+    # Create dummy calculation results in tmp_path
+    inp_file = tmp_path / "water.inp"
+    inp_file.write_text("! HF def2-SVP\n* xyz 0 1\nO 0.0 0.0 0.0\nH 0.0 0.7 0.5\nH 0.0 -0.7 0.5\n*\n")
+    out_file = tmp_path / "water.out"
+    out_file.write_text("FINAL SINGLE POINT ENERGY -76.02676\n****ORCA TERMINATED NORMALLY****\n")
+    molden_file = tmp_path / "water.molden"
+    molden_file.write_text(
+        "[Molden Format]\n[Atoms] AU\nO 1 8 0.0 0.0 0.0\nH 2 1 0.0 1.3 0.9\nH 3 1 0.0 -1.3 0.9\n"
+        "[GTO]\n1 0\ns 1 1.00\n 1.0 1.0\n\n[MO]\nSym=1a\nEne=-20.5\nSpin=Alpha\nOccup=2.0\n1 1.0\n"
+    )
+    cube_file = tmp_path / "water_esp.cube"
+    cube_file.write_text("ESP Cube file\nDummy\n   1   0.0 0.0 0.0\n   10  0.1 0.0 0.0\n   10  0.0 0.1 0.0\n   10  0.0 0.0 0.1\n   8 8.0 0.0 0.0 0.0\n 0.1\n")
+
+    class DummyRunner(BaseCalcRunner):
+        def start_job(self, input_path: str, work_dir=None):
+            self.input_file = input_path
+            self.work_dir = work_dir or str(tmp_path)
+            self.log_file = str(out_file)
+            return True
+        def stop_job(self):
+            pass
+
+    runner = DummyRunner()
+    runner.start_job(str(inp_file), work_dir=str(tmp_path))
+
+    # Mock MainWindow
+    class MockMainWindow(QtWidgets.QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self._suppress_companion_prompt = False
+            self._job_monitor_dlg = None
+            self.opened_paths = []
+            self.viewer = type("MockViewer", (), {"active_isosurfaces": [], "surface_opacity": 1.0, "update": lambda: None})()
+            self.table_orbitals = QtWidgets.QTableWidget()
+            self._active_molden_path = None
+            self._active_molden_data = None
+            self._last_calculation_results = {}
+
+        def open_path(self, path):
+            self.opened_paths.append(path)
+
+        def statusBar(self):
+            return type("MockStatusBar", (), {"showMessage": lambda *args: None})()
+
+    mw = MockMainWindow()
+    dlg = JobMonitorDialog(parent=mw, runner=runner)
+    mw._job_monitor_dlg = dlg
+
+    # Verify auto-load checkbox exists and is checked by default
+    assert hasattr(dlg, "chk_auto_load")
+    assert dlg.chk_auto_load.isChecked() is True
+
+    # Connect monitor completion signal to mw._on_live_calc_completed
+    from agymolden.mw_calculations import CalculationsMixin
+    mw._on_live_calc_completed = CalculationsMixin._on_live_calc_completed.__get__(mw, MockMainWindow)
+    mw.load_orbitals_from_molden = CalculationsMixin.load_orbitals_from_molden.__get__(mw, MockMainWindow)
+    mw.set_orbitals_from_data = CalculationsMixin.set_orbitals_from_data.__get__(mw, MockMainWindow)
+    dlg.calculation_completed.connect(mw._on_live_calc_completed)
+
+    # Trigger job completion (mocking QMessageBox.information so it does not block in headless test)
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Ok)
+    dlg._on_finished(success=True, message="Completed successfully")
+
+    # Assert results are loaded automatically without manual prompt
+    assert mw._active_molden_path == str(molden_file)
+    assert mw._last_calculation_results["molden_file"] == str(molden_file)
+    assert str(cube_file) in mw._last_calculation_results["cube_files"]
+    assert str(out_file) in mw.opened_paths
+
+

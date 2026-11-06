@@ -151,6 +151,11 @@ class JobMonitorDialog(QtWidgets.QDialog):
 
         # 4. Bottom action buttons
         bottom_layout = QtWidgets.QHBoxLayout()
+        self.chk_auto_load = QtWidgets.QCheckBox("Auto-load results into viewer on completion")
+        self.chk_auto_load.setChecked(True)
+        self.chk_auto_load.setToolTip("Automatically load output log, optimized coordinates, orbitals, and Molden wavefunctions once calculation completes.")
+        bottom_layout.addWidget(self.chk_auto_load)
+
         self.btn_load_results = QtWidgets.QPushButton("📂 Load Results into Viewer")
         self.btn_load_results.setEnabled(False)
         self.btn_load_results.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold;")
@@ -442,6 +447,8 @@ class JobMonitorDialog(QtWidgets.QDialog):
         self.btn_load_results.setEnabled(True)
         self.btn_stage_handoff.setEnabled(True)
         if success:
+            if hasattr(self, "chk_auto_load") and self.chk_auto_load.isChecked():
+                self._on_load_results()
             QtWidgets.QMessageBox.information(self, "Calculation Completed", f"Job completed successfully!\n{message}")
         else:
             # Check for beginner diagnostic recommendations

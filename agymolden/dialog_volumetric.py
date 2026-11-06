@@ -507,6 +507,9 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return self.current_molden_path
         p = self.parent()
         if p is not None:
+            last_res = getattr(p, "_last_calculation_results", {})
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                return last_res["molden_file"]
             active_m = getattr(p, "_active_molden_path", None)
             if active_m and os.path.isfile(active_m):
                 return active_m
@@ -655,10 +658,64 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(self, "ESP Calculation", "Please load a .molden file first.")
             return
 
-        n_pts = self._get_grid_pts(40)
+        # Settings dialog with sliders for grid resolution and box margin
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("3D ESP Isopotential Grid Settings")
+        dlg.resize(460, 220)
+        vbox = QtWidgets.QVBoxLayout(dlg)
+        form = QtWidgets.QFormLayout()
+        form.setSpacing(10)
+
+        # Box margin (padding in Bohr)
+        margin_layout = QtWidgets.QHBoxLayout()
+        slider_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_margin.setRange(15, 120)  # 1.5 to 12.0 Bohr
+        slider_margin.setValue(35)
+        spin_margin = QtWidgets.QDoubleSpinBox()
+        spin_margin.setRange(1.5, 12.0)
+        spin_margin.setDecimals(1)
+        spin_margin.setSingleStep(0.5)
+        spin_margin.setValue(3.5)
+        spin_margin.setSuffix(" a₀")
+        slider_margin.valueChanged.connect(lambda v: spin_margin.setValue(v / 10.0))
+        spin_margin.valueChanged.connect(lambda v: slider_margin.setValue(int(round(v * 10.0))))
+        margin_layout.addWidget(slider_margin, stretch=1)
+        margin_layout.addWidget(spin_margin)
+        form.addRow("Box Size Margin:", margin_layout)
+
+        # Grid resolution (voxels/axis)
+        grid_layout = QtWidgets.QHBoxLayout()
+        default_pts = self._get_grid_pts(40)
+        slider_grid = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_grid.setRange(20, 80)
+        slider_grid.setValue(default_pts)
+        spin_grid = QtWidgets.QSpinBox()
+        spin_grid.setRange(20, 100)
+        spin_grid.setSingleStep(5)
+        spin_grid.setValue(default_pts)
+        spin_grid.setSuffix(" voxels/axis")
+        slider_grid.valueChanged.connect(spin_grid.setValue)
+        spin_grid.valueChanged.connect(slider_grid.setValue)
+        grid_layout.addWidget(slider_grid, stretch=1)
+        grid_layout.addWidget(spin_grid)
+        form.addRow("Grid Resolution:", grid_layout)
+
+        vbox.addLayout(form)
+        vbox.addStretch()
+
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        vbox.addWidget(btns)
+
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        n_pts = int(spin_grid.value())
+        margin_b = float(spin_margin.value())
 
         def _compute():
-            return compute_molden_esp_grid(self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts)
+            return compute_molden_esp_grid(self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
 
         def _on_done(esp_vol):
             if esp_vol is None:
@@ -784,7 +841,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         # Prompt for colormap and range options
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("3D ESP-Mapped Electron Density Settings")
-        dlg.resize(460, 260)
+        dlg.resize(520, 480)
         vbox = QtWidgets.QVBoxLayout(dlg)
 
         form = QtWidgets.QFormLayout()
@@ -798,26 +855,96 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         combo_cmap.addItem("Spectral (Spectral Rainbow Red δ− to Violet δ+)", "Spectral")
         form.addRow("Colormap Palette:", combo_cmap)
 
-        combo_dens = QtWidgets.QComboBox()
-        combo_dens.addItem("0.001 a.u. (Standard van der Waals / Bader contact surface)", 0.001)
-        combo_dens.addItem("0.002 a.u. (Compact molecular envelope)", 0.002)
-        combo_dens.addItem("0.0005 a.u. (Expanded solvent cavity surface)", 0.0005)
-        form.addRow("Density Isovalue:", combo_dens)
+        # Electron Density Isovalue: Slider + Spinbox pair
+        dens_layout = QtWidgets.QHBoxLayout()
+        slider_dens = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_dens.setRange(1, 100)  # 0.0001 to 0.0100 a.u. (step 0.0001)
+        slider_dens.setValue(10)  # default 0.0010
+        spin_dens = QtWidgets.QDoubleSpinBox()
+        spin_dens.setRange(0.0001, 0.0500)
+        spin_dens.setDecimals(4)
+        spin_dens.setSingleStep(0.0005)
+        spin_dens.setValue(0.0010)
+        spin_dens.setSuffix(" a.u.")
+        slider_dens.valueChanged.connect(lambda v: spin_dens.setValue(v / 10000.0))
+        spin_dens.valueChanged.connect(lambda v: slider_dens.setValue(int(round(v * 10000.0))))
+        dens_layout.addWidget(slider_dens, stretch=1)
+        dens_layout.addWidget(spin_dens)
+        form.addRow("Density Isovalue (ρ):", dens_layout)
 
+        # Color Scaling Range: Auto or Slider/Spinbox Manual Limit
         chk_auto_range = QtWidgets.QCheckBox("Auto-scale symmetric potential range [-V_lim, +V_lim] (Recommended)")
         chk_auto_range.setChecked(True)
         form.addRow("Color Scaling:", chk_auto_range)
 
+        range_layout = QtWidgets.QHBoxLayout()
+        slider_manual_range = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_manual_range.setRange(5, 500)  # 0.005 to 0.500 a.u.
+        slider_manual_range.setValue(50)  # default 0.050
+        slider_manual_range.setEnabled(False)
         spin_manual_range = QtWidgets.QDoubleSpinBox()
         spin_manual_range.setRange(0.005, 0.500)
         spin_manual_range.setDecimals(3)
-        spin_manual_range.setSingleStep(0.01)
+        spin_manual_range.setSingleStep(0.005)
         spin_manual_range.setValue(0.050)
         spin_manual_range.setPrefix("± ")
         spin_manual_range.setSuffix(" a.u.")
         spin_manual_range.setEnabled(False)
-        chk_auto_range.toggled.connect(lambda chk: spin_manual_range.setEnabled(not chk))
-        form.addRow("Manual Potential Limit:", spin_manual_range)
+        slider_manual_range.valueChanged.connect(lambda v: spin_manual_range.setValue(v / 1000.0))
+        spin_manual_range.valueChanged.connect(lambda v: slider_manual_range.setValue(int(round(v * 1000.0))))
+        chk_auto_range.toggled.connect(lambda chk: (slider_manual_range.setEnabled(not chk), spin_manual_range.setEnabled(not chk)))
+        range_layout.addWidget(slider_manual_range, stretch=1)
+        range_layout.addWidget(spin_manual_range)
+        form.addRow("Manual Potential Limit:", range_layout)
+
+        # Surface Opacity: Slider + Spinbox pair
+        opacity_layout = QtWidgets.QHBoxLayout()
+        slider_op = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_op.setRange(10, 100)
+        slider_op.setValue(int(round((self.slider_opacity.value() if hasattr(self, "slider_opacity") else 85))))
+        spin_op = QtWidgets.QSpinBox()
+        spin_op.setRange(10, 100)
+        spin_op.setValue(slider_op.value())
+        spin_op.setSuffix(" %")
+        slider_op.valueChanged.connect(spin_op.setValue)
+        spin_op.valueChanged.connect(slider_op.setValue)
+        opacity_layout.addWidget(slider_op, stretch=1)
+        opacity_layout.addWidget(spin_op)
+        form.addRow("Surface Opacity:", opacity_layout)
+
+        # Evaluation Box Size Margin (Padding beyond outer atoms in Bohr): Slider + Spinbox pair
+        margin_layout = QtWidgets.QHBoxLayout()
+        slider_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_margin.setRange(15, 100)  # 1.5 to 10.0 Bohr
+        slider_margin.setValue(35)  # 3.5 Bohr default
+        spin_margin = QtWidgets.QDoubleSpinBox()
+        spin_margin.setRange(1.5, 12.0)
+        spin_margin.setDecimals(1)
+        spin_margin.setSingleStep(0.5)
+        spin_margin.setValue(3.5)
+        spin_margin.setSuffix(" a₀")
+        slider_margin.valueChanged.connect(lambda v: spin_margin.setValue(v / 10.0))
+        spin_margin.valueChanged.connect(lambda v: slider_margin.setValue(int(round(v * 10.0))))
+        margin_layout.addWidget(slider_margin, stretch=1)
+        margin_layout.addWidget(spin_margin)
+        form.addRow("Box Size Margin:", margin_layout)
+
+        # 3D Grid Resolution: Slider + Spinbox pair (20³ to 90³)
+        grid_layout = QtWidgets.QHBoxLayout()
+        default_pts = self._get_grid_pts(40)
+        slider_grid = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider_grid.setRange(20, 90)
+        slider_grid.setValue(default_pts)
+        spin_grid = QtWidgets.QSpinBox()
+        spin_grid.setRange(20, 100)
+        spin_grid.setSingleStep(5)
+        spin_grid.setValue(default_pts)
+        spin_grid.setSuffix(" voxels/axis")
+        slider_grid.valueChanged.connect(spin_grid.setValue)
+        spin_grid.valueChanged.connect(slider_grid.setValue)
+        grid_layout.addWidget(slider_grid, stretch=1)
+        grid_layout.addWidget(spin_grid)
+        form.addRow("Grid Resolution:", grid_layout)
 
         chk_extrema = QtWidgets.QCheckBox("Detect & label surface extrema (V_min nucleophilic, V_max electrophilic)")
         chk_extrema.setChecked(True)
@@ -837,7 +964,9 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return
 
         cmap_clean = combo_cmap.currentData() or "bwr_r"
-        dens_iso = float(combo_dens.currentData() or 0.001)
+        dens_iso = float(spin_dens.value())
+        selected_margin = float(spin_margin.value())
+        selected_opacity = float(slider_op.value()) / 100.0
         do_extrema = chk_extrema.isChecked()
         if chk_auto_range.isChecked():
             esp_lim_min = None
@@ -847,7 +976,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             esp_lim_min = -val_lim
             esp_lim_max = val_lim
 
-        n_pts = self._get_grid_pts(40)
+        n_pts = int(spin_grid.value())
 
         def _compute():
             return compute_molden_esp_mapped_density(
@@ -857,6 +986,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
                 esp_min=esp_lim_min,
                 esp_max=esp_lim_max,
                 find_extrema=do_extrema,
+                margin_bohr=selected_margin,
                 nx=n_pts,
                 ny=n_pts,
                 nz=n_pts,
@@ -867,7 +997,11 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "ESP-Mapped Density", "Could not generate ESP-mapped surface from current Molden file.")
                 return
 
-            opacity = self.slider_opacity.value() / 100.0
+            opacity = selected_opacity
+            if hasattr(self, "slider_opacity"):
+                self.slider_opacity.blockSignals(True)
+                self.slider_opacity.setValue(int(round(opacity * 100.0)))
+                self.slider_opacity.blockSignals(False)
             self.surface_updated.emit([mesh], opacity)
             n_triangles = len(mesh.faces)
             n_ext = len(mesh.extrema_points) if mesh.extrema_points else 0

@@ -250,6 +250,11 @@ class FileIOMixin:
         from .dialog_esp_2d import ESP2DContourDialog
 
         molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path:
+            last_res = getattr(self, "_last_calculation_results", {})
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                molden_path = last_res["molden_file"]
+                self._active_molden_path = molden_path
         if not molden_path and hasattr(self, "_volumetric_dlg") and self._volumetric_dlg:
             molden_path = (
                 getattr(self._volumetric_dlg, "current_molden_path", None)
@@ -285,6 +290,11 @@ class FileIOMixin:
         """Open the Multiwfn Electronic Structure & Wavefunction Analysis Dialog."""
         from .dialog_multiwfn import MultiwfnAnalysisDialog
         molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path:
+            last_res = getattr(self, "_last_calculation_results", {})
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                molden_path = last_res["molden_file"]
+                self._active_molden_path = molden_path
         if not molden_path and hasattr(self, "_volumetric_dlg") and self._volumetric_dlg:
             molden_path = self._volumetric_dlg.current_molden_path
         if not molden_path:

@@ -112,15 +112,51 @@ class ESP2DContourDialog(QtWidgets.QDialog):
         self.spin_offset.setSingleStep(0.2)
         self.spin_offset.setValue(0.0)
         self.spin_offset.setSuffix(" Å")
-        self.spin_offset.valueChanged.connect(self._recompute_and_plot)
-        p_form.addRow("Slice Offset:", self.spin_offset)
+
+        self.slider_offset = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_offset.setRange(-150, 150)
+        self.slider_offset.setValue(0)
+        self.slider_offset.valueChanged.connect(lambda v: self.spin_offset.setValue(v / 10.0))
+        self.spin_offset.valueChanged.connect(lambda v: (self.slider_offset.setValue(int(round(v * 10.0))), self._recompute_and_plot()))
+        
+        offset_layout = QtWidgets.QHBoxLayout()
+        offset_layout.addWidget(self.slider_offset, stretch=1)
+        offset_layout.addWidget(self.spin_offset)
+        p_form.addRow("Slice Offset:", offset_layout)
 
         self.spin_grid_pts = QtWidgets.QSpinBox()
         self.spin_grid_pts.setRange(40, 200)
         self.spin_grid_pts.setValue(80)
         self.spin_grid_pts.setSingleStep(10)
-        self.spin_grid_pts.valueChanged.connect(self._recompute_and_plot)
-        p_form.addRow("Resolution:", self.spin_grid_pts)
+        
+        self.slider_grid_pts = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_grid_pts.setRange(40, 200)
+        self.slider_grid_pts.setValue(80)
+        self.slider_grid_pts.valueChanged.connect(self.spin_grid_pts.setValue)
+        self.spin_grid_pts.valueChanged.connect(lambda v: (self.slider_grid_pts.setValue(v), self._recompute_and_plot()))
+
+        res_layout = QtWidgets.QHBoxLayout()
+        res_layout.addWidget(self.slider_grid_pts, stretch=1)
+        res_layout.addWidget(self.spin_grid_pts)
+        p_form.addRow("Resolution:", res_layout)
+
+        # Slice Box Margin / Extent (Bohr)
+        self.spin_box_margin = QtWidgets.QDoubleSpinBox()
+        self.spin_box_margin.setRange(1.0, 15.0)
+        self.spin_box_margin.setSingleStep(0.5)
+        self.spin_box_margin.setValue(4.2)
+        self.spin_box_margin.setSuffix(" a₀")
+
+        self.slider_box_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_box_margin.setRange(10, 150)
+        self.slider_box_margin.setValue(42)
+        self.slider_box_margin.valueChanged.connect(lambda v: self.spin_box_margin.setValue(v / 10.0))
+        self.spin_box_margin.valueChanged.connect(lambda v: (self.slider_box_margin.setValue(int(round(v * 10.0))), self._recompute_and_plot()))
+
+        margin_layout = QtWidgets.QHBoxLayout()
+        margin_layout.addWidget(self.slider_box_margin, stretch=1)
+        margin_layout.addWidget(self.spin_box_margin)
+        p_form.addRow("Box Size Margin:", margin_layout)
 
         ctrl_layout.addWidget(grp_plane)
 
@@ -137,18 +173,36 @@ class ESP2DContourDialog(QtWidgets.QDialog):
 
         self.spin_range = QtWidgets.QDoubleSpinBox()
         self.spin_range.setRange(0.005, 0.50)
-        self.spin_range.setSingleStep(0.01)
+        self.spin_range.setSingleStep(0.005)
         self.spin_range.setValue(0.05)
         self.spin_range.setPrefix("± ")
         self.spin_range.setSuffix(" a.u.")
-        self.spin_range.valueChanged.connect(self._recompute_and_plot)
-        s_form.addRow("Color Limits:", self.spin_range)
+
+        self.slider_range = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_range.setRange(5, 500)
+        self.slider_range.setValue(50)
+        self.slider_range.valueChanged.connect(lambda v: self.spin_range.setValue(v / 1000.0))
+        self.spin_range.valueChanged.connect(lambda v: (self.slider_range.setValue(int(round(v * 1000.0))), self._recompute_and_plot()))
+
+        range_layout = QtWidgets.QHBoxLayout()
+        range_layout.addWidget(self.slider_range, stretch=1)
+        range_layout.addWidget(self.spin_range)
+        s_form.addRow("Color Limits:", range_layout)
 
         self.spin_levels = QtWidgets.QSpinBox()
         self.spin_levels.setRange(10, 80)
         self.spin_levels.setValue(32)
-        self.spin_levels.valueChanged.connect(self._recompute_and_plot)
-        s_form.addRow("Contours:", self.spin_levels)
+
+        self.slider_levels = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_levels.setRange(10, 80)
+        self.slider_levels.setValue(32)
+        self.slider_levels.valueChanged.connect(self.spin_levels.setValue)
+        self.spin_levels.valueChanged.connect(lambda v: (self.slider_levels.setValue(v), self._recompute_and_plot()))
+
+        levels_layout = QtWidgets.QHBoxLayout()
+        levels_layout.addWidget(self.slider_levels, stretch=1)
+        levels_layout.addWidget(self.spin_levels)
+        s_form.addRow("Contours:", levels_layout)
 
         self.chk_atoms = QtWidgets.QCheckBox("Show projected atoms")
         self.chk_atoms.setChecked(True)
@@ -234,7 +288,7 @@ class ESP2DContourDialog(QtWidgets.QDialog):
                 offset_bohr = float(self.spin_offset.value()) * ANGSTROM_TO_BOHR
                 plane_n = np.mean(coords_bohr[:, n_ax]) + offset_bohr
 
-                pad_bohr = 4.2
+                pad_bohr = float(self.spin_box_margin.value()) if hasattr(self, "spin_box_margin") else 4.2
                 u_min = coords_bohr[:, u_ax].min() - pad_bohr
                 u_max = coords_bohr[:, u_ax].max() + pad_bohr
                 v_min = coords_bohr[:, v_ax].min() - pad_bohr

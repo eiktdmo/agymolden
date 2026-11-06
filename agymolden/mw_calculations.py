@@ -1496,6 +1496,7 @@ class CalculationsMixin:
         molden_cand.append(os.path.join(base_dir, "orbitals.molden"))
         self._related_molden_files = list(artifact_moldens)
         loaded_molden = False
+        active_found_molden = None
         for m in molden_cand:
             if os.path.isfile(m):
                 if m.lower().endswith(".gbw"):
@@ -1508,13 +1509,38 @@ class CalculationsMixin:
                             continue
                 self.statusBar().showMessage(f"Calculation finished! Molden file available: {os.path.basename(m)}", 6000)
                 try:
+                    self._active_molden_path = m
                     self.load_orbitals_from_molden(m, auto_render=True)
-                    if hasattr(self, "_volumetric_dlg") and self._volumetric_dlg and self._volumetric_dlg.isVisible():
+                    if hasattr(self, "_volumetric_dlg") and self._volumetric_dlg:
                         self._volumetric_dlg.load_molden_path(m)
                     loaded_molden = True
+                    active_found_molden = m
                 except Exception as e:
                     log.warning(f"Could not load orbitals from {m}: {e}")
                 break
+
+        # Also search for companion .cube files generated in the working directory
+        cube_files = []
+        try:
+            for s_dir in set(filter(None, [base_dir, os.path.dirname(input_file)])):
+                if os.path.isdir(s_dir):
+                    for fname in os.listdir(s_dir):
+                        if fname.lower().endswith(".cube"):
+                            c_full = os.path.join(s_dir, fname)
+                            if c_full not in cube_files:
+                                cube_files.append(c_full)
+        except Exception as e:
+            log.debug("Error discovering companion cube files: %s", e)
+        self._related_cube_files = cube_files
+
+        # Store comprehensive calculation results bundle for instant 1-click access across all property dialogs
+        self._last_calculation_results = {
+            "input_file": input_file,
+            "out_file": out_path if os.path.isfile(out_path) else None,
+            "molden_file": active_found_molden,
+            "cube_files": cube_files,
+            "base_dir": base_dir,
+        }
 
         # Also check if a companion positron molden file exists alongside electron molden
         for pos_cand in (
@@ -1577,6 +1603,11 @@ class CalculationsMixin:
         """Open 2D Reduced Density Gradient (NCI / RDG) scatter plot dialog."""
         from .dialog_nci_plot import NCIRdgPlotDialog
         molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path:
+            last_res = getattr(self, "_last_calculation_results", {})
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                molden_path = last_res["molden_file"]
+                self._active_molden_path = molden_path
         if not molden_path:
             # Check last QM log companion
             last_qm = getattr(self, "_last_loaded_qm_log_path", None)
@@ -1695,10 +1726,11 @@ class CalculationsMixin:
             gap_str = f" | <b>ΔE(HOMO–LUMO) = {gap_ev:.2f} eV</b> ({gap_au:.4f} a.u.)"
 
         display_name = source_label or (os.path.basename(source_path) if source_path else "Calculation Orbitals")
-        self.lbl_mo_status.setText(
-            f"<b>{display_name}</b>: {len(data.orbitals)} MOs loaded. "
-            + (f"HOMO is MO #{homo_idx+1}{gap_str}" if homo_idx is not None else "")
-        )
+        if hasattr(self, "lbl_mo_status") and self.lbl_mo_status:
+            self.lbl_mo_status.setText(
+                f"<b>{display_name}</b>: {len(data.orbitals)} MOs loaded. "
+                + (f"HOMO is MO #{homo_idx+1}{gap_str}" if homo_idx is not None else "")
+            )
 
         path = source_path or getattr(self, "_active_molden_path", "")
 
@@ -2038,6 +2070,11 @@ class CalculationsMixin:
         """1-Click Electrostatic Potential (ESP) mapped onto Total Electron Density isosurface."""
         from .volumetric import compute_molden_esp_mapped_density
         molden_path = getattr(self, "_active_molden_path", None)
+        if not molden_path:
+            last_res = getattr(self, "_last_calculation_results", {})
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                molden_path = last_res["molden_file"]
+                self._active_molden_path = molden_path
         if not molden_path or not os.path.isfile(molden_path):
             self._on_open_volumetric_dialog()
             return
