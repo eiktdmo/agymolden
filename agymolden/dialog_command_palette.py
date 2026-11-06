@@ -4,7 +4,7 @@ Provides fuzzy filtering and instantaneous keyboard navigation to all calculatio
 analytical tools, builder operations, view modes, and exporters.
 """
 
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Optional
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
@@ -27,7 +27,7 @@ class CommandItem:
 
 
 class CommandPaletteDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None, commands: List[CommandItem] = None):
+    def __init__(self, parent=None, commands: Optional[List[CommandItem]] = None):
         super().__init__(parent)
         self.commands = commands or []
         self.filtered_commands: List[CommandItem] = []
@@ -115,7 +115,9 @@ class CommandPaletteDialog(QtWidgets.QDialog):
         footer.addStretch(1)
         layout.addLayout(footer)
 
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
+    def keyPressEvent(self, event: Optional[QtGui.QKeyEvent]):
+        if event is None:
+            return
         key = event.key()
         if key == QtCore.Qt.Key.Key_Escape:
             self.reject()

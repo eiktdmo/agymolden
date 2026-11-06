@@ -21,7 +21,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from .zmatrix import cartesian_to_zmatrix, format_zmatrix_text
+from .zmatrix import cartesian_to_zmatrix, format_zmatrix_numeric
 from .chem_identifiers import format_xyz_string
 from .qm_log_parser import QMLogParseResult, parse_qm_logfile
 
@@ -221,7 +221,7 @@ def create_reproducibility_bundle(
     # Generate Z-Matrix
     try:
         zatoms = cartesian_to_zmatrix(symbols, coords_arr)
-        zmat_content = format_zmatrix_text(zatoms, numeric=True)
+        zmat_content = format_zmatrix_numeric(zatoms)
     except Exception:
         zmat_content = "# Z-Matrix generation skipped (incompatible geometry topology)\n"
 
