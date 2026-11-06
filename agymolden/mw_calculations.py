@@ -1218,6 +1218,38 @@ class CalculationsMixin:
             if saved_path and os.path.isfile(saved_path):
                 self.launch_calculation_job(saved_path, runner_type="orca")
 
+    def _on_open_preflight_check_dialog(self):
+        """Perform comprehensive pre-flight verification and display detailed inspection dialog."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(
+                self, "Pre-Flight Status", "Molecule is empty. Add or open atoms to validate calculation readiness."
+            )
+            return
+
+        from .calc_runner.preflight import validate_qm_calculation
+        from .calc_runner.dialog_preflight import PreflightValidationDialog
+        from .qm_input_generator import QMCalculationParameters
+        from .qm_detect import detect_qm_executable
+
+        symbols = [a.symbol for a in self.zatoms]
+        params = QMCalculationParameters(
+            job_type="Opt",
+            method="B3LYP",
+            basis="def2-SVP",
+            charge=0,
+            multiplicity=1,
+        )
+        info = detect_qm_executable("orca")
+        report = validate_qm_calculation(
+            code_key="orca",
+            symbols=symbols,
+            coords=self.coords,
+            params=params,
+            executable_info=info,
+        )
+        dlg = PreflightValidationDialog(self, report, qm_name="orca")
+        dlg.exec()
+
     def _on_open_job_monitor(self):
         """Open or show the Job Monitor Dialog."""
         from .calc_runner import JobMonitorDialog, BrorsenRunner

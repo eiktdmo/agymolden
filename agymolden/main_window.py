@@ -588,8 +588,21 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 "Steric clashes detected! Atoms are unphysically close, which may cause QM or force field calculations to fail.\n"
                 + "\n".join(f"  • {c[2]}{c[0]+1} and {c[3]}{c[1]+1}: distance {c[4]:.3f} Å" for c in clashes[:5])
             )
+            if hasattr(self, "btn_preflight_badge"):
+                self.btn_preflight_badge.setText("⚠️ Clash")
+                self.btn_preflight_badge.setStyleSheet("background-color: #dc2626; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;")
+                self.btn_preflight_badge.setToolTip(f"Pre-flight Warning: {len(clashes)} severe atomic clash(es) detected (< 0.70 Å). Click to inspect.")
         else:
             self.lbl_chem_summary.setToolTip(f"{formula} ({len(symbols)} atoms, {n_electrons} electrons, molecular weight {mw:.3f} g/mol)")
+            if hasattr(self, "btn_preflight_badge"):
+                if len(symbols) == 0:
+                    self.btn_preflight_badge.setText("⚪ Empty")
+                    self.btn_preflight_badge.setStyleSheet("background-color: #475569; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;")
+                    self.btn_preflight_badge.setToolTip("Pre-flight: No atoms in molecule.")
+                else:
+                    self.btn_preflight_badge.setText("🟢 Ready")
+                    self.btn_preflight_badge.setStyleSheet("background-color: #15803d; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;")
+                    self.btn_preflight_badge.setToolTip(f"Pre-flight OK: {formula} ready for calculations (No clashes detected).")
 
         self.lbl_chem_summary.setText(f"{formula}  |  MW: {mw:.2f} g/mol  |  {n_electrons} e⁻  |  {len(symbols)} atoms{aro_str}{clash_str}")
 

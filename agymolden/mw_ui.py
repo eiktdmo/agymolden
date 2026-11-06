@@ -2006,6 +2006,16 @@ class UIMixin(UIInspectorTabsMixin):
         btn_quick_orca.clicked.connect(self._on_quick_run_orca)
         toolbar_qm.addWidget(btn_quick_orca)
 
+        # Pre-flight Calculation Health Status Badge
+        self.btn_preflight_badge = QtWidgets.QPushButton("🟢 Ready")
+        self.btn_preflight_badge.setFixedWidth(78)
+        self.btn_preflight_badge.setStyleSheet(
+            "background-color: #15803d; color: #ffffff; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;"
+        )
+        self.btn_preflight_badge.setToolTip("Pre-flight status: Checks for steric clashes and electron parity before launching calculations.")
+        self.btn_preflight_badge.clicked.connect(self._on_open_preflight_check_dialog)
+        toolbar_qm.addWidget(self.btn_preflight_badge)
+
         btn_qm = QtWidgets.QToolButton()
         btn_qm.setText("⚛️ QM Setup")
         btn_qm.setToolTip("Generate calculation input for Gaussian, ORCA, PySCF, openLOWDIN, xTB (Ctrl+G)")
