@@ -2344,30 +2344,8 @@ class EditingMixin:
 
     def _on_open_ring_aromaticity_dialog(self):
         """Open the Ring Aromaticity (HOMA Index) & Planarity Inspector Dialog (Multiwfn / Krygowski style)."""
-        if len(self.zatoms) < 3:
-            QtWidgets.QMessageBox.information(self, "Ring Aromaticity (HOMA)", "Please load or build a ring-containing molecule first.")
-            return
-
-        from .dialog_ring_aromaticity import RingAromaticityDialog
-        symbols = [a.symbol for a in self.zatoms]
-        coords = np.array(self.coords, dtype=np.float64, copy=True)
-        bonds = self._current_explicit_bonds()
-        bo = self._current_bond_orders()
-
-        def _highlight_ring(ring_atoms):
-            self.viewer.multi_selected = ring_atoms
-            self.viewer.selected_atom_idx = ring_atoms[0] if ring_atoms else None
-            self.viewer.update()
-
-        dlg = RingAromaticityDialog(
-            parent=self,
-            symbols=symbols,
-            coords=coords,
-            bonds=bonds,
-            bond_orders=bo,
-            on_ring_highlight=_highlight_ring,
-        )
-        dlg.exec()
+        from .controllers import RingController
+        RingController(self).open_ring_aromaticity_dialog()
 
     def _on_open_pbc_dialog(self):
         """Open the Periodic Boundary Conditions (PBC) & Supercell Generator dialog."""
@@ -2929,17 +2907,11 @@ class EditingMixin:
 
     def _on_open_cycle_welder(self):
         """Open Molecular Cycle Welder & Ring Fusion Studio (Ctrl+Shift+W)."""
-        from .dialog_cycle_welder import CycleWelderDialog
-        dlg = CycleWelderDialog(self)
-        dlg.exec()
+        from .controllers import RingController
+        RingController(self).open_cycle_welder()
 
     def _on_open_cycle_welder_for_bond(self, u: int, v: int):
         """Select bond (u, v) and open Cycle Welder Dialog."""
-        self.selected_atoms = [u, v]
-        if hasattr(self, "viewer") and self.viewer:
-            self.viewer.selected_bond = (u, v)
-            self.viewer.multi_selected = [u, v]
-            self.viewer.selected_atom_idx = u
-            self.viewer.update()
-        self._on_open_cycle_welder()
+        from .controllers import RingController
+        RingController(self).open_cycle_welder_for_bond(u, v)
 
