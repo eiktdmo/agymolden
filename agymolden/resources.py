@@ -12,6 +12,7 @@ def find_resource(name: str) -> Optional[str]:
     if getattr(sys, "_MEIPASS", None):  # PyInstaller bundle
         candidates.append(os.path.join(sys._MEIPASS, name))
     candidates.append(os.path.join(os.path.dirname(here), name))  # repo root
+    candidates.append(os.path.join(os.path.dirname(here), "docs", name))  # docs/
     candidates.append(os.path.join(here, name))
     for path in candidates:
         if os.path.isfile(path):

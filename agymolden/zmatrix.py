@@ -980,6 +980,122 @@ def write_mol_sdf(
         f.write("\n".join(lines))
 
 
+def parse_mol2(
+    filepath_or_content: str, is_path: bool = True
+) -> Tuple[List[str], np.ndarray, List[Tuple[int, int]], Dict[Tuple[int, int], int]]:
+    """Parse Tripos Mol2 format, returning (symbols, coords, bonds, bond_orders)."""
+    from .elements import normalize_symbol
+
+    if is_path:
+        with open(filepath_or_content, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    else:
+        lines = filepath_or_content.splitlines()
+
+    symbols: List[str] = []
+    coords_list: List[List[float]] = []
+    bonds: List[Tuple[int, int]] = []
+    bond_orders: Dict[Tuple[int, int], int] = {}
+
+    in_atom = False
+    in_bond = False
+
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("@<TRIPOS>ATOM"):
+            in_atom = True
+            in_bond = False
+            continue
+        elif s.startswith("@<TRIPOS>BOND"):
+            in_atom = False
+            in_bond = True
+            continue
+        elif s.startswith("@<TRIPOS>"):
+            in_atom = False
+            in_bond = False
+            continue
+
+        if in_atom:
+            parts = s.split()
+            if len(parts) >= 5:
+                # Format: atom_id atom_name x y z [atom_type [subst_id [subst_name [charge]]]]
+                raw_sym = parts[5].split(".")[0] if len(parts) > 5 else parts[1]
+                # Filter out numbers from atom names (e.g. C1 -> C)
+                clean_sym = re.sub(r"[0-9]+", "", raw_sym).capitalize()
+                sym = normalize_symbol(clean_sym) if normalize_symbol(clean_sym) else (clean_sym[:2] if len(clean_sym) >= 2 else clean_sym)
+                try:
+                    x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
+                    symbols.append(sym if sym else "C")
+                    coords_list.append([x, y, z])
+                except ValueError:
+                    continue
+
+        elif in_bond:
+            parts = s.split()
+            if len(parts) >= 4:
+                try:
+                    b1 = int(parts[1]) - 1
+                    b2 = int(parts[2]) - 1
+                    btype = parts[3].lower()
+                    order = 1
+                    if btype == "2":
+                        order = 2
+                    elif btype == "3":
+                        order = 3
+                    elif btype in ("ar", "am"):
+                        order = 1  # Standard aromatic representation
+                    pair = (min(b1, b2), max(b1, b2))
+                    bonds.append(pair)
+                    bond_orders[pair] = order
+                except ValueError:
+                    continue
+
+    coords = np.array(coords_list, dtype=np.float64) if coords_list else np.empty((0, 3), dtype=np.float64)
+    return symbols, coords, bonds, bond_orders
+
+
+def write_mol2(
+    filepath: str,
+    symbols: List[str],
+    coords: np.ndarray,
+    bonds: Optional[List[Tuple[int, int]]] = None,
+    bond_orders: Optional[Dict[Tuple[int, int], int]] = None,
+    molecule_name: str = "MOL",
+) -> None:
+    """Export molecular coordinates and connectivity to Tripos Mol2 format."""
+    n_atoms = len(symbols)
+    n_bonds = len(bonds) if bonds else 0
+    lines = [
+        "@<TRIPOS>MOLECULE",
+        f"{molecule_name[:40]}",
+        f" {n_atoms:5d} {n_bonds:5d}     1     0     0",
+        "SMALL",
+        "NO_CHARGES",
+        "",
+        "@<TRIPOS>ATOM",
+    ]
+
+    for i, (sym, (x, y, z)) in enumerate(zip(symbols, coords)):
+        atom_name = f"{sym}{i+1}"
+        atom_type = sym
+        lines.append(f"{i+1:7d} {atom_name:<8s} {x:10.4f} {y:10.4f} {z:10.4f} {atom_type:<8s} 1 <1>       0.0000")
+
+    if bonds:
+        lines.append("@<TRIPOS>BOND")
+        for bond_idx, (a, b) in enumerate(bonds):
+            order = 1
+            if bond_orders:
+                order = bond_orders.get((min(a, b), max(a, b)), 1)
+            btype_str = str(order) if order in (1, 2, 3) else "1"
+            lines.append(f"{bond_idx+1:6d} {a+1:5d} {b+1:5d} {btype_str:>4s}")
+
+    lines.append("")
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
 def parse_cif(
     filepath_or_content: str, is_path: bool = True
 ) -> Tuple[List[str], np.ndarray, Dict[str, float]]:

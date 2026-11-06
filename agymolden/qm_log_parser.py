@@ -965,12 +965,142 @@ def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
     )
 
 
+def _parse_fchk_logfile_native(path: str) -> Optional[QMLogParseResult]:
+    """Native parser for Gaussian Formatted Checkpoint (.fchk / .fch) files."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except Exception:
+        return None
+
+    if len(lines) < 2:
+        return None
+
+    # Verify fchk signature in first few lines
+    header_found = False
+    for line in lines[:5]:
+        if any(kw in line for kw in ("SP ", "Opt ", "Freq ", "RHF", "UHF", "ROHF", "RB3LYP", "UB3LYP", "Number of atoms")):
+            header_found = True
+            break
+    if not header_found and not path.lower().endswith((".fchk", ".fch")):
+        return None
+
+    BOHR_TO_ANGSTROM = 0.529177210903
+    HARTREE_TO_EV = 27.211386245988
+
+    atomic_numbers: List[int] = []
+    coords_bohr: List[float] = []
+    total_energy_hartree: Optional[float] = None
+    charge = 0
+    mult = 1
+    forces_list: List[float] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("Atomic numbers"):
+            m = re.search(r"N=\s*(\d+)", line)
+            n_vals = int(m.group(1)) if m else 0
+            i += 1
+            vals = []
+            while i < len(lines) and len(vals) < n_vals:
+                vals.extend([int(x) for x in lines[i].split()])
+                i += 1
+            atomic_numbers = vals[:n_vals]
+            continue
+        elif line.startswith("Current cartesian coordinates"):
+            m = re.search(r"N=\s*(\d+)", line)
+            n_vals = int(m.group(1)) if m else 0
+            i += 1
+            vals = []
+            while i < len(lines) and len(vals) < n_vals:
+                cleaned = lines[i].replace("D", "E").replace("d", "e").split()
+                vals.extend([float(x) for x in cleaned])
+                i += 1
+            coords_bohr = vals[:n_vals]
+            continue
+        elif line.startswith("Cartesian Gradient") or line.startswith("Cartesian Force"):
+            m = re.search(r"N=\s*(\d+)", line)
+            n_vals = int(m.group(1)) if m else 0
+            i += 1
+            vals = []
+            while i < len(lines) and len(vals) < n_vals:
+                cleaned = lines[i].replace("D", "E").replace("d", "e").split()
+                vals.extend([float(x) for x in cleaned])
+                i += 1
+            forces_list = vals[:n_vals]
+            continue
+        elif line.startswith("Total Energy"):
+            parts = line.replace("D", "E").replace("d", "e").split()
+            if len(parts) >= 3:
+                try:
+                    total_energy_hartree = float(parts[-1])
+                except ValueError:
+                    pass
+        elif line.startswith("Charge"):
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    charge = int(parts[-1])
+                except ValueError:
+                    pass
+        elif line.startswith("Multiplicity"):
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    mult = int(parts[-1])
+                except ValueError:
+                    pass
+        i += 1
+
+    if not atomic_numbers or not coords_bohr:
+        return None
+
+    symbols = [ATOMIC_NUMBER_TO_SYMBOL.get(num, f"X{num}") for num in atomic_numbers]
+    n_atoms = len(symbols)
+    if len(coords_bohr) < n_atoms * 3:
+        return None
+
+    coords_angstrom = np.array(coords_bohr[:n_atoms * 3], dtype=np.float64).reshape(-1, 3) * BOHR_TO_ANGSTROM
+
+    energies_ev = []
+    if total_energy_hartree is not None:
+        energies_ev = [total_energy_hartree * HARTREE_TO_EV]
+
+    nuclear_forces = None
+    if len(forces_list) >= n_atoms * 3:
+        # Negative gradient is force; in fchk Cartesian Gradient is dE/dx (Hartree/Bohr)
+        # Convert to eV/Angstrom or keep normalized vector
+        grad_arr = np.array(forces_list[:n_atoms * 3], dtype=np.float64).reshape(-1, 3)
+        nuclear_forces = -grad_arr
+
+    comment = f"Gaussian Formatted Checkpoint (FCHK): {n_atoms} atom(s)"
+    if total_energy_hartree is not None:
+        comment += f", Total Energy = {total_energy_hartree:.8f} Eh"
+
+    return QMLogParseResult(
+        program_name="Gaussian",
+        symbols=symbols,
+        trajectory_coords=[coords_angstrom],
+        trajectory_energies=energies_ev,
+        vibrational_analysis=None,
+        converged=True,
+        comment=comment,
+        nuclear_forces=nuclear_forces,
+    )
+
+
 def parse_qm_logfile(path: str) -> QMLogParseResult:
     """Parse quantum chemistry output/log file into geometries, trajectories and vibrational data."""
     if not os.path.isfile(path):
         raise FileNotFoundError(f"File not found: {path}")
 
-    # 1. Try dedicated newBRORSEN / PySCF, openLOWDIN, and Psi4 parsers first
+    # 1. Try dedicated newBRORSEN / PySCF, openLOWDIN, Psi4, and Gaussian FCHK parsers first
+    if path.lower().endswith((".fchk", ".fch")):
+        fchk_res = _parse_fchk_logfile_native(path)
+        if fchk_res is not None:
+            return fchk_res
+
     brorsen_res = parse_brorsen_logfile(path)
     if brorsen_res is not None:
         return brorsen_res
@@ -980,6 +1110,9 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     psi4_res = _parse_psi4_logfile_native(path)
     if psi4_res is not None:
         return psi4_res
+    fchk_res = _parse_fchk_logfile_native(path)
+    if fchk_res is not None:
+        return fchk_res
 
     # 2. Use cclib to open and parse
     if not cclib:

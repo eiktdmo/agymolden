@@ -1258,6 +1258,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_save_sdf.triggered.connect(self._on_export_sdf)
         menu_file.addAction(act_save_sdf)
 
+        act_save_mol2 = QtGui.QAction("Export Tripos (&Mol2)...", self)
+        act_save_mol2.setToolTip("Export molecular coordinates and bonds to Tripos Mol2 format")
+        act_save_mol2.triggered.connect(self._on_export_mol2)
+        menu_file.addAction(act_save_mol2)
+
         act_save_cif = QtGui.QAction("Export Crystallographic File (&CIF)...", self)
         act_save_cif.setToolTip("Export molecular coordinates and unit cell parameters to standard CIF syntax")
         act_save_cif.triggered.connect(self._on_export_cif)

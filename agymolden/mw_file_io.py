@@ -23,6 +23,8 @@ from .zmatrix import (
     write_pdb,
     parse_mol_sdf,
     write_mol_sdf,
+    parse_mol2,
+    write_mol2,
     parse_cif,
     calculate_bond_distance,
     calculate_angle,
@@ -124,11 +126,11 @@ class FileIOMixin:
             self,
             "Open File (All Supported Molecular & QM Formats)",
             self._last_dir(),
-            "All Supported Files (*.agyproj *.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.cif *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
+            "All Supported Files (*.agyproj *.out *.log *.xyz *.pdb *.sdf *.mol *.sd *.mol2 *.cif *.molden.input *.molden *.molf *.gbw *.fchk *.fch *.cube *.gjf *.com *.lowdin *.zmat *.dat *.inp *.in *.py *.txt *.smi *.smiles *.inchi);;"
             "AgyMolden Project Bundles (*.agyproj);;"
             "QM Output Logs & Checkpoints (*.out *.log *.output *.fchk *.fch);;"
             "Molden & ORCA Wavefunctions (*.molden.input *.molden *.molf *.gbw);;"
-            "Molecular Structures & Crystals (*.xyz *.pdb *.sdf *.mol *.sd *.cif);;"
+            "Molecular Structures & Crystals (*.xyz *.pdb *.sdf *.mol *.sd *.mol2 *.cif);;"
             "QM Input Decks (*.inp *.in *.gjf *.com *.lowdin *.py);;"
             "Gaussian Volumetric Grids (*.cube);;"
             "Z-Matrix & Input Files (*.zmat *.dat *.inp *.txt);;"
@@ -176,6 +178,8 @@ class FileIOMixin:
             self._load_pdb_path(path)
         elif low.endswith((".sdf", ".mol", ".sd")):
             self._load_sdf_path(path)
+        elif low.endswith(".mol2"):
+            self._load_mol2_path(path)
         elif low.endswith(".cif"):
             self._load_cif_path(path)
         elif low.endswith((".log", ".out", ".fchk", ".fch")):
@@ -1437,6 +1441,29 @@ class FileIOMixin:
         except Exception as e:
             dialog_service.error(self, "Error Opening SDF/MOL", str(e), exc=e)
 
+    def _load_mol2_path(self, path: str):
+        try:
+            symbols, coords, bonds, bo_dict = parse_mol2(path)
+            if len(symbols) == 0:
+                dialog_service.warning(self, "Empty File", "No atoms found in Mol2 file.")
+                return
+            self._push_undo_state()
+            self.variables = {}
+            if not bonds:
+                bonds = detect_connectivity(symbols, coords, strict=False)
+                bo_dict = detect_bond_orders(symbols, coords, bonds)
+            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = True
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in bo_dict.items() if o != 1}
+            self.viewer.update()
+            self._remember_file(path)
+            self.statusBar().showMessage(f"Loaded Mol2 {os.path.basename(path)} ({len(symbols)} atoms).", 4000)
+        except Exception as e:
+            dialog_service.error(self, "Error Opening Mol2", str(e), exc=e)
+
     def _load_cif_path(self, path: str):
         try:
             symbols, coords, cell = parse_cif(path)
@@ -1646,6 +1673,25 @@ class FileIOMixin:
                 self.statusBar().showMessage(f"Exported SDF/MOL structure to {os.path.basename(path)}", 4000)
             except (OSError, IOError) as e:
                 dialog_service.error(self, "Error Exporting SDF/MOL", str(e), exc=e)
+
+    def _on_export_mol2(self):
+        """Export current molecule and bonds to Tripos Mol2 format."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(self, "Export Mol2", "No molecule to export.")
+            return
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export Tripos Mol2 File", "molecule.mol2", "Mol2 Files (*.mol2);;All Files (*)"
+        )
+        if path:
+            try:
+                symbols = [a.symbol for a in self.zatoms]
+                bonds = list(self._current_explicit_bonds())
+                bo = getattr(self.viewer, "bond_orders", {})
+                write_mol2(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
+                self.statusBar().showMessage(f"Exported Tripos Mol2 structure to {os.path.basename(path)}", 4000)
+            except (OSError, IOError) as e:
+                dialog_service.error(self, "Error Exporting Mol2", str(e), exc=e)
 
     def _on_export_cif(self):
         """Export current molecule and unit cell parameters to standard CIF syntax."""

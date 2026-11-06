@@ -1781,7 +1781,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             CommandItem("Export High-DPI Publication Image", "Export", "Ctrl+Shift+E", self._on_export_image, "dpi png export figure resolution publication"),
             CommandItem("Export Supporting Information (SI) Bundle", "Export", "", self._on_export_reproducibility_bundle, "si bundle zip reproducibility supporting information"),
             CommandItem("Copy Image to Clipboard", "Export", "Ctrl+Shift+C", lambda: self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True), "copy clipboard figure image"),
-            CommandItem("Export Molecular Coordinates (XYZ / PDB / SDF)", "Export", "", self._on_export_xyz, "export xyz pdb sdf coordinates"),
+            CommandItem("Export Molecular Coordinates (XYZ / PDB / SDF / Mol2 / CIF)", "Export", "", self._on_export_xyz, "export xyz pdb sdf mol2 cif coordinates"),
+            CommandItem("Export Tripos Mol2 File", "Export", "", self._on_export_mol2, "export mol2 tripos docking"),
+            CommandItem("Export Crystallographic CIF File", "Export", "", self._on_export_cif, "export cif crystal solid state"),
             # App Settings & Help
             CommandItem("Application Preferences & Rendering Options", "Settings", "", self._on_open_preferences, "preferences theme background color rendering"),
             CommandItem("Unit & Energy Converter", "Tools", "", self._on_open_unit_converter, "convert hartree kcal kj ev cm-1"),
