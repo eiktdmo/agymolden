@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![OpenGL](https://img.shields.io/badge/Graphics-OpenGL%203.3+-orange.svg)](https://www.khronos.org/opengl/)
-[![Tests](https://img.shields.io/badge/Tests-322%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-347%20Passing-brightgreen.svg)]()
 
 **AgyMolden** is an ultra-fast, modern, native cross-platform quantum chemistry companion and molecular modeling workbench. It combines the intuitive internal coordinate (Z-matrix) editing workflows of classic Molden with a full-fledged computational chemistry environment: multi-package calculation execution, live convergence tracking, automated error diagnostics (QC Doctor), volumetric orbital & electrostatic potential (ESP) visualization, intrinsic reaction coordinate (IRC) reaction profiling, transition state IDPP path interpolation, and CREST conformer ensemble exploration.
 
