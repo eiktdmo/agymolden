@@ -1636,93 +1636,26 @@ class FileIOMixin:
         self.statusBar().showMessage("Variables cleared; Z-matrix uses numbers.", 4000)
 
     def _on_export_xyz(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Cartesian XYZ", "molecule.xyz", "XYZ Molecular Files (*.xyz);;All Files (*)"
-        )
-        if path:
-            try:
-                symbols = [a.symbol for a in self.zatoms]
-                write_xyz(path, symbols, self.coords)
-                self.statusBar().showMessage(f"Exported Cartesian XYZ to {os.path.basename(path)}", 4000)
-            except (OSError, IOError) as e:
-                dialog_service.error(self, "Error Exporting XYZ", str(e), exc=e)
+        from .controllers import ExportController
+        return ExportController(self).export_xyz()
 
     def _on_export_pdb(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Protein Data Bank (PDB)", "molecule.pdb", "PDB Molecular Files (*.pdb);;All Files (*)"
-        )
-        if path:
-            try:
-                symbols = [a.symbol for a in self.zatoms]
-                bonds = list(self._current_explicit_bonds())
-                write_pdb(path, symbols, self.coords, bonds=bonds)
-                self.statusBar().showMessage(f"Exported PDB structure to {os.path.basename(path)}", 4000)
-            except (OSError, IOError) as e:
-                dialog_service.error(self, "Error Exporting PDB", str(e), exc=e)
+        from .controllers import ExportController
+        return ExportController(self).export_pdb()
 
     def _on_export_sdf(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Structure-Data File (SDF/MOL)", "molecule.sdf", "SDF Files (*.sdf);;MOL Files (*.mol);;All Files (*)"
-        )
-        if path:
-            try:
-                symbols = [a.symbol for a in self.zatoms]
-                bonds = list(self._current_explicit_bonds())
-                bo = getattr(self.viewer, "bond_orders", {})
-                write_mol_sdf(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
-                self.statusBar().showMessage(f"Exported SDF/MOL structure to {os.path.basename(path)}", 4000)
-            except (OSError, IOError) as e:
-                dialog_service.error(self, "Error Exporting SDF/MOL", str(e), exc=e)
+        from .controllers import ExportController
+        return ExportController(self).export_sdf()
 
     def _on_export_mol2(self):
         """Export current molecule and bonds to Tripos Mol2 format."""
-        if len(self.zatoms) == 0:
-            QtWidgets.QMessageBox.information(self, "Export Mol2", "No molecule to export.")
-            return
-
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Tripos Mol2 File", "molecule.mol2", "Mol2 Files (*.mol2);;All Files (*)"
-        )
-        if path:
-            try:
-                symbols = [a.symbol for a in self.zatoms]
-                bonds = list(self._current_explicit_bonds())
-                bo = getattr(self.viewer, "bond_orders", {})
-                write_mol2(path, symbols, self.coords, bonds=bonds, bond_orders=bo)
-                self.statusBar().showMessage(f"Exported Tripos Mol2 structure to {os.path.basename(path)}", 4000)
-            except (OSError, IOError) as e:
-                dialog_service.error(self, "Error Exporting Mol2", str(e), exc=e)
+        from .controllers import ExportController
+        return ExportController(self).export_mol2()
 
     def _on_export_cif(self):
         """Export current molecule and unit cell parameters to standard CIF syntax."""
-        if len(self.zatoms) == 0:
-            QtWidgets.QMessageBox.information(self, "Export CIF", "No molecule to export.")
-            return
-
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export Crystallographic Information File (CIF)", "structure.cif", "CIF Files (*.cif);;All Files (*)"
-        )
-        if not path:
-            return
-
-        from .zmatrix import write_cif_file
-        symbols = [a.symbol for a in self.zatoms]
-        cell_dict = None
-        if hasattr(self, "unit_cell") and self.unit_cell is not None:
-            cell_dict = {
-                "a": self.unit_cell.a,
-                "b": self.unit_cell.b,
-                "c": self.unit_cell.c,
-                "alpha": self.unit_cell.alpha,
-                "beta": self.unit_cell.beta,
-                "gamma": self.unit_cell.gamma,
-            }
-
-        try:
-            write_cif_file(path, symbols, self.coords, cell=cell_dict)
-            self.statusBar().showMessage(f"Exported CIF crystal file to {os.path.basename(path)}", 4000)
-        except Exception as e:
-            dialog_service.error(self, "Error Exporting CIF", str(e), exc=e)
+        from .controllers import ExportController
+        return ExportController(self).export_cif()
 
     def _on_export_html(self):
         """Export current molecule and calculation results to standalone interactive 3D WebGL HTML."""
