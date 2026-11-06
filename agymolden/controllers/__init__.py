@@ -11,6 +11,7 @@ from .orbital_controller import OrbitalController
 from .ring_controller import RingController
 from .job_controller import JobController
 from .fragment_controller import FragmentController
+from .import_controller import ImportController
 
 __all__ = [
     "ExportController",
@@ -20,4 +21,5 @@ __all__ = [
     "RingController",
     "JobController",
     "FragmentController",
+    "ImportController",
 ]

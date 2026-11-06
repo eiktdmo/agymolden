@@ -741,166 +741,12 @@ class FileIOMixin:
 
     def _on_import_qm_log(self):
         """Import quantum chemistry output file (.log, .out) from Gaussian, ORCA, Q-Chem, or xTB."""
-        if not can_parse_with_cclib():
-            QtWidgets.QMessageBox.warning(
-                self, "cclib Required", "cclib is required to parse QM output files. Please install cclib."
-            )
-            return
-
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Import QM Log / Output File",
-            self._last_dir(),
-            "QM Output Files (*.log *.out *.output);;All Files (*)",
-        )
-        if path:
-            self._load_qm_log_path(path)
+        from .controllers import ImportController
+        ImportController(self).import_qm_log()
 
     def _load_qm_log_path(self, path: str):
-        try:
-            res = parse_qm_logfile(path)
-            self._push_undo_state()
-            self.variables = {}
-
-            # Store optimization trajectory
-            self._last_qm_res = res
-            self.trajectory_coords = res.trajectory_coords
-            self.trajectory_energies = res.trajectory_energies
-            self.trajectory_symbols = res.symbols
-
-            final_coords = res.trajectory_coords[-1]
-            symbols = res.symbols
-
-            detected_bonds = detect_connectivity(symbols, final_coords, strict=False)
-            detected_bo = detect_bond_orders(symbols, final_coords, detected_bonds)
-
-            zatoms = cartesian_to_zmatrix(symbols, final_coords, user_bonds=detected_bonds, strict_bonds=True)
-            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
-            self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
-            self.strict_topology = True
-
-            self.set_molecule_from_zatoms(zatoms, exact_coords=final_coords)
-            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
-            if res.charges is not None and len(res.charges) == len(symbols):
-                self.viewer.custom_charges = res.charges
-                self.viewer.show_charges = True
-                if hasattr(self, "chk_charges"):
-                    self.chk_charges.blockSignals(True)
-                    self.chk_charges.setChecked(True)
-                    self.chk_charges.blockSignals(False)
-            self.viewer.update()
-
-            # Apply nuclear forces / gradients if present in the log file
-            if getattr(res, "nuclear_forces", None) is not None:
-                self.viewer.nuclear_forces = res.nuclear_forces
-                if hasattr(self, "chk_forces"):
-                    self.chk_forces.blockSignals(True)
-                    self.chk_forces.setChecked(True)
-                    self.chk_forces.blockSignals(False)
-                self.viewer.show_forces = True
-
-            # Enable Trajectory Player if multiple steps exist
-            n_steps = len(res.trajectory_coords)
-            if hasattr(self, "grp_trajectory"):
-                if n_steps > 1:
-                    is_irc = getattr(res, "is_irc", False)
-                    init_step = n_steps - 1
-                    if is_irc:
-                        self.grp_trajectory.setTitle("⚛️ Intrinsic Reaction Coordinate (IRC Pathway Player)")
-                        if hasattr(self, "combo_traj_mode"):
-                            # Bounce mode is the gold standard for inspecting IRC reaction pathways
-                            idx_bounce = self.combo_traj_mode.findData("bounce")
-                            if idx_bounce >= 0:
-                                self.combo_traj_mode.setCurrentIndex(idx_bounce)
-                        if hasattr(self, "btn_irc_sweeper"):
-                            self.btn_irc_sweeper.setStyleSheet(
-                                "background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold; border: 1.5px solid #a5b4fc;"
-                            )
-                        if getattr(res, "irc_pathway", None) and hasattr(res.irc_pathway, "ts_index"):
-                            init_step = res.irc_pathway.ts_index
-                    else:
-                        self.grp_trajectory.setTitle("Trajectory Player (Optimization Steps / MD)")
-                        if hasattr(self, "btn_irc_sweeper"):
-                            self.btn_irc_sweeper.setStyleSheet(
-                                "background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold;"
-                            )
-                    self.grp_trajectory.setVisible(True)
-                    self.slider_trajectory.blockSignals(True)
-                    self.slider_trajectory.setRange(0, n_steps - 1)
-                    self.slider_trajectory.setValue(init_step)
-                    self.slider_trajectory.blockSignals(False)
-                    self.lbl_trajectory_step.setText(f"Step {init_step + 1}/{n_steps}")
-                    if res.trajectory_energies and len(res.trajectory_energies) == n_steps:
-                        e_val = res.trajectory_energies[init_step]
-                        self.lbl_trajectory_energy.setText(f"E = {e_val:.6f} eV")
-                    else:
-                        self.lbl_trajectory_energy.setText("")
-                else:
-                    self.grp_trajectory.setVisible(False)
-
-            # Apply vibrational modes if present in the log file
-            if res.vibrational_analysis and res.vibrational_analysis.n_modes > 0:
-                self._apply_vibrations((final_coords, res.vibrational_analysis))
-
-            # Apply UV-Vis transitions if present in the log file
-            if hasattr(res, "et_energies") and res.et_energies and hasattr(self, "uvvis_widget"):
-                self.uvvis_widget.set_uv_vis_data(res.et_energies, res.et_oscs)
-                if hasattr(self, "tabs_spectra"):
-                    self.tabs_spectra.setCurrentIndex(1)
-
-            # Apply NMR chemical shieldings if present in the log file
-            if getattr(res, "nmr_shieldings", None) and hasattr(self, "nmr_widget"):
-                self.nmr_widget.set_nmr_data(res.nmr_shieldings)
-                if hasattr(self, "tabs_spectra") and not (res.vibrational_analysis and res.vibrational_analysis.n_modes > 0):
-                    self.tabs_spectra.setCurrentIndex(2)
-
-            # Apply Molecular Orbitals & Energy Diagram directly from the QM Log if present
-            if getattr(res, "orbitals", None) and hasattr(self, "set_orbitals_from_data"):
-                from .volumetric import MoldenFileData
-                m_dummy = MoldenFileData(
-                    title=f"{res.program_name} log orbitals",
-                    symbols=symbols,
-                    coords=final_coords,
-                    orbitals=res.orbitals,
-                )
-                self.set_orbitals_from_data(m_dummy, homo_idx=res.homo_idx, source_label=os.path.basename(path))
-            else:
-                # If log itself did not have MOs (e.g. newBRORSEN, Gaussian without pop=full),
-                # automatically check for companion .molden in the same folder and populate MO table & ladder
-                q_dir = os.path.dirname(path)
-                q_base = os.path.splitext(os.path.basename(path))[0]
-                for cand_ext in ("_hf_electrons.molden", "_electrons.molden", ".molden", ".molden.input", ".e-.molden", ".E-.molden", ".E-ALPHA.molden", ".molf"):
-                    cand_m = os.path.join(q_dir, q_base + cand_ext)
-                    if os.path.isfile(cand_m):
-                        try:
-                            self.load_orbitals_from_molden(cand_m, auto_render=False)
-                            break
-                        except Exception:
-                            log.debug("Auto-loading companion molden failed", exc_info=True)
-
-            # Switch to Molecular Orbitals tab if MOs were loaded
-            if hasattr(self, "_active_molden_data") and self._active_molden_data:
-                idx = self.tabs.indexOf(getattr(self, "tab_orbitals", None))
-                if idx >= 0:
-                    self.tabs.setCurrentIndex(idx)
-
-            self._last_loaded_qm_log_path = path
-            self._remember_file(path)
-            if hasattr(self, "set_interaction_mode"):
-                self.set_interaction_mode("inspect")
-            if hasattr(self, "_update_qm_summary_banner"):
-                self._update_qm_summary_banner(res)
-            self.statusBar().showMessage(
-                f"Loaded {res.program_name} log: {len(symbols)} atoms, {n_steps} step(s)"
-                + (f", {res.vibrational_analysis.n_modes} frequency modes" if res.vibrational_analysis else ""),
-                6000,
-            )
-            # Check for newBRORSEN / QM companion files (electron/positron densities, molden, scans)
-            # Only prompt interactively if not triggered from the live Job Monitor auto-loader
-            if not getattr(self, "_suppress_companion_prompt", False):
-                self._check_and_prompt_companion_files(path)
-        except Exception as e:
-            dialog_service.error(self, "Error Reading QM Output", str(e), exc=e)
+        from .controllers import ImportController
+        ImportController(self).load_qm_log_path(path)
 
     def _on_view_qm_output_file(self):
         """Open the QM Output & Log Viewer Dialog."""
@@ -1324,76 +1170,12 @@ class FileIOMixin:
                 self._traj_timer.start()
 
     def _on_import_xyz(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Import XYZ File", self._last_dir(), "XYZ Molecular Files (*.xyz);;All Files (*)"
-        )
-        if path:
-            self._load_xyz_path(path)
+        from .controllers import ImportController
+        ImportController(self).import_xyz()
 
     def _load_xyz_path(self, path: str):
-        try:
-            symbols, coords = parse_xyz(path)
-            if len(symbols) == 0:
-                QtWidgets.QMessageBox.warning(self, "Empty File", "No atoms found in XYZ file.")
-                return
-            self._push_undo_state()
-            self.variables = {}
-
-            # Detect full covalent connectivity and multiple bond orders directly from exact XYZ coordinates
-            detected_bonds = detect_connectivity(symbols, coords, strict=False)
-            detected_bo = detect_bond_orders(symbols, coords, detected_bonds)
-
-            # Build connectivity-aware Z-matrix while keeping exact XYZ coordinates & ring closures
-            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=detected_bonds, strict_bonds=True)
-            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
-            self.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
-            self.strict_topology = True
-
-            # Preserve exact Cartesian coordinates and orientation from the XYZ file!
-            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
-            self.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
-            self.viewer.update()
-            self._remember_file(path)
-
-            # Check if this is a multi-frame XYZ or CREST conformer ensemble
-            try:
-                from .zmatrix import parse_multi_xyz
-                from .crest_explorer import extract_energy_from_comment
-                _, multi_frames = parse_multi_xyz(path, is_path=True)
-                if len(multi_frames) > 1:
-                    traj_energies = []
-                    for c_comm, _ in multi_frames:
-                        p_e = extract_energy_from_comment(c_comm)
-                        traj_energies.append(p_e[0] if p_e is not None else 0.0)
-                    self.trajectory_coords = [f[1] for f in multi_frames]
-                    self.trajectory_symbols = symbols
-                    self.trajectory_energies = traj_energies
-                    n_frames = len(multi_frames)
-                    is_crest = "crest" in os.path.basename(path).lower()
-                    if hasattr(self, "grp_trajectory"):
-                        title_lbl = "Conformer Ensemble" if is_crest else "Trajectory Player"
-                        self.grp_trajectory.setTitle(f"{title_lbl} ({n_frames} Frames)")
-                        self.grp_trajectory.setVisible(True)
-                        self.slider_trajectory.blockSignals(True)
-                        self.slider_trajectory.setRange(0, n_frames - 1)
-                        self.slider_trajectory.setValue(0)
-                        self.slider_trajectory.blockSignals(False)
-                        self.lbl_trajectory_step.setText(f"1/{n_frames}")
-                    if is_crest:
-                        self.statusBar().showMessage(
-                            f"Imported CREST Conformer Ensemble ({n_frames} conformers): {os.path.basename(path)}. Press Ctrl+Shift+E for Ensemble Explorer!",
-                            8000,
-                        )
-                        return
-            except Exception as e:
-                log.debug("Multi-XYZ trajectory/CREST detection error: %s", e)
-
-            self.statusBar().showMessage(
-                f"Imported XYZ ({len(symbols)} atoms, {len(detected_bonds)} bonds) preserving exact 3D coordinates: {os.path.basename(path)}",
-                5000
-            )
-        except Exception as e:
-            dialog_service.error(self, "Error Importing XYZ", str(e), exc=e)
+        from .controllers import ImportController
+        ImportController(self).load_xyz_path(path)
 
     def _load_pdb_path(self, path: str):
         try:
