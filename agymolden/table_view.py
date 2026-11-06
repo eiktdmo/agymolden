@@ -29,13 +29,21 @@ class ZMatrixTableWidget(QtWidgets.QTableWidget):
             "#", "Sym", "Ref 1", "Bond (Å)", "Ref 2", "Angle (°)", "Ref 3", "Dihed (°)"
         ])
         header = self.horizontalHeader()
-        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        for col in (self.COL_IDX, self.COL_SYM, self.COL_REF1, self.COL_REF2, self.COL_REF3):
-            header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setMinimumSectionSize(38)
+        if header is not None:
+            header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+            for col in (self.COL_IDX, self.COL_SYM, self.COL_REF1, self.COL_REF2, self.COL_REF3):
+                header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+            header.setMinimumSectionSize(38)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        self.verticalHeader().setVisible(False)
+        v_header = self.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
+            v_header.setDefaultSectionSize(22)  # Compact row height (22px) maximizes visible lines
+            v_header.setMinimumSectionSize(18)
+        self.setStyleSheet(
+            "QTableWidget::item { padding: 1px 4px; font-size: 11px; }"
+        )
         self.setAlternatingRowColors(True)
 
         self._updating = False
@@ -44,6 +52,46 @@ class ZMatrixTableWidget(QtWidgets.QTableWidget):
         self.itemChanged.connect(self._on_item_changed)
         self.itemSelectionChanged.connect(self._on_selection_changed)
         self.cellClicked.connect(self._on_cell_clicked)
+
+    def filter_rows(self, query: str):
+        """Filter table rows by atom symbol, index, or index range (e.g. 'C', '1-20', '>10')."""
+        query = query.strip().lower()
+        if not query:
+            for row in range(self.rowCount()):
+                self.setRowHidden(row, False)
+            return
+
+        for row in range(self.rowCount()):
+            idx_str = str(row + 1)
+            sym = self.zatoms[row].symbol.lower() if row < len(self.zatoms) else ""
+            match = False
+            if query == sym or query in sym:
+                match = True
+            elif query == idx_str:
+                match = True
+            elif "-" in query:
+                parts = query.split("-", 1)
+                try:
+                    start, end = int(parts[0]), int(parts[1])
+                    if start <= (row + 1) <= end:
+                        match = True
+                except ValueError:
+                    pass
+            elif query.startswith(">"):
+                try:
+                    val = int(query[1:])
+                    if (row + 1) > val:
+                        match = True
+                except ValueError:
+                    pass
+            elif query.startswith("<"):
+                try:
+                    val = int(query[1:])
+                    if (row + 1) < val:
+                        match = True
+                except ValueError:
+                    pass
+            self.setRowHidden(row, not match)
 
     def load_zatoms(self, zatoms: List[ZAtom]):
         self._updating = True

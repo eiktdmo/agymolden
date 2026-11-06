@@ -305,6 +305,7 @@ class ConformerEnsembleDialog(QtWidgets.QDialog):
         ])
         self.table_conformers.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.table_conformers.horizontalHeader().setStretchLastSection(True)
+        self.table_conformers.verticalHeader().setDefaultSectionSize(22)
         self.table_conformers.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_conformers.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.table_conformers.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)

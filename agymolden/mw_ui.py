@@ -604,16 +604,55 @@ class UIMixin(UIInspectorTabsMixin):
         # Tab 1: Interactive Z-Matrix Table & Parameter Sliders
         tab_table = QtWidgets.QWidget()
         tab_table_layout = QtWidgets.QVBoxLayout(tab_table)
-        tab_table_layout.setSpacing(8)
+        tab_table_layout.setContentsMargins(4, 4, 4, 4)
+        tab_table_layout.setSpacing(4)
+
+        zmat_splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.zmat_splitter = zmat_splitter
+
+        # Upper Container: Filter bar + Expansive Z-Matrix Table
+        top_container = QtWidgets.QWidget()
+        top_layout = QtWidgets.QVBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(4)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.setSpacing(4)
+        self.txt_zmat_filter = QtWidgets.QLineEdit()
+        self.txt_zmat_filter.setPlaceholderText("🔍 Filter atoms (e.g. C, H, 1-20, >10)...")
+        self.txt_zmat_filter.setClearButtonEnabled(True)
+        self.txt_zmat_filter.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        filter_row.addWidget(self.txt_zmat_filter, stretch=1)
+
+        btn_show_all = QtWidgets.QPushButton("Show All")
+        btn_show_all.setStyleSheet("font-size: 11px; padding: 2px 6px;")
+        btn_show_all.clicked.connect(lambda: self.txt_zmat_filter.clear())
+        filter_row.addWidget(btn_show_all)
+        top_layout.addLayout(filter_row)
 
         # Table
         self.table_widget = ZMatrixTableWidget()
-        self.table_widget.setMinimumHeight(120)
+        self.table_widget.setMinimumHeight(150)
+        self.table_widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.txt_zmat_filter.textChanged.connect(self.table_widget.filter_rows)
         self.table_widget.before_data_changed.connect(self._push_undo_state)
         self.table_widget.data_changed.connect(self._on_table_data_changed)
         self.table_widget.atom_selected.connect(self._on_table_atom_selected)
         self.table_widget.cell_selected.connect(self._on_table_cell_selected)
-        tab_table_layout.addWidget(self.table_widget, stretch=1)
+        top_layout.addWidget(self.table_widget, stretch=1)
+        zmat_splitter.addWidget(top_container)
+
+        # Lower Container: Action bars & Tuning Sliders (scrollable so controls never clip on small screens)
+        bottom_scroll = QtWidgets.QScrollArea()
+        bottom_scroll.setWidgetResizable(True)
+        bottom_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        bottom_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        bottom_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        bottom_container = QtWidgets.QWidget()
+        bottom_layout = QtWidgets.QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(0, 4, 0, 0)
+        bottom_layout.setSpacing(6)
 
         # Compact & Responsive Z-Matrix Action Bars (Never shrink or clip text on small screens)
         # Row 1: Add Atom, Add H, Delete (3 items)
@@ -640,7 +679,7 @@ class UIMixin(UIInspectorTabsMixin):
         row_action_layout1.addWidget(self.btn_add_atom)
         row_action_layout1.addWidget(self.btn_add_hydrogens)
         row_action_layout1.addWidget(self.btn_del_atom)
-        tab_table_layout.addLayout(row_action_layout1)
+        bottom_layout.addLayout(row_action_layout1)
 
         # Row 2: Form Bond, Reorder ZMAT (2 items)
         row_action_layout2 = QtWidgets.QHBoxLayout()
@@ -665,7 +704,7 @@ class UIMixin(UIInspectorTabsMixin):
 
         row_action_layout2.addWidget(self.btn_close_ring)
         row_action_layout2.addWidget(self.btn_reorder_zmat)
-        tab_table_layout.addLayout(row_action_layout2)
+        bottom_layout.addLayout(row_action_layout2)
 
         # Row 3: Optimization Method Selector & Optimize Button
         row_action_layout_opt = QtWidgets.QHBoxLayout()
@@ -691,7 +730,7 @@ class UIMixin(UIInspectorTabsMixin):
 
         row_action_layout_opt.addWidget(self.combo_opt_method, stretch=3)
         row_action_layout_opt.addWidget(self.btn_optimize_ff, stretch=2)
-        tab_table_layout.addLayout(row_action_layout_opt)
+        bottom_layout.addLayout(row_action_layout_opt)
 
         # Row 4: Conformers & Variables Dropdown Button
         row_action_layout_adv = QtWidgets.QHBoxLayout()
@@ -755,7 +794,7 @@ class UIMixin(UIInspectorTabsMixin):
 
         row_action_layout_adv.addWidget(self.btn_conformer_search, stretch=1)
         row_action_layout_adv.addWidget(self.btn_vars_menu, stretch=1)
-        tab_table_layout.addLayout(row_action_layout_adv)
+        bottom_layout.addLayout(row_action_layout_adv)
 
         # Selected Atom Fine Adjustment Group (Molden Style Slider Adjustment + GaussView SmartSlides)
         self.grp_adjust = QtWidgets.QGroupBox("Interactive Parameter Tuning / SmartSlides (Selected Atom or 2/3/4-Atom Selection)")
@@ -846,24 +885,25 @@ class UIMixin(UIInspectorTabsMixin):
         self.slider_dihedral.valueChanged.connect(self._on_slider_dihedral_changed)
         adjust_layout.addWidget(self.slider_dihedral, 4, 2)
 
-        tab_table_layout.addWidget(self.grp_adjust)
+        bottom_layout.addWidget(self.grp_adjust)
 
         # Z-Matrix Symbolic Variable Sliders (ZOPT Coordinate Inspection)
         self.grp_var_sliders = QtWidgets.QGroupBox("Z-Matrix Symbolic Variables (ZOPT Sliders)")
         self.var_sliders_layout = QtWidgets.QGridLayout(self.grp_var_sliders)
         self.var_sliders_layout.setSpacing(6)
         self.grp_var_sliders.setVisible(False)
-        tab_table_layout.addWidget(self.grp_var_sliders)
+        bottom_layout.addWidget(self.grp_var_sliders)
 
-        scroll_tab_table = QtWidgets.QScrollArea()
-        scroll_tab_table.setWidgetResizable(True)
-        scroll_tab_table.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll_tab_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_tab_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_tab_table.setWidget(tab_table)
+        bottom_scroll.setWidget(bottom_container)
+        zmat_splitter.addWidget(bottom_scroll)
+        zmat_splitter.setStretchFactor(0, 5) # Table gets 70-80% height!
+        zmat_splitter.setStretchFactor(1, 2) # Sliders get remaining height
+        zmat_splitter.setSizes([450, 220])
+        tab_table_layout.addWidget(zmat_splitter)
+
         self.tab_table = tab_table
-        self.scroll_tab_table = scroll_tab_table
-        self.tabs.addTab(scroll_tab_table, "Z-Matrix")
+        self.scroll_tab_table = bottom_scroll
+        self.tabs.addTab(tab_table, "Z-Matrix")
 
         # Tab 2: Raw Text Z-Matrix / Gaussian Format
         tab_raw = QtWidgets.QWidget()
