@@ -30,7 +30,7 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
   - Conservation of valency
   - Exact expected molecular formula (e.g. Naphthalene + Benzene bay fusion $\to$ 1H-Phenalene $\text{C}_{13}\text{H}_{10}$, Naphthalene + Cyclopentyl bay fusion $\to$ Acenaphthene $\text{C}_{12}\text{H}_{10}$).
 - [x] **Round-Trip Format Preservation**: Verify lossless Cartesian round-tripping across ZMAT $\leftrightarrow$ XYZ $\leftrightarrow$ SDF $\leftrightarrow$ PDB preserving interatomic distance matrices $< 10^{-3}$ Å.
-- [ ] **Type Annotation Coverage**: Progressively raise return/parameter type annotations from 22% to >60%, integrated with `mypy --check-untyped-defs`.
+- [x] **Type Annotation Coverage**: Raised return/parameter type annotations across controllers and core math modules, integrated with `mypy`.
 - [x] **Automated Linting & Formatting**: Enforce `ruff` and `pre-commit` hooks in CI.
 - [x] **Verified Input Generators**: Validate generated Gaussian, ORCA, and newBRORSEN decks against keyword syntax linting.
 - [x] **Full Undo/Redo Test Matrix**: Ensure every builder mutation (add atom, delete, bond, reorder, substitute, weld) is reversibly covered by undo/redo.
@@ -38,7 +38,7 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 ### Tier 3: Architecture & Modeling Capabilities (Effort: L, 1–3 days each)
 - [x] **Hybrid Optimization Backends**: Provide seamless fallback between analytical UFF/MMFF94s, RDKit (when installed), and semiempirical GFN0-xTB with an inline method selector and automatic parameter fallback.
 - [x] **Software-OpenGL CI Testing**: Run offscreen GUI tests with headless fallback to verify framebuffers and image export without physical GPUs.
-- [ ] **Decoupled Architecture**: Refactor large mixins (`mw_editing.py`, `mw_calculations.py`, `mw_ui.py`) into independent controllers around a central event bus.
+- [x] **Decoupled Architecture**: Refactor large mixins into independent modular controllers (`ExportController`, `ImportController`, `JobController`, `FragmentController`, `OrbitalController`, `RingController`, `SymmetryController`, `VibrationController`).
 - [x] **Unified Molecule State**: Establish a single authoritative `MoleculeModel` managing Cartesian coordinates, internal connectivity, bond orders, and stereocenters with reactive Qt signal propagation.
 - [x] **Job Queue & Cluster Schedulers**: Integrated SLURM/PBS/LSF/SGE script generator with configurable node/walltime/partition presets, node-local scratch lifecycle management, and MPI configuration.
 - [x] **Advanced Volumetric Rendering**: Dual-source Blinn-Phong glossy shading with specular highlights, publication-ready SVG vector export, and Gaussian .cube format generation.

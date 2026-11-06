@@ -1,14 +1,19 @@
 # AgyMolden User Manual & Comparative Evaluation
 
-**Version:** 1.1 (Modern Molden-Inspired Z-Matrix Generator & Molecular Modeling Suite)  
-**Platform:** Linux (X11 / Wayland via PyQt6 & Modern OpenGL)  
+**Version:** 1.2.0 (Modern Molden-Inspired Z-Matrix Generator & Molecular Modeling Suite)  
+**Platform:** Cross-Platform Linux / macOS / Windows (PyQt6 & Modern OpenGL Core Profile)  
 **Author:** AgyMolden Development Team  
 
 ---
 
 ## 1. Executive Summary & Overview
 
-**AgyMolden** is a modern molecular editor and Z-matrix builder created to bridge the gap between classical internal-coordinate editors (specifically the classic Fortran/X11 **Molden**) and contemporary interactive chemical sketchers (**Avogadro**, **Gabedit**, and **GaussView**).
+**AgyMolden v1.2.0** is an advanced molecular modeling environment and quantum chemistry workbench uniting:
+1. **Interactive Z-Matrix editing**: Internal coordinates ($\text{R}, \theta, \phi$) with live bidirectional Cartesian sync, constraint locking, and dihedral rotor scans.
+2. **Autonomous QC Doctor (`Ctrl+Alt+D`)**: Integrated diagnostician analyzing aborted, diverged, or oscillating calculation logs (ORCA, Gaussian, Q-Chem, xTB) with 1-click recipe fixes.
+3. **Smart ChemDraw & PubChem Live Canvas Paste (`Ctrl+V`)**: Instant conversion of pasted SMILES, InChI, or chemical names into unconstrained, clash-free 3D molecular structures.
+4. **Publication Studio Exporters**: High-DPI raster images (300–800 DPI PNG with transparent background) and native Scalable Vector Graphics (`.svg`) for Adobe Illustrator and LaTeX.
+5. **Decoupled Architecture**: Lean main window supported by 9 dedicated modular controllers (`ExportController`, `ImportController`, `JobController`, `FragmentController`, `OrbitalController`, `RingController`, `SymmetryController`, `VibrationController`).
 
 While Cartesian coordinate ($XYZ$) sketchers are intuitive for drawing 3D geometry with a mouse, quantum chemistry calculations (Gaussian, GAMESS, ORCA, Molpro, Q-Chem, NWChem) frequently demand or benefit significantly from **internal coordinates (Z-matrix)**:
 - Enforcing exact point-group symmetry constraints.
