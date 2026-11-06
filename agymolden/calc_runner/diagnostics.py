@@ -3,6 +3,7 @@ Diagnostic helper for quantum chemistry calculations (especially ORCA and newBRO
 Analyzes log output and provides friendly explanations and actionable remedies for students.
 """
 
+import os
 import re
 from typing import Optional, Dict
 
@@ -21,6 +22,58 @@ class QMDiagnosticResult:
         self.remedy = remedy
         self.severity = severity  # "error", "warning", "info"
         self.suggested_keywords = suggested_keywords or {}
+
+
+def patch_input_file_with_remedy(input_path: str, diag: QMDiagnosticResult, engine: str = "orca") -> bool:
+    """
+    Safely inject QC Doctor recommended keywords and blocks into a quantum chemistry input file.
+    Supports ORCA, Gaussian, and Psi4 syntax.
+    """
+    if not os.path.isfile(input_path) or not diag.suggested_keywords:
+        return False
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.splitlines()
+    new_lines = []
+    injected = False
+    eng = (engine or "orca").lower()
+
+    if "orca" in eng:
+        extra = diag.suggested_keywords.get("extra")
+        scf_block = diag.suggested_keywords.get("scf_block") or diag.suggested_keywords.get("scf")
+        geom_block = diag.suggested_keywords.get("geom")
+
+        for line in lines:
+            if line.strip().startswith("!") and extra and extra not in line and not injected:
+                new_lines.append(f"{line.strip()} {extra}")
+                injected = True
+            else:
+                new_lines.append(line)
+
+        if scf_block and scf_block not in content:
+            new_lines.append(scf_block)
+        if geom_block and geom_block not in content:
+            new_lines.append(geom_block)
+
+    elif "gaussian" in eng:
+        route_kw = diag.suggested_keywords.get("scf") or diag.suggested_keywords.get("opt")
+        for line in lines:
+            if line.strip().startswith("#") and route_kw and route_kw not in line:
+                new_lines.append(f"{line.strip()} {route_kw}")
+            else:
+                new_lines.append(line)
+
+    elif "psi4" in eng:
+        set_kw = diag.suggested_keywords.get("scf") or diag.suggested_keywords.get("opt")
+        new_lines = lines + ["", f"set {set_kw}"]
+    else:
+        new_lines = lines
+
+    with open(input_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(new_lines) + "\n")
+    return True
 
 
 def diagnose_qm_error(raw_log: str, engine: str = "orca", exit_code: int = 1) -> Optional[QMDiagnosticResult]:

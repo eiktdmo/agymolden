@@ -47,6 +47,13 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.spin_msaa.addItem("Disabled (Fastest / Low-end GPU)", 0)
         v_layout.addRow("Anti-Aliasing (MSAA):", self.spin_msaa)
 
+        self.chk_modern_shaders = QtWidgets.QCheckBox("Enable Modern Impostor Shaders (Experimental)")
+        self.chk_modern_shaders.setToolTip(
+            "Render glossy, depth-correct sphere and cylinder impostors using GPU fragment shaders (Avogadro / ChimeraX style).\n"
+            "Uncheck to keep 100% legacy OpenGL fixed-function rendering."
+        )
+        v_layout.addRow("", self.chk_modern_shaders)
+
         self.combo_default_dpi = QtWidgets.QComboBox()
         self.combo_default_dpi.addItem("300 DPI (Standard Journal Submission)", 300)
         self.combo_default_dpi.addItem("600 DPI (High-Density Print / Line Art)", 600)
@@ -130,6 +137,8 @@ class PreferencesDialog(QtWidgets.QDialog):
         if idx_msaa >= 0:
             self.spin_msaa.setCurrentIndex(idx_msaa)
 
+        self.chk_modern_shaders.setChecked(self.settings.value("viewport/modern_shaders", False, type=bool))
+
         dpi = self.settings.value("export/default_dpi", 300, type=int)
         idx_dpi = self.combo_default_dpi.findData(dpi)
         if idx_dpi >= 0:
@@ -154,6 +163,7 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.settings.setValue("viewport/show_labels", self.chk_labels.isChecked())
         self.settings.setValue("viewport/show_indices", self.chk_indices.isChecked())
         self.settings.setValue("viewport/msaa", self.spin_msaa.currentData())
+        self.settings.setValue("viewport/modern_shaders", self.chk_modern_shaders.isChecked())
         self.settings.setValue("export/default_dpi", self.combo_default_dpi.currentData())
         self.settings.setValue("calc/default_engine", self.combo_default_engine.currentData())
         self.settings.setValue("viewport/mouse_mode", self.combo_mouse_mode.currentData())
@@ -170,6 +180,7 @@ class PreferencesDialog(QtWidgets.QDialog):
                 parent.viewer.bg_color_mode = bg
                 parent.viewer.show_labels = self.chk_labels.isChecked()
                 parent.viewer.show_indices = self.chk_indices.isChecked()
+                parent.viewer.use_modern_shaders = self.chk_modern_shaders.isChecked()
                 parent.viewer.mouse_mode = self.combo_mouse_mode.currentData()
                 parent.viewer.update()
             if hasattr(parent, "spin_sym_tol"):

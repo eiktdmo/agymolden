@@ -179,6 +179,13 @@ class JobMonitorDialog(QtWidgets.QDialog):
         btn_view_full_out.clicked.connect(self._on_open_output_viewer)
         bottom_layout.addWidget(btn_view_full_out)
 
+        self.btn_auto_fix = QtWidgets.QPushButton("🩹 Auto-Fix & Relaunch")
+        self.btn_auto_fix.setStyleSheet("background-color: #dc2626; color: white; font-weight: bold; padding: 4px 10px;")
+        self.btn_auto_fix.setToolTip("QC Doctor: Automatically inject convergence remedies into the input file and restart calculation")
+        self.btn_auto_fix.setVisible(False)
+        self.btn_auto_fix.clicked.connect(self._on_auto_fix_and_relaunch)
+        bottom_layout.addWidget(self.btn_auto_fix)
+
         bottom_layout.addStretch()
 
         btn_close = QtWidgets.QPushButton("Close")
@@ -457,6 +464,11 @@ class JobMonitorDialog(QtWidgets.QDialog):
             eng_hint = getattr(self.runner, "program_name", "orca") or "orca"
             diag = diagnose_qm_error(raw_text, engine=eng_hint)
             if diag:
+                self._current_diagnostic = diag
+                if diag.suggested_keywords:
+                    self.btn_auto_fix.setVisible(True)
+                    self.btn_auto_fix.setText(f"🩹 Auto-Fix ({diag.title[:20]}...) & Relaunch")
+
                 msg_box = QtWidgets.QMessageBox(self)
                 msg_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
                 msg_box.setWindowTitle(f"QC Doctor: {diag.title}")
@@ -466,14 +478,39 @@ class JobMonitorDialog(QtWidgets.QDialog):
 
                 btn_fix = None
                 if diag.suggested_keywords:
-                    btn_fix = msg_box.addButton("⚡ Apply Fix to QM Input", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+                    btn_fix = msg_box.addButton("⚡ Apply Fix & Relaunch", QtWidgets.QMessageBox.ButtonRole.ActionRole)
                 msg_box.addButton(QtWidgets.QMessageBox.StandardButton.Ok)
 
                 msg_box.exec()
                 if btn_fix and msg_box.clickedButton() == btn_fix:
-                    self._launch_fixed_qm_input(diag)
+                    self._on_auto_fix_and_relaunch()
             else:
+                self.btn_auto_fix.setVisible(False)
                 QtWidgets.QMessageBox.warning(self, "Calculation Finished", f"Job finished with notice/error:\n{message}")
+
+    def _on_auto_fix_and_relaunch(self):
+        """Automatically inject QC Doctor remedies into input deck and restart job."""
+        diag = getattr(self, "_current_diagnostic", None)
+        if not diag or not diag.suggested_keywords or not self.runner or not self.runner.input_file:
+            return
+
+        inp_path = self.runner.input_file
+        if not os.path.isfile(inp_path):
+            return
+
+        eng = getattr(self.runner, "program_name", "orca") or "orca"
+        try:
+            from .diagnostics import patch_input_file_with_remedy
+            success = patch_input_file_with_remedy(inp_path, diag, engine=eng)
+            if not success:
+                return
+
+            self.btn_auto_fix.setVisible(False)
+            self.txt_log.append(f"\n[QC Doctor] Injected recovery parameters into {os.path.basename(inp_path)}:\n{diag.suggested_keywords}\nRestarting calculation...\n")
+            self.run_calculation(inp_path, runner_type=eng)
+
+        except Exception as err:
+            QtWidgets.QMessageBox.critical(self, "Auto-Fix Error", f"Failed to auto-apply fix:\n{err}")
 
     def _launch_fixed_qm_input(self, diag):
         """Open QM Calculation Setup with QC Doctor recommended keywords pre-filled."""

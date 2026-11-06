@@ -160,6 +160,7 @@ uniform vec3 u_view_pos;
 uniform int u_is_highlighted;
 uniform int u_use_instancing;
 uniform int u_publication_outline;
+uniform int u_modern_glossy;
 
 out vec4 frag_color;
 
@@ -177,15 +178,36 @@ void main() {
         float hemi = 0.5 * norm.y + 0.5;
         vec3 ambient = mix(0.28 * base_col, 0.45 * base_col, hemi);
         float diff = max(dot(norm, light_dir), 0.0);
-        // Slightly cel/soft-stepped diffuse for crisp figure illustration look
         float soft_diff = smoothstep(0.0, 0.85, diff);
         vec3 diffuse = soft_diff * base_col * 0.72;
         vec3 half_dir = normalize(light_dir + view_dir);
         float spec = pow(max(dot(norm, half_dir), 0.0), 48.0);
         vec3 specular = 0.38 * spec * vec3(1.0, 1.0, 1.0);
         result = ambient + diffuse + specular;
+    } else if (u_modern_glossy == 1) {
+        // ChimeraX / Avogadro 2 style dual-source Blinn-Phong glossy shading
+        float hemi = 0.4 * norm.y + 0.6;
+        vec3 ambient = 0.32 * hemi * base_col;
+
+        // Key light
+        float diff1 = max(dot(norm, light_dir), 0.0);
+        vec3 diffuse1 = diff1 * base_col * 0.70;
+        vec3 half_dir1 = normalize(light_dir + view_dir);
+        float spec1 = pow(max(dot(norm, half_dir1), 0.0), 64.0);
+        vec3 specular1 = 0.55 * spec1 * vec3(1.0, 1.0, 1.0);
+
+        // Fill light (camera opposite side) for depth softness
+        vec3 fill_dir = normalize(vec3(-light_dir.x, light_dir.y * 0.5, light_dir.z));
+        float diff2 = max(dot(norm, fill_dir), 0.0);
+        vec3 diffuse2 = diff2 * base_col * 0.20;
+
+        // Subtle Fresnel rim glow
+        float fresnel = pow(1.0 - max(dot(norm, view_dir), 0.0), 3.0);
+        vec3 rim = 0.18 * fresnel * mix(base_col, vec3(1.0), 0.5);
+
+        result = ambient + diffuse1 + diffuse2 + specular1 + rim;
     } else {
-        // Ambient
+        // Legacy Ambient
         float ambient_strength = 0.35;
         vec3 ambient = ambient_strength * base_col;
 

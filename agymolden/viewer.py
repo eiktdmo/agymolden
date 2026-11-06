@@ -919,6 +919,10 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         if loc_pub_outline != -1:
             glUniform1i(loc_pub_outline, 1 if getattr(self, "show_publication_outlines", False) else 0)
 
+        loc_modern_glossy = glGetUniformLocation(self.shader_program, "u_modern_glossy")
+        if loc_modern_glossy != -1:
+            glUniform1i(loc_modern_glossy, 1 if getattr(self, "use_modern_shaders", False) else 0)
+
         # 1. Render Bonds (Cylinders) via GPU instancing
         if self.style_mode != "Spacefill":
             glBindVertexArray(self.cyl_vao)
