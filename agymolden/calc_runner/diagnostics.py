@@ -26,20 +26,67 @@ class QMDiagnosticResult:
 def diagnose_qm_error(raw_log: str, engine: str = "orca", exit_code: int = 1) -> Optional[QMDiagnosticResult]:
     """
     Universal QC Doctor diagnostic parser.
-    Inspects stdout/stderr log text from ORCA, Gaussian, or PySCF to identify common
+    Inspects stdout/stderr log text from ORCA, Gaussian, PySCF, Psi4, or xTB to identify common
     calculation bottlenecks/crashes and returns structured remedies + keywords for 1-click fixing.
     """
     if not raw_log:
         return None
 
     eng = (engine or "orca").lower()
-    if eng == "psi4" or ("psi4" in raw_log.lower() and "orca" not in raw_log.lower()):
+    if eng == "xtb" or ("xtb" in raw_log.lower() and "orca" not in raw_log.lower()):
+        return diagnose_xtb_error(raw_log, exit_code=exit_code)
+    elif eng == "psi4" or ("psi4" in raw_log.lower() and "orca" not in raw_log.lower()):
         return diagnose_psi4_error(raw_log, exit_code=exit_code)
     elif eng == "gaussian" or ("gaussian" in raw_log.lower() and "orca" not in raw_log.lower()):
         return diagnose_gaussian_error(raw_log, exit_code=exit_code)
     elif eng == "pyscf" or ("pyscf" in raw_log.lower() and "orca" not in raw_log.lower()):
         return diagnose_pyscf_error(raw_log, exit_code=exit_code)
     return diagnose_orca_error(raw_log, exit_code=exit_code)
+
+
+def diagnose_xtb_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnosticResult]:
+    """Diagnose xTB calculation failures (SCC convergence, coordinate errors, geometry limits)."""
+    if not raw_log:
+        return None
+
+    # 1. SCC Convergence
+    if re.search(r"(SCC not converged|convergence not reached in SCC|SCC did not converge)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="xTB SCC Convergence Failure",
+            summary="The self-consistent charge (SCC) loop in xTB failed to converge to the required energy or charge threshold.",
+            remedy=(
+                "• Increase SCC iterations: pass '--iterations 250' on the command line.\n"
+                "• Increase electronic temperature: '--etemp 500' (default is 300 K) to assist fractional orbital occupations.\n"
+                "• Use Broyden damping/mixer settings if working with open-shell or metal complexes."
+            ),
+            suggested_keywords={"iterations": "250", "etemp": "500"}
+        )
+
+    # 2. Geometry Optimization limit
+    if re.search(r"(GEOMETRY OPTIMIZATION FAILED|optimization did not converge|ANC optimizer failed)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="xTB Geometry Optimization Did Not Converge",
+            summary="xTB reached the maximum geometry cycles without satisfying gradient and displacement criteria.",
+            remedy=(
+                "• Specify looser or tighter levels: '--opt loose' or '--opt normal'.\n"
+                "• Increase optimization steps: '--cycles 200'.\n"
+                "• Pre-optimize with UFF/MMFF or ensure initial coordinates have no severe steric clashes."
+            ),
+            suggested_keywords={"cycles": "200"}
+        )
+
+    # 3. Abnormal atomic distance / coordination error
+    if re.search(r"(abnormal distance|unphysically short distance|atoms too close|clash)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Unphysical Interatomic Distance in xTB",
+            summary="xTB detected atomic coordinates that overlap (< 0.5 Å) or exceed realistic bonding distances.",
+            remedy=(
+                "• Inspect input structure in AgyMolden viewer for overlapping atoms.\n"
+                "• Run pre-flight check ('agymolden check <file>') to isolate atomic clashes."
+            )
+        )
+
+    return None
 
 
 def diagnose_psi4_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnosticResult]:
@@ -312,7 +359,33 @@ def diagnose_orca_error(raw_log: str, exit_code: int = 1) -> Optional[QMDiagnost
             )
         )
 
-    # 7. Executable not found
+    # 8. Quasi-Newton / Trust Radius / Line Search Oscillations
+    if re.search(r"(Trust radius too small|Line search failed|Hessian update failed|GDIIS failed)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Geometry Optimizer Line Search / Trust Radius Failure",
+            summary="ORCA's geometry optimizer encountered an oscillating potential energy surface or a very flat mode where the trust radius collapsed.",
+            remedy=(
+                "• In your %geom block, recalculate the Hessian: %geom Recalc_Hess 5 end\n"
+                "• Switch optimizer to trust-region step: %geom Trust 0.1 end\n"
+                "• Consider relaxing with UFF/xTB before running ab initio optimization."
+            ),
+            suggested_keywords={"geom": "%geom Recalc_Hess 5 end"}
+        )
+
+    # 9. Linear Dependency in Basis Set
+    if re.search(r"(linear dependency|overlap matrix is singular|near singular overlap|zero or negative eigenvalue)", raw_log, re.IGNORECASE):
+        return QMDiagnosticResult(
+            title="Basis Set Linear Dependency in ORCA",
+            summary="The atomic orbital overlap matrix has very small eigenvalues, caused by redundant diffuse basis functions or close atoms.",
+            remedy=(
+                "• In your %scf block, adjust the linear dependency threshold: %scf TolLinDep 1e-5 end\n"
+                "• Check for overlapping or ghost atoms in the structure.\n"
+                "• Switch from heavy diffuse sets (e.g. aug-cc-pVTZ) to def2-TZVP."
+            ),
+            suggested_keywords={"scf": "%scf TolLinDep 1e-5 end"}
+        )
+
+    # 10. Executable not found
     if "not found" in raw_log.lower() or "no such file or directory" in raw_log.lower():
         return QMDiagnosticResult(
             title="ORCA Executable Not Found",
