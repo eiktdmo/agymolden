@@ -6,11 +6,12 @@ BEFORE the calculation starts.
 import os
 import re
 import sys
+import subprocess
 from typing import List, Optional, Tuple
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .brorsen_runner import detect_conda_environments, find_brorsen_wrappers
-from .remote_ssh import get_all_remote_hosts, test_ssh_connectivity, RemoteHostConfig
+from .remote_ssh import get_all_remote_hosts, test_ssh_connectivity, RemoteHostConfig, _wrap_ssh_command
 
 
 class BrorsenLaunchDialog(QtWidgets.QDialog):

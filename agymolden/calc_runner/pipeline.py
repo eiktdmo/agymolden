@@ -16,7 +16,7 @@ Orchestrates sequential, interdependent calculation workflows:
 from dataclasses import dataclass, field
 import os
 import logging
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Dict, Any, Callable, Tuple
 import numpy as np
 
 from PyQt6 import QtCore
