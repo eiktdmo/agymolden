@@ -1354,259 +1354,41 @@ class CalculationsMixin:
             self.tabs.setCurrentIndex(idx)
 
     def _on_quick_view_homo(self):
-        if hasattr(self, "_active_molden_data") and self._active_molden_data:
-            homo_idx = 0
-            for idx, mo in enumerate(self._active_molden_data.orbitals):
-                if mo.occupancy > 0.05:
-                    homo_idx = idx
-            idx = self.tabs.indexOf(getattr(self, "tab_orbitals", None))
-            if idx >= 0:
-                self.tabs.setCurrentIndex(idx)
-            else:
-                self.tabs.setCurrentIndex(5)
-            self.table_orbitals.selectRow(homo_idx)
-            self._render_mo_orbital(homo_idx)
-        else:
-            self._on_open_volumetric_dialog()
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_homo()
 
     def _on_quick_view_lumo(self):
-        if hasattr(self, "_active_molden_data") and self._active_molden_data:
-            lumo_idx = 0
-            for idx, mo in enumerate(self._active_molden_data.orbitals):
-                if mo.occupancy <= 0.05:
-                    lumo_idx = idx
-                    break
-            idx = self.tabs.indexOf(getattr(self, "tab_orbitals", None))
-            if idx >= 0:
-                self.tabs.setCurrentIndex(idx)
-            else:
-                self.tabs.setCurrentIndex(5)
-            self.table_orbitals.selectRow(lumo_idx)
-            self._render_mo_orbital(lumo_idx)
-        else:
-            self._on_open_volumetric_dialog()
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_lumo()
 
     def _on_quick_view_spin_density(self):
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
-        from .volumetric import compute_molden_spin_density_grid, generate_orbital_surfaces
-        molden_path = getattr(self, "_active_molden_path", None)
-        if not molden_path or not os.path.isfile(molden_path):
-            self._on_open_volumetric_dialog()
-            return
-
-        isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.005
-        opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.80
-        n_pts = int(self.combo_quick_grid.currentData() or 40) if hasattr(self, "combo_quick_grid") else 40
-        margin_b = float(self.spin_quick_margin.value()) if hasattr(self, "spin_quick_margin") else 3.0
-
-        self.statusBar().showMessage(f"Computing 3D spin density Δρ = ρ_α − ρ_β ({n_pts}³ grid)...", 3000)
-
-        def _compute():
-            vol = compute_molden_spin_density_grid(molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
-            if not vol:
-                return [], isovalue, None
-            max_abs = float(np.max(np.abs(vol.grid_data)))
-            eff_iso = min(isovalue, 0.01) if isovalue >= 0.025 else isovalue
-            if eff_iso >= max_abs and max_abs > 1e-6:
-                eff_iso = round(max_abs * 0.35, 5)
-            if max_abs <= 1e-6:
-                return [], eff_iso, vol
-            pos_c, neg_c = (0.14, 0.65, 0.95), (0.95, 0.55, 0.12)  # Cyan-blue (excess alpha) / Amber-orange (excess beta)
-            meshes = generate_orbital_surfaces(vol, isovalue=max(1e-5, eff_iso), pos_color=pos_c, neg_color=neg_c)
-            return meshes, eff_iso, vol
-
-        def _on_done(res_tuple):
-            meshes, eff_iso, vol = res_tuple
-            if vol is None:
-                self.statusBar().showMessage("Could not evaluate spin density from the active Molden file.", 4000)
-                return
-            max_abs = float(np.max(np.abs(vol.grid_data)))
-            if max_abs <= 1e-6 or not meshes:
-                self.statusBar().showMessage(
-                    "Spin density Δρ(r) is zero everywhere (closed-shell singlet wavefunction).", 5000
-                )
-                return
-            self._current_rendered_mo_vol = vol
-            self.viewer.active_isosurfaces = meshes
-            self.viewer.surface_opacity = opacity
-            self.viewer.update()
-            self.statusBar().showMessage(
-                f"Rendered Spin Density Δρ = ρ_α − ρ_β (Isovalue={eff_iso:.4f}, max |Δρ|={max_abs:.4f} e/a₀³)", 5000
-            )
-
-        def _on_error(e):
-            log.warning(f"Error computing spin density: {e}")
-
-        run_in_background(
-            self,
-            "Computing Spin Density",
-            "Evaluating open-shell spin density Δρ = ρ_α − ρ_β on 3D grid...",
-            _compute,
-            _on_done,
-            _on_error,
-        )
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_spin_density()
 
     def _on_quick_view_esp_map(self):
         """1-Click Electrostatic Potential (ESP) mapped onto Total Electron Density isosurface."""
-        from .volumetric import compute_molden_esp_mapped_density
-        molden_path = getattr(self, "_active_molden_path", None)
-        if not molden_path:
-            last_res = getattr(self, "_last_calculation_results", {})
-            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
-                molden_path = last_res["molden_file"]
-                self._active_molden_path = molden_path
-        if not molden_path or not os.path.isfile(molden_path):
-            self._on_open_volumetric_dialog()
-            return
-
-        opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.85
-        n_pts = int(self.combo_quick_grid.currentData() or 40) if hasattr(self, "combo_quick_grid") else 40
-        margin_b = max(3.5, float(self.spin_quick_margin.value())) if hasattr(self, "spin_quick_margin") else 3.5
-
-        self.statusBar().showMessage(f"Computing 3D ESP-mapped electron density surface ({n_pts}³ grid)...", 3000)
-
-        def _compute():
-            mesh = compute_molden_esp_mapped_density(
-                molden_path,
-                density_isovalue=0.002,
-                nx=n_pts,
-                ny=n_pts,
-                nz=n_pts,
-                margin_bohr=margin_b,
-            )
-            return mesh
-
-        def _on_done(mesh):
-            if mesh is None:
-                self.statusBar().showMessage("Could not evaluate ESP-mapped density from the active Molden file.", 4000)
-                return
-            self.viewer.active_isosurfaces = [mesh]
-            self.viewer.surface_opacity = opacity
-            self.viewer.update()
-            e_rng = getattr(mesh, "esp_range", (-0.05, 0.05))
-            self.statusBar().showMessage(
-                f"Rendered ESP-Mapped Electron Density (ρ = 0.002 e/a₀³, V_ESP ∈ [{e_rng[0]:+.3f}, {e_rng[1]:+.3f}] a.u.)",
-                5000,
-            )
-
-        def _on_error(e):
-            log.warning(f"Error computing ESP-mapped density: {e}")
-
-        run_in_background(
-            self,
-            "Computing ESP Map",
-            "Evaluating Total Electron Density & Electrostatic Potential V_ESP(r)...",
-            _compute,
-            _on_done,
-            _on_error,
-        )
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_esp_map()
 
     def _on_localize_orbitals(self, method: str = "pipek-mezey"):
         """1-Click PySCF orbital localization (Pipek-Mezey or Foster-Boys) from the active Molden file."""
-        from .volumetric import localize_molden_orbitals
-        molden_path = getattr(self, "_active_molden_path", None)
-        if not molden_path or not os.path.isfile(molden_path):
-            self._on_open_volumetric_dialog()
-            return
-
-        # Remember original canonical Molden file so user can switch back with 1 click
-        if "_localized_" not in os.path.basename(molden_path):
-            self._canonical_molden_path = molden_path
-        src_path = getattr(self, "_canonical_molden_path", None) or molden_path
-
-        label = "Foster-Boys" if "boys" in method.lower() else "Pipek-Mezey"
-        self.statusBar().showMessage(f"Localizing occupied orbitals via PySCF {label}...", 3000)
-
-        def _compute():
-            return localize_molden_orbitals(src_path, method=method, localize_virtuals=False)
-
-        def _on_done(loc_path):
-            if not loc_path or not os.path.isfile(loc_path):
-                self.statusBar().showMessage(f"Could not localize orbitals from {os.path.basename(src_path)}.", 4000)
-                return
-            self.load_orbitals_from_molden(loc_path, auto_render=True)
-            self.statusBar().showMessage(
-                f"🧲 Loaded {label} Localized Molecular Orbitals (LMOs) from {os.path.basename(loc_path)}",
-                5000,
-            )
-
-        def _on_error(e):
-            log.warning(f"Error localizing orbitals ({label}): {e}")
-            self.statusBar().showMessage(f"Orbital localization error: {e}", 5000)
-
-        run_in_background(
-            self,
-            f"Localizing Orbitals ({label})",
-            f"Running PySCF {label} unitary orbital localization...",
-            _compute,
-            _on_done,
-            _on_error,
-        )
+        from .controllers import OrbitalController
+        OrbitalController(self).localize_orbitals(method=method)
 
     def _on_restore_canonical_orbitals(self):
         """Restore the original canonical delocalized MOs after viewing Localized Molecular Orbitals."""
-        canon_path = getattr(self, "_canonical_molden_path", None)
-        if canon_path and os.path.isfile(canon_path):
-            self.load_orbitals_from_molden(canon_path, auto_render=True)
-            self.statusBar().showMessage(
-                f"↩️ Restored canonical delocalized MOs from {os.path.basename(canon_path)}", 4000
-            )
-        else:
-            self.statusBar().showMessage("Canonical MOs are already active.", 3000)
+        from .controllers import OrbitalController
+        OrbitalController(self).restore_canonical_orbitals()
 
     def _on_clear_orbital_surface(self):
-        self.viewer.active_isosurfaces = []
-        self.viewer.clear_surface_rect = None
-        self.viewer.clear_surface_hovered = False
-        self.viewer.update()
-        self.statusBar().showMessage("Cleared 3D orbital / isosurface.", 2500)
+        from .controllers import OrbitalController
+        OrbitalController(self).clear_orbital_surface()
 
     def _on_overlay_positron_orbital(self):
         """Evaluate the companion positron ground-state orbital and overlay it (gold/green) onto the 3D viewport."""
-        from .volumetric import evaluate_molden_orbital_grid, generate_orbital_surfaces
-        pos_path = getattr(self, "_companion_positron_molden_path", None)
-        if not pos_path or not os.path.isfile(pos_path):
-            pos_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self, "Select Positron Molden File", "", "Molden Files (*.molden *.molden.input);;All Files (*)"
-            )
-            if not pos_path:
-                return
-            self._companion_positron_molden_path = pos_path
-
-        isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.030
-
-        def _compute():
-            vol = evaluate_molden_orbital_grid(pos_path, orbital_index=0, nx=40, ny=40, nz=40)
-            if not vol:
-                return [], isovalue
-            max_abs = float(np.max(np.abs(vol.grid_data)))
-            eff_iso = isovalue
-            if eff_iso >= max_abs * 0.92 and max_abs > 1e-5:
-                eff_iso = round(max_abs * 0.45, 4)
-            return generate_orbital_surfaces(
-                vol,
-                isovalue=eff_iso,
-                pos_color=(0.95, 0.72, 0.12),  # Gold
-                neg_color=(0.16, 0.78, 0.44),  # Emerald green
-            ), eff_iso
-
-        def _on_done(res_tuple):
-            pos_meshes, eff_iso = res_tuple
-            if pos_meshes:
-                existing = list(getattr(self.viewer, "active_isosurfaces", []) or [])
-                self.viewer.active_isosurfaces = existing + pos_meshes
-                self.viewer.update()
-                self.statusBar().showMessage(
-                    f"Overlaid Positron MO #1 from {os.path.basename(pos_path)} (Isovalue={eff_iso:.4f}, Gold/Green)", 5000
-                )
-
-        run_in_background(
-            self,
-            "Rendering Positron Orbital",
-            f"Computing 3D Positron orbital grid from {os.path.basename(pos_path)}...",
-            _compute,
-            _on_done,
-        )
+        from .controllers import OrbitalController
+        OrbitalController(self).overlay_positron_orbital()
 
     def _on_quick_slider_iso_changed(self, val: int):
         iso = val / 1000.0
@@ -1624,41 +1406,13 @@ class CalculationsMixin:
         self._remesh_current_mo(val)
 
     def _get_mo_phase_colors(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
-        """Return (pos_color, neg_color) based on combo_mo_phase_colors selection."""
-        scheme = self.combo_mo_phase_colors.currentData() if hasattr(self, "combo_mo_phase_colors") else "blue_red"
-        if scheme == "cyan_orange":
-            return (0.06, 0.75, 0.88), (0.98, 0.45, 0.08)  # Cyan (+), Orange (-)
-        elif scheme == "green_purple":
-            return (0.16, 0.80, 0.44), (0.65, 0.24, 0.85)  # Green (+), Purple (-)
-        elif scheme == "gold_emerald":
-            return (0.95, 0.72, 0.12), (0.16, 0.78, 0.44)  # Gold (+), Emerald (-)
-        else:
-            return (0.22, 0.58, 0.94), (0.95, 0.30, 0.25)  # Classic Blue (+), Coral Red (-)
+        from .controllers import OrbitalController
+        return OrbitalController(self).get_mo_phase_colors()
 
     def _remesh_current_mo(self, iso: float):
         """Fast Marching Cubes remeshing using cached 3D grid data if available."""
-        vol = getattr(self, "_current_rendered_mo_vol", None)
-        if vol is not None:
-            from .volumetric import generate_orbital_surfaces
-            molden_path = getattr(self, "_active_molden_path", "")
-            is_pos_file = "positron" in os.path.basename(molden_path).lower()
-            if is_pos_file:
-                pos_c, neg_c = (0.95, 0.72, 0.12), (0.16, 0.78, 0.44)
-            else:
-                pos_c, neg_c = self._get_mo_phase_colors()
-
-            meshes = generate_orbital_surfaces(vol, isovalue=iso, pos_color=pos_c, neg_color=neg_c)
-
-            self.viewer.active_isosurfaces = meshes
-            self.viewer.update()
-            mo_idx = getattr(self, "_current_rendered_mo_index", 0)
-            self.statusBar().showMessage(f"Updated MO #{mo_idx+1} Isovalue: {iso:.4f}", 2500)
-        else:
-            # Fall back to full re-evaluation
-            selected = self.table_orbitals.selectedItems()
-            if selected:
-                row = self.table_orbitals.row(selected[0])
-                self._render_mo_orbital(row)
+        from .controllers import OrbitalController
+        OrbitalController(self).remesh_current_mo(iso)
 
     def _on_quick_iso_changed(self, val: float):
         self._on_quick_spin_iso_changed(val)
@@ -1669,35 +1423,8 @@ class CalculationsMixin:
 
     def _on_open_orbital_snapshot_gallery(self):
         """Open the Orbital Snapshot & Gallery dialog to batch capture all or selected orbitals."""
-        molden_path = getattr(self, "_active_molden_path", None)
-        molden_data = getattr(self, "_active_molden_data", None)
-
-        if not molden_path or not molden_data or not getattr(molden_data, "orbitals", None):
-            # Prompt user to select a Molden file
-            molden_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                "Select Molden File for Orbital Snapshots",
-                getattr(self, "_last_opened_dir", ""),
-                "Molden Files (*.molden *.molden.input);;All Files (*)",
-            )
-            if not molden_path:
-                return
-            from .volumetric import parse_molden_file
-            try:
-                molden_data = parse_molden_file(molden_path)
-            except Exception as e:
-                dialog_service.error(self, "Error Reading Molden File", str(e), exc=e)
-                return
-
-        # Determine homo index
-        homo_idx = None
-        for i, o in enumerate(molden_data.orbitals):
-            if getattr(o, "occupancy", 0.0) > 0.05:
-                homo_idx = i
-
-        from .dialog_orbital_gallery import OrbitalSnapshotDialog
-        dlg = OrbitalSnapshotDialog(self, molden_path, molden_data.orbitals, homo_idx=homo_idx)
-        dlg.exec()
+        from .controllers import OrbitalController
+        OrbitalController(self).open_orbital_snapshot_gallery()
 
     def _on_open_benchmark_dialog(self):
         """Open Cross-Engine Benchmark & Calculation Comparison dialog (Ctrl+Shift+M)."""
