@@ -154,16 +154,31 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         QtCore.QTimer.singleShot(1200, self._check_first_run_tour)
 
     def _auto_save_session(self):
-        """Silently auto-save current molecule state to a hidden recovery file."""
+        """Silently auto-save current molecule state and calculation history to a hidden project recovery file."""
         if not getattr(self, "zatoms", None):
             return
         try:
             cache_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppDataLocation)
             os.makedirs(cache_dir, exist_ok=True)
-            recovery_path = os.path.join(cache_dir, "autosave_recovery.zmat")
-            txt = format_zmatrix_text(self.zatoms, self.variables)
-            with open(recovery_path, "w", encoding="utf-8") as f:
-                f.write(txt)
+            recovery_path = os.path.join(cache_dir, "autosave_recovery.agyproj")
+
+            from .project_bundle import save_project_bundle
+            calc_hist = getattr(self, "calculation_history", [])
+            viewer_st = {
+                "theme": getattr(self, "current_theme", "white"),
+                "style": getattr(self, "current_style", "Ball & Stick"),
+                "show_labels": getattr(self.viewer, "show_atom_labels", False),
+            }
+            save_project_bundle(
+                filepath=recovery_path,
+                zatoms=self.zatoms,
+                coords=self.coords,
+                variables=self.variables,
+                cross_bonds=list(self.cross_bonds),
+                calculation_history=calc_hist,
+                viewer_state=viewer_st,
+                metadata={"title": "Autosave Recovery", "num_atoms": len(self.zatoms)},
+            )
         except Exception as e:
             log.debug("Autosave recovery write failed: %s", e)
 
@@ -173,21 +188,29 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             return
         try:
             cache_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppDataLocation)
-            recovery_path = os.path.join(cache_dir, "autosave_recovery.zmat")
+            recovery_path = os.path.join(cache_dir, "autosave_recovery.agyproj")
+            legacy_recovery = os.path.join(cache_dir, "autosave_recovery.zmat")
+
+            target_recovery = None
             if os.path.isfile(recovery_path) and os.path.getsize(recovery_path) > 10:
+                target_recovery = recovery_path
+            elif os.path.isfile(legacy_recovery) and os.path.getsize(legacy_recovery) > 10:
+                target_recovery = legacy_recovery
+
+            if target_recovery:
                 settings = self._settings()
                 if not settings.value("clean_shutdown", True, type=bool):
                     reply = QtWidgets.QMessageBox.question(
                         self,
                         "🔄 Recover Previous Session?",
                         "AgyMolden detected an unsaved session from your previous run.\n\n"
-                        "Would you like to restore your molecule?",
+                        "Would you like to restore your full molecular model, Z-matrix, and calculation history?",
                         QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
                         QtWidgets.QMessageBox.StandardButton.Yes,
                     )
                     if reply == QtWidgets.QMessageBox.StandardButton.Yes:
-                        self.open_path(recovery_path)
-                        self.statusBar().showMessage("Recovered unsaved molecule from previous session.", 4000)
+                        self.open_path(target_recovery)
+                        self.statusBar().showMessage("Recovered unsaved session from previous run.", 4000)
             settings = self._settings()
             settings.setValue("clean_shutdown", False)
         except Exception as e:

@@ -147,6 +147,41 @@ class JobMonitorDialog(QtWidgets.QDialog):
 
         tabs.addTab(tab_steps, "📈 Optimization Progress")
 
+        # Tab 3: Batch Calculation Queue
+        tab_queue = QtWidgets.QWidget()
+        queue_layout = QtWidgets.QVBoxLayout(tab_queue)
+        queue_layout.setContentsMargins(6, 6, 6, 6)
+
+        q_btn_bar = QtWidgets.QHBoxLayout()
+        btn_add_queue = QtWidgets.QPushButton("➕ Add Input Files...")
+        btn_add_queue.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_add_queue.clicked.connect(self._on_add_to_queue)
+        q_btn_bar.addWidget(btn_add_queue)
+
+        btn_start_queue = QtWidgets.QPushButton("▶️ Start Batch Queue")
+        btn_start_queue.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_start_queue.clicked.connect(self._on_start_queue)
+        q_btn_bar.addWidget(btn_start_queue)
+
+        btn_clear_queue = QtWidgets.QPushButton("Clear Queue")
+        btn_clear_queue.clicked.connect(self._on_clear_queue)
+        q_btn_bar.addWidget(btn_clear_queue)
+        q_btn_bar.addStretch()
+
+        queue_layout.addLayout(q_btn_bar)
+
+        self.tbl_queue = QtWidgets.QTableWidget()
+        self.tbl_queue.setColumnCount(4)
+        self.tbl_queue.setHorizontalHeaderLabels(["#", "Input Deck", "Target Engine", "Status"])
+        self.tbl_queue.horizontalHeader().setStretchLastSection(True)
+        self.tbl_queue.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        queue_layout.addWidget(self.tbl_queue)
+
+        tabs.addTab(tab_queue, "📋 Batch Queue")
+
+        self.batch_queue: List[Dict[str, str]] = []
+        self.current_queue_idx: int = -1
+
         layout.addWidget(tabs, stretch=1)
 
         # 4. Bottom action buttons
@@ -456,8 +491,13 @@ class JobMonitorDialog(QtWidgets.QDialog):
         if success:
             if hasattr(self, "chk_auto_load") and self.chk_auto_load.isChecked():
                 self._on_load_results()
-            QtWidgets.QMessageBox.information(self, "Calculation Completed", f"Job completed successfully!\n{message}")
+            if self._has_active_queue():
+                self._advance_queue(completed_success=True)
+            else:
+                QtWidgets.QMessageBox.information(self, "Calculation Completed", f"Job completed successfully!\n{message}")
         else:
+            if self._has_active_queue():
+                self._advance_queue(completed_success=False)
             # Check for beginner diagnostic recommendations
             from .diagnostics import diagnose_qm_error
             raw_text = self.txt_log.toPlainText()
@@ -511,6 +551,83 @@ class JobMonitorDialog(QtWidgets.QDialog):
 
         except Exception as err:
             QtWidgets.QMessageBox.critical(self, "Auto-Fix Error", f"Failed to auto-apply fix:\n{err}")
+
+    def _on_add_to_queue(self):
+        """Add calculation input decks to batch execution queue."""
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "Select Calculation Input Decks", "",
+            "All Calculation Inputs (*.inp *.in *.gjf *.com *.lowdin *.py);;ORCA Inputs (*.inp);;Gaussian Inputs (*.gjf *.com);;All Files (*)"
+        )
+        if not files:
+            return
+
+        for f_path in files:
+            ext = os.path.splitext(f_path)[1].lower()
+            eng = "orca"
+            if ext in (".gjf", ".com"):
+                eng = "gaussian"
+            elif ext == ".py":
+                eng = "pyscf"
+            elif ext == ".lowdin":
+                eng = "openlowdin"
+
+            self.batch_queue.append({
+                "path": f_path,
+                "engine": eng,
+                "status": "Pending",
+            })
+        self._refresh_queue_table()
+
+    def _refresh_queue_table(self):
+        self.tbl_queue.setRowCount(len(self.batch_queue))
+        for row, item in enumerate(self.batch_queue):
+            self.tbl_queue.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
+            self.tbl_queue.setItem(row, 1, QtWidgets.QTableWidgetItem(os.path.basename(item["path"])))
+            self.tbl_queue.setItem(row, 2, QtWidgets.QTableWidgetItem(item["engine"].upper()))
+            st_item = QtWidgets.QTableWidgetItem(item["status"])
+            if item["status"] == "Running":
+                st_item.setForeground(QtGui.QBrush(QtGui.QColor("#38bdf8")))
+            elif item["status"] == "Done":
+                st_item.setForeground(QtGui.QBrush(QtGui.QColor("#22c55e")))
+            elif item["status"] == "Failed":
+                st_item.setForeground(QtGui.QBrush(QtGui.QColor("#ef4444")))
+            self.tbl_queue.setItem(row, 3, st_item)
+
+    def _on_clear_queue(self):
+        self.batch_queue.clear()
+        self.current_queue_idx = -1
+        self._refresh_queue_table()
+
+    def _has_active_queue(self) -> bool:
+        return 0 <= self.current_queue_idx < len(self.batch_queue)
+
+    def _on_start_queue(self):
+        if not self.batch_queue:
+            QtWidgets.QMessageBox.information(self, "Queue Empty", "Please add calculation input decks first.")
+            return
+        self.current_queue_idx = 0
+        self._run_current_queue_job()
+
+    def _run_current_queue_job(self):
+        if not (0 <= self.current_queue_idx < len(self.batch_queue)):
+            QtWidgets.QMessageBox.information(self, "Queue Complete", "All batch calculation jobs in queue have finished.")
+            return
+
+        item = self.batch_queue[self.current_queue_idx]
+        item["status"] = "Running"
+        self._refresh_queue_table()
+        self.run_calculation(item["path"], runner_type=item["engine"])
+
+    def _advance_queue(self, completed_success: bool):
+        if not (0 <= self.current_queue_idx < len(self.batch_queue)):
+            return
+        self.batch_queue[self.current_queue_idx]["status"] = "Done" if completed_success else "Failed"
+        self.current_queue_idx += 1
+        self._refresh_queue_table()
+        if self.current_queue_idx < len(self.batch_queue):
+            QtCore.QTimer.singleShot(1000, self._run_current_queue_job)
+        else:
+            QtWidgets.QMessageBox.information(self, "Queue Complete", "All batch jobs in the queue have completed.")
 
     def _launch_fixed_qm_input(self, diag):
         """Open QM Calculation Setup with QC Doctor recommended keywords pre-filled."""
