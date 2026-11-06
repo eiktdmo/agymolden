@@ -2396,6 +2396,33 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 sb_tw = sb_fm.horizontalAdvance(lbl_sb)
                 painter.drawText(bx1 + (bar_px - sb_tw) // 2, by - 5, lbl_sb)
 
+            # Live Molecular Formula & Mass HUD Pill (Top-Right Viewport)
+            if len(self.symbols) > 0:
+                from .elements import get_formula_and_weight
+                formula, mw = get_formula_and_weight(self.symbols)
+                pill_text = f"✨ {formula}  •  {mw:.2f} g/mol"
+
+                painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                p_fm = painter.fontMetrics()
+                p_tw = p_fm.horizontalAdvance(pill_text)
+                p_th = p_fm.height()
+
+                pill_pad_x = 10
+                pill_pad_y = 5
+                pill_w = p_tw + pill_pad_x * 2
+                pill_h = p_th + pill_pad_y * 2
+                pill_x = w - pill_w - 12
+                pill_y = 12
+
+                pill_rect = QtCore.QRect(pill_x, pill_y, pill_w, pill_h)
+                is_white_vp = (self.bg_color_mode == "white" and not getattr(self, "transparent_bg", False))
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255, 215) if is_white_vp else QtGui.QColor(15, 23, 42, 210)))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"), 1.2))
+                painter.drawRoundedRect(pill_rect, 6, 6)
+
+                painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#f8fafc"))
+                painter.drawText(pill_x + pill_pad_x, pill_y + pill_pad_y + p_fm.ascent(), pill_text)
+
             painter.end()
 
     # Mouse & Keyboard interaction

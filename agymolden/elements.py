@@ -214,3 +214,45 @@ def estimate_bond_length(sym1: str, sym2: str, bond_order: int = 1) -> float:
         return round(single_len * 0.785, 3)
     return single_len
 
+
+def get_formula_and_weight(symbols: List[str]) -> Tuple[str, float]:
+    """
+    Compute Hill-system empirical formula (e.g. C6H6, H2O, C2H5NO2) and total molecular weight (g/mol).
+    Hill system convention: Carbon first, Hydrogen second, then remaining elements alphabetically.
+    If no Carbon present, all elements are listed strictly alphabetically.
+    """
+    counts: Dict[str, int] = {}
+    total_mw: float = 0.0
+
+    for s in symbols:
+        sym = normalize_symbol(s)
+        if not sym or sym == "X":
+            continue
+        counts[sym] = counts.get(sym, 0) + 1
+        m = ELEMENT_DATA.get(sym, {}).get("mass", 0.0)
+        total_mw += float(m)
+
+    if not counts:
+        return "Empty", 0.0
+
+    # Hill system sorting
+    sorted_syms = []
+    if "C" in counts:
+        sorted_syms.append("C")
+        if "H" in counts:
+            sorted_syms.append("H")
+        for sym in sorted(counts.keys()):
+            if sym not in ("C", "H"):
+                sorted_syms.append(sym)
+    else:
+        sorted_syms = sorted(counts.keys())
+
+    parts = []
+    for sym in sorted_syms:
+        cnt = counts[sym]
+        parts.append(f"{sym}{cnt}" if cnt > 1 else sym)
+
+    formula = "".join(parts)
+    return formula, round(total_mw, 3)
+
+

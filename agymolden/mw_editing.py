@@ -107,15 +107,26 @@ class EditingMixin:
                 bds = []
                 if auto_h and dirs:
                     d_len = estimate_bond_length(elem, "H")
-                    for d in dirs:
+                    for k_i, dv in enumerate(dirs):
                         syms.append("H")
-                        pts.append(d * d_len)
-                        bds.append((0, len(syms) - 1))
-                self.set_molecule_from_cartesian(syms, np.array(pts), bonds=bds)
+                        pts.append(dv * d_len)
+                        bds.append((0, k_i + 1))
+                self._commit_explicit_structure(syms, np.array(pts), bds, {}, relax_iters=0, add_h=False, fix_valence=False)
             else:
-                self.set_molecule_from_cartesian([elem], np.array([[0.0, 0.0, 0.0]]))
-                if auto_h:
-                    self._add_hydrogens_to_atom(0)
+                self._commit_explicit_structure([elem], np.array([[0.0, 0.0, 0.0]]), [], {}, relax_iters=50, add_h=auto_h)
+            self.table_widget.highlight_row(0)
+            h_str = " with valence hydrogens" if auto_h else ""
+            self.statusBar().showMessage(f"Added initial atom {elem}1{h_str} at origin", 4000)
+            self.pending_add_atom_mode = False
+            return
+
+        auto_h = bool(getattr(self, 'chk_auto_h', None) and self.chk_auto_h.isChecked())
+        auto_h_str = " (with adjusted hydrogens)" if auto_h else ""
+
+        # Activate Molden interactive reference picking (ref1 for bond, ref2 for angle, ref3 for dihedral)
+        self.pending_new_element = elem
+        self.pending_picks_needed = min(n, 3)
+        self.picked_references = []
 
     def _on_quick_stamp_fragment(self, frag_name: str):
         """1-Click stamp functional group or ring onto selected atom or spawn in space."""
@@ -147,21 +158,6 @@ class EditingMixin:
                 all_coords = np.vstack([self.coords, pts_offset])
                 self.set_molecule_from_cartesian(all_syms, all_coords)
                 self.statusBar().showMessage(f"Added {frag_name} fragment to viewport", 3500)
-                    for k_i, dv in enumerate(dirs):
-                        syms.append("H")
-                        pts.append(dv * d_len)
-                        bds.append((0, k_i + 1))
-                self._commit_explicit_structure(syms, np.array(pts), bds, {}, relax_iters=0, add_h=False, fix_valence=False)
-            else:
-                self._commit_explicit_structure([elem], np.array([[0.0, 0.0, 0.0]]), [], {}, relax_iters=50, add_h=auto_h)
-            self.table_widget.highlight_row(0)
-            h_str = " with valence hydrogens" if auto_h else ""
-            self.statusBar().showMessage(f"Added initial atom {elem}1{h_str} at origin", 4000)
-            self.pending_add_atom_mode = False
-            return
-
-        auto_h = bool(getattr(self, 'chk_auto_h', None) and self.chk_auto_h.isChecked())
-        auto_h_str = " (with adjusted hydrogens)" if auto_h else ""
 
         # Activate Molden interactive reference picking (ref1 for bond, ref2 for angle, ref3 for dihedral)
         self.pending_new_element = elem
