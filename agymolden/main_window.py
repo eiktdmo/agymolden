@@ -1778,12 +1778,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             # Builder & Structure Tools
             CommandItem("Cycle Welder & Ring Annulation", "Builder", "Ctrl+W", self._on_open_cycle_welder_dialog, "cycle ring welder fuse annulate benzene"),
             CommandItem("Add Hydrogens (Valence Fill)", "Builder", "Ctrl+H", self._on_add_hydrogens, "hydrogens add valency protonate"),
-            CommandItem("Clean 3D Geometry (UFF / MMFF)", "Builder", "", self._on_clean_3d_geometry, "clean uff forcefield rough 3d"),
+            CommandItem("Clean 3D Geometry (UFF / MMFF)", "Builder", "", self._on_optimize_geometry, "clean uff forcefield rough 3d minimize"),
             CommandItem("Periodic Table Element Picker", "Builder", "", self._on_open_periodic_table, "element periodic table c n o"),
             CommandItem("Fragment Library Picker", "Builder", "", self._on_open_fragment_library, "fragments amino acid functional group"),
             CommandItem("Align Principal Axes / Moments of Inertia", "Geometry", "", self._on_align_principal_axes, "align inertia axes center orientation"),
             # Export & Publishing
-            CommandItem("Export Scalable Vector Graphics (SVG)", "Export", "", self._on_export_molecule_svg, "svg vector export publication drawing"),
+            CommandItem("Export Scalable Vector Graphics (SVG)", "Export", "", self._on_export_image, "svg vector export publication drawing image png"),
             CommandItem("Export High-DPI Publication Image", "Export", "Ctrl+Shift+E", self._on_export_image, "dpi png export figure resolution publication"),
             CommandItem("Export Supporting Information (SI) Bundle", "Export", "", self._on_export_reproducibility_bundle, "si bundle zip reproducibility supporting information"),
             CommandItem("Copy Image to Clipboard", "Export", "Ctrl+Shift+C", lambda: self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True), "copy clipboard figure image"),
