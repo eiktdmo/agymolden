@@ -673,9 +673,22 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         if self.variables:
             self.variables = sync_variables_from_atoms(self.zatoms, self.variables)
         txt = format_zmatrix_text(self.zatoms, self.variables)
-        self.text_raw_zmat.blockSignals(True)
-        self.text_raw_zmat.setPlainText(txt)
-        self.text_raw_zmat.blockSignals(False)
+        if hasattr(self, "text_raw_zmat"):
+            self.text_raw_zmat.blockSignals(True)
+            self.text_raw_zmat.setPlainText(txt)
+            self.text_raw_zmat.blockSignals(False)
+
+        if hasattr(self, "text_raw_xyz") and len(self.zatoms) > 0 and len(self.coords) == len(self.zatoms):
+            from .chem_identifiers import format_xyz_string
+            symbols = [a.symbol for a in self.zatoms]
+            xyz_txt = format_xyz_string(symbols, self.coords, comment="AgyMolden structure")
+            self.text_raw_xyz.blockSignals(True)
+            self.text_raw_xyz.setPlainText(xyz_txt)
+            self.text_raw_xyz.blockSignals(False)
+        elif hasattr(self, "text_raw_xyz") and len(self.zatoms) == 0:
+            self.text_raw_xyz.blockSignals(True)
+            self.text_raw_xyz.clear()
+            self.text_raw_xyz.blockSignals(False)
 
     def _on_table_data_changed(self):
         # A value or variable name edited on a coordinate updates or creates the variable (and all linked coords)
@@ -1599,6 +1612,57 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         except Exception as e:
             log.exception("Unhandled error in GUI action")
             QtWidgets.QMessageBox.critical(self, "Parsing Error", f"Failed to parse Z-matrix:\n{str(e)}")
+
+    def _on_raw_xyz_text_changed(self):
+        """Called whenever user types or pastes into the Cartesian XYZ text editor."""
+        if hasattr(self, "chk_auto_apply_xyz") and self.chk_auto_apply_xyz.isChecked():
+            if hasattr(self, "_raw_xyz_timer"):
+                self._raw_xyz_timer.start()
+
+    def _on_auto_apply_text_xyz(self):
+        """Silently auto-apply parsed XYZ text to 3D model without disruptive popups while typing."""
+        if not hasattr(self, "text_raw_xyz"):
+            return
+        text = self.text_raw_xyz.toPlainText().strip()
+        if not text:
+            return
+        try:
+            from .zmatrix import parse_xyz
+            syms, coords = parse_xyz(text)
+            if syms and len(coords) == len(syms):
+                from .controllers.import_controller import ImportController
+                ImportController(self).load_xyz_data(syms, coords, source_label="Cartesian XYZ")
+                self.statusBar().showMessage(f"Auto-applied {len(syms)} Cartesian atoms", 1500)
+        except Exception as e:
+            log.debug("Debounced live XYZ parse incomplete: %s", e)
+
+    def _on_apply_text_xyz(self):
+        """Explicitly apply Cartesian XYZ text with full validation and error reporting (Ctrl+Enter)."""
+        if not hasattr(self, "text_raw_xyz"):
+            return
+        text = self.text_raw_xyz.toPlainText().strip()
+        if not text:
+            QtWidgets.QMessageBox.information(self, "Empty Input", "Please enter or paste Cartesian XYZ coordinates.")
+            return
+        try:
+            from .zmatrix import parse_xyz
+            syms, coords = parse_xyz(text)
+            if not syms:
+                QtWidgets.QMessageBox.warning(self, "Invalid XYZ", "Could not parse valid Cartesian XYZ atoms from text.")
+                return
+            from .controllers.import_controller import ImportController
+            ImportController(self).load_xyz_data(syms, coords, source_label="Cartesian XYZ")
+            self.statusBar().showMessage(f"Applied {len(syms)} Cartesian atoms successfully", 3000)
+        except Exception as e:
+            log.exception("Failed to parse XYZ text")
+            QtWidgets.QMessageBox.critical(self, "Parsing Error", f"Failed to parse Cartesian XYZ:\n{str(e)}")
+
+    def _on_xyz_tab_paste_clipboard(self):
+        """Paste system clipboard text into the Cartesian XYZ editor tab."""
+        clip_txt = QtWidgets.QApplication.clipboard().text()
+        if clip_txt and hasattr(self, "text_raw_xyz"):
+            self.text_raw_xyz.setPlainText(clip_txt)
+            self._on_apply_text_xyz()
 
     def _on_style_changed(self, style_name: str):
         self.viewer.style_mode = style_name

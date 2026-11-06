@@ -985,7 +985,90 @@ class UIMixin(UIInspectorTabsMixin):
         tab_raw_layout.addLayout(raw_btn_layout)
         self.tabs.addTab(tab_raw, "Raw ZMAT Text")
 
-        # Tab 3: Chemical Builders & Fragment Substitution
+        # Tab 3: Cartesian Coordinates (XYZ) Text Editor
+        tab_xyz = QtWidgets.QWidget()
+        tab_xyz_layout = QtWidgets.QVBoxLayout(tab_xyz)
+
+        class RawXYZPlainTextEdit(QtWidgets.QPlainTextEdit):
+            def __init__(self, main_win, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.main_win = main_win
+
+            def keyPressEvent(self, event: QtGui.QKeyEvent):
+                if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+                    if event.modifiers() & (
+                        QtCore.Qt.KeyboardModifier.ControlModifier
+                        | QtCore.Qt.KeyboardModifier.ShiftModifier
+                        | QtCore.Qt.KeyboardModifier.AltModifier
+                    ):
+                        self.main_win._on_apply_text_xyz()
+                        event.accept()
+                        return
+                super().keyPressEvent(event)
+
+        self.text_raw_xyz = RawXYZPlainTextEdit(self)
+        self.text_raw_xyz.setPlaceholderText(
+            "Paste or type Cartesian XYZ coordinates here (standard or headerless)...\n"
+            "Example:\n"
+            "  O   0.000000   0.000000   0.117400\n"
+            "  H   0.000000   0.757000  -0.469600\n"
+            "  H   0.000000  -0.757000  -0.469600\n\n"
+            "Press Ctrl+Enter to apply immediately."
+        )
+        self.text_raw_xyz.setFont(QtGui.QFont("Monospace", 10))
+
+        xyz_header_layout = QtWidgets.QHBoxLayout()
+        xyz_header_layout.addWidget(QtWidgets.QLabel("Direct Cartesian XYZ Text:"))
+        self.chk_auto_apply_xyz = QtWidgets.QCheckBox("Auto-apply changes as you type")
+        self.chk_auto_apply_xyz.setChecked(True)
+        self.chk_auto_apply_xyz.setToolTip("When checked, valid XYZ text updates the 3D model automatically without having to press any buttons.")
+        xyz_header_layout.addWidget(self.chk_auto_apply_xyz, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        tab_xyz_layout.addLayout(xyz_header_layout)
+        tab_xyz_layout.addWidget(self.text_raw_xyz, stretch=1)
+
+        # Debounced live update timer for XYZ text editor
+        self._raw_xyz_timer = QtCore.QTimer(self)
+        self._raw_xyz_timer.setSingleShot(True)
+        self._raw_xyz_timer.setInterval(350)
+        self._raw_xyz_timer.timeout.connect(self._on_auto_apply_text_xyz)
+        self.text_raw_xyz.textChanged.connect(self._on_raw_xyz_text_changed)
+
+        xyz_quick_actions = QtWidgets.QHBoxLayout()
+        xyz_quick_actions.setSpacing(6)
+        btn_paste_clip = QtWidgets.QPushButton("📋 Paste Clipboard")
+        btn_paste_clip.setToolTip("Paste whatever is currently in the system clipboard into this XYZ editor")
+        btn_paste_clip.setStyleSheet("background-color: #0369a1; color: #ffffff; font-weight: bold;")
+        btn_paste_clip.clicked.connect(self._on_xyz_tab_paste_clipboard)
+        btn_copy_xyz_tab = QtWidgets.QPushButton("📋 Copy XYZ")
+        btn_copy_xyz_tab.setToolTip("Copy the current XYZ text to system clipboard")
+        btn_copy_xyz_tab.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_copy_xyz_tab.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_raw_xyz.toPlainText()))
+        btn_clear_xyz = QtWidgets.QPushButton("🧹 Clear")
+        btn_clear_xyz.setStyleSheet("background-color: #475569; color: #ffffff;")
+        btn_clear_xyz.clicked.connect(lambda: self.text_raw_xyz.clear())
+        xyz_quick_actions.addWidget(btn_paste_clip)
+        xyz_quick_actions.addWidget(btn_copy_xyz_tab)
+        xyz_quick_actions.addWidget(btn_clear_xyz)
+        tab_xyz_layout.addLayout(xyz_quick_actions)
+
+        xyz_btn_layout = QtWidgets.QHBoxLayout()
+        btn_import_xyz_file = QtWidgets.QPushButton("📂 Open XYZ File...")
+        btn_import_xyz_file.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_import_xyz_file.clicked.connect(self._on_import_xyz)
+        btn_export_xyz_file = QtWidgets.QPushButton("💾 Save XYZ File...")
+        btn_export_xyz_file.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+        btn_export_xyz_file.clicked.connect(self._on_export_xyz)
+        btn_apply_xyz = QtWidgets.QPushButton("⚡ Apply Cartesian XYZ (Ctrl+Enter)")
+        btn_apply_xyz.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
+        btn_apply_xyz.setToolTip("Apply the Cartesian coordinates to the 3D model, table, and Z-Matrix (Ctrl+Enter)")
+        btn_apply_xyz.clicked.connect(self._on_apply_text_xyz)
+        xyz_btn_layout.addWidget(btn_import_xyz_file)
+        xyz_btn_layout.addWidget(btn_export_xyz_file)
+        xyz_btn_layout.addWidget(btn_apply_xyz)
+        tab_xyz_layout.addLayout(xyz_btn_layout)
+        self.tabs.addTab(tab_xyz, "Cartesian XYZ")
+
+        # Tab 4: Chemical Builders & Fragment Substitution
         tab_builder = QtWidgets.QWidget()
         tab_builder_layout = QtWidgets.QVBoxLayout(tab_builder)
 
