@@ -384,6 +384,11 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         if hasattr(self, 'btn_redo'):
             self.btn_redo.setEnabled(can_redo)
 
+    @property
+    def symbols(self) -> List[str]:
+        """Convenience property returning element symbols for all atoms in the active molecule."""
+        return [a.symbol for a in self.zatoms] if hasattr(self, "zatoms") and self.zatoms else []
+
     def set_molecule_from_zatoms(
         self,
         zatoms: List[ZAtom],
@@ -1946,6 +1951,10 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 elif key == QtCore.Qt.Key.Key_V and not is_shift:
                     self._on_paste()
                     return
+                elif key == QtCore.Qt.Key.Key_V and is_shift:
+                    # Ctrl+Shift+V: Direct load XYZ coordinates from clipboard into program
+                    self._on_paste_as_new_molecule()
+                    return
                 elif key == QtCore.Qt.Key.Key_A and not is_shift:
                     # Ctrl+A: Select all atoms in the 3D viewport
                     self.viewer.multi_selected = list(range(len(self.zatoms)))
@@ -2178,6 +2187,10 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                     return True
                 elif key == QtCore.Qt.Key.Key_V and not is_shift:
                     self._on_paste()
+                    return
+                elif key == QtCore.Qt.Key.Key_V and is_shift:
+                    # Ctrl+Shift+V: Direct load XYZ coordinates from clipboard into program
+                    self._on_paste_as_new_molecule()
                     return True
                 elif key == QtCore.Qt.Key.Key_K and not is_shift:
                     self._on_flush_memory()

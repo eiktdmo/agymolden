@@ -203,20 +203,7 @@ class ImportController:
             if len(symbols) == 0:
                 QtWidgets.QMessageBox.warning(self.mw, "Empty File", "No atoms found in XYZ file.")
                 return
-            self.mw._push_undo_state()
-            self.mw.variables = {}
-
-            detected_bonds = detect_connectivity(symbols, coords, strict=False)
-            detected_bo = detect_bond_orders(symbols, coords, detected_bonds)
-
-            zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=detected_bonds, strict_bonds=True)
-            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
-            self.mw.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
-            self.mw.strict_topology = True
-
-            self.mw.set_molecule_from_zatoms(zatoms, exact_coords=coords)
-            self.mw.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
-            self.mw.viewer.update()
+            self.load_xyz_data(symbols, coords, source_label=os.path.basename(path))
             self.mw._remember_file(path)
 
             try:
@@ -241,6 +228,32 @@ class ImportController:
             except Exception:
                 pass
 
-            self.mw.statusBar().showMessage(f"Loaded {os.path.basename(path)} ({len(symbols)} atoms)", 4000)
         except Exception as e:
             dialog_service.error(self.mw, "Error Reading XYZ", str(e), exc=e)
+
+    def load_xyz_data(
+        self,
+        symbols: List[str],
+        coords: np.ndarray,
+        source_label: str = "Pasted XYZ",
+    ) -> None:
+        """Load Cartesian symbols and coordinates directly into the active molecule canvas."""
+        if len(symbols) == 0:
+            QtWidgets.QMessageBox.warning(self.mw, "Empty Data", "No atoms provided.")
+            return
+
+        self.mw._push_undo_state()
+        self.mw.variables = {}
+
+        detected_bonds = detect_connectivity(symbols, coords, strict=False)
+        detected_bo = detect_bond_orders(symbols, coords, detected_bonds)
+
+        zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=detected_bonds, strict_bonds=True)
+        tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+        self.mw.cross_bonds = {norm_bond(u, v) for u, v in detected_bonds if norm_bond(u, v) not in tree}
+        self.mw.strict_topology = True
+
+        self.mw.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+        self.mw.viewer.bond_orders = {norm_bond(u, v): o for (u, v), o in detected_bo.items() if o != 1}
+        self.mw.viewer.update()
+        self.mw.statusBar().showMessage(f"Loaded {source_label} ({len(symbols)} atoms)", 4000)

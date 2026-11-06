@@ -2135,12 +2135,14 @@ class EditingMixin:
     def _on_paste(self):
         """
         Paste copied molecule/fragment into the 3D viewport (Ctrl+V).
-        If an atom is selected, attaches or merges the fragment near the selected atom.
-        Otherwise, places the fragment in free space with a slight offset so it is distinct.
-        Also handles standard XYZ text from system clipboard if available.
+        - If active molecule is empty, and clipboard contains XYZ/SMILES/InChI, loads it directly as the new molecule.
+        - If an atom is selected, attaches or merges the fragment near the selected atom.
+        - Otherwise, places the fragment in free space with a slight offset so it is distinct.
         """
         # 1. Check if there is an in-memory stored fragment or last added fragment
         frag = self.stored_fragment or self.last_added_fragment
+        clip_parsed_syms = None
+        clip_parsed_coords = None
 
         # 2. If no in-memory fragment, check system clipboard for XYZ text
         if not frag:
@@ -2150,7 +2152,16 @@ class EditingMixin:
                     from .zmatrix import parse_xyz
                     parsed_syms, parsed_coords = parse_xyz(clip_text)
                     if parsed_syms and len(parsed_coords) == len(parsed_syms):
-                        f_coords = np.array(parsed_coords, dtype=np.float64)
+                        clip_parsed_syms = parsed_syms
+                        clip_parsed_coords = np.array(parsed_coords, dtype=np.float64)
+                        # If active molecule is currently empty, load XYZ directly as full molecule
+                        if len(self.zatoms) == 0:
+                            from .controllers.import_controller import ImportController
+                            ImportController(self).load_xyz_data(
+                                clip_parsed_syms, clip_parsed_coords, source_label="Pasted XYZ"
+                            )
+                            return
+                        f_coords = clip_parsed_coords
                         anchor_c = f_coords[0] if len(f_coords) > 0 else np.zeros(3)
                         rel_c = (f_coords - anchor_c).tolist()
                         frag = {
@@ -2171,6 +2182,12 @@ class EditingMixin:
                         from .chem_identifiers import parse_smiles_or_inchi_to_3d
                         s_syms, s_coords, s_bonds, s_bo = parse_smiles_or_inchi_to_3d(clip_text)
                         if s_syms and len(s_coords) == len(s_syms):
+                            if len(self.zatoms) == 0:
+                                from .controllers.import_controller import ImportController
+                                ImportController(self).load_xyz_data(
+                                    s_syms, np.array(s_coords, dtype=np.float64), source_label=f"Pasted '{clip_text[:20]}'"
+                                )
+                                return
                             f_coords = np.array(s_coords, dtype=np.float64)
                             anchor_c = f_coords[0] if len(f_coords) > 0 else np.zeros(3)
                             rel_c = (f_coords - anchor_c).tolist()
@@ -2188,12 +2205,64 @@ class EditingMixin:
                         pass
 
         if not frag:
-            self.statusBar().showMessage("Clipboard / fragment memory is empty. Select atoms and press Ctrl+C first.", 3500)
+            self.statusBar().showMessage("Clipboard / fragment memory is empty. Select atoms and press Ctrl+C first, or copy Cartesian XYZ coordinates.", 3500)
             return
 
         w, h = max(1, self.viewer.width()), max(1, self.viewer.height())
         center_screen = QtCore.QPoint(int(w * 0.55), int(h * 0.55))
         self._paste_fragment_to_free_space(frag, screen_pos=center_screen)
+
+    def _on_paste_as_new_molecule(self):
+        """
+        Directly parse Cartesian XYZ coordinates or SMILES from clipboard and set as the active molecule (Ctrl+Shift+V).
+        Supports:
+          - Standard XYZ format (with atom count header & comment)
+          - Headerless XYZ coordinate blocks (Element X Y Z)
+          - Comma-delimited coordinates
+          - SMILES, InChI, or chemical name
+        """
+        clip_text = QtWidgets.QApplication.clipboard().text().strip()
+        if not clip_text:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Clipboard Empty",
+                "System clipboard is empty.\n\nCopy Cartesian XYZ coordinates (or SMILES / chemical name) to your clipboard and try again.",
+            )
+            return
+
+        from .zmatrix import parse_xyz
+        try:
+            syms, coords = parse_xyz(clip_text)
+            if syms and len(coords) == len(syms):
+                from .controllers.import_controller import ImportController
+                ImportController(self).load_xyz_data(syms, coords, source_label="Clipboard XYZ")
+                return
+        except Exception:
+            pass
+
+        # If not standard XYZ, try SMILES/InChI
+        if len(clip_text) < 500 and not clip_text.startswith("{") and not clip_text.startswith("<"):
+            try:
+                from .chem_identifiers import parse_smiles_or_inchi_to_3d
+                s_syms, s_coords, s_bonds, s_bo = parse_smiles_or_inchi_to_3d(clip_text)
+                if s_syms and len(s_coords) == len(s_syms):
+                    from .controllers.import_controller import ImportController
+                    ImportController(self).load_xyz_data(
+                        s_syms, np.array(s_coords, dtype=np.float64), source_label=f"Clipboard '{clip_text[:20]}'"
+                    )
+                    return
+            except Exception:
+                pass
+
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Could Not Parse Coordinates",
+            "Could not parse valid Cartesian XYZ coordinates from clipboard.\n\n"
+            "Format expected:\n"
+            "  O  0.000  0.000  0.117\n"
+            "  H  0.000  0.758 -0.469\n"
+            "  H  0.000 -0.758 -0.469",
+        )
 
     def _on_copy_as_xyz(self):
         """Copy current structure in Cartesian XYZ format to clipboard."""

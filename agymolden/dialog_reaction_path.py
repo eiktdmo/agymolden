@@ -76,9 +76,14 @@ class ReactionPathDialog(QtWidgets.QDialog):
         btn_r_current.clicked.connect(self._on_use_active_as_reactant)
         s_layout.addWidget(btn_r_current, 0, 2)
 
+        btn_r_paste = QtWidgets.QPushButton("Paste Clipboard")
+        btn_r_paste.setToolTip("Parse Cartesian XYZ coordinates from system clipboard as the Reactant")
+        btn_r_paste.clicked.connect(self._on_paste_reactant)
+        s_layout.addWidget(btn_r_paste, 0, 3)
+
         btn_r_load = QtWidgets.QPushButton("Load XYZ...")
         btn_r_load.clicked.connect(lambda: self._on_load_xyz("reactant"))
-        s_layout.addWidget(btn_r_load, 0, 3)
+        s_layout.addWidget(btn_r_load, 0, 4)
 
         # Product Row
         s_layout.addWidget(QtWidgets.QLabel("<b>Product:</b>"), 1, 0)
@@ -86,14 +91,19 @@ class ReactionPathDialog(QtWidgets.QDialog):
         self.lbl_product_info.setStyleSheet("color: #d97706; font-weight: bold;")
         s_layout.addWidget(self.lbl_product_info, 1, 1)
 
+        btn_p_current = QtWidgets.QPushButton("Use Active Canvas")
+        btn_p_current.setToolTip("Use the molecule currently open in AgyMolden as the Product")
+        btn_p_current.clicked.connect(self._on_use_active_as_product)
+        s_layout.addWidget(btn_p_current, 1, 2)
+
         btn_p_paste = QtWidgets.QPushButton("Paste Clipboard")
         btn_p_paste.setToolTip("Parse Cartesian XYZ coordinates from system clipboard as the Product")
         btn_p_paste.clicked.connect(self._on_paste_product)
-        s_layout.addWidget(btn_p_paste, 1, 2)
+        s_layout.addWidget(btn_p_paste, 1, 3)
 
         btn_p_load = QtWidgets.QPushButton("Load XYZ...")
         btn_p_load.clicked.connect(lambda: self._on_load_xyz("product"))
-        s_layout.addWidget(btn_p_load, 1, 3)
+        s_layout.addWidget(btn_p_load, 1, 4)
 
         layout.addWidget(grp_structs)
 
@@ -193,12 +203,59 @@ class ReactionPathDialog(QtWidgets.QDialog):
         mid = (val // 2) + 1
         self.lbl_middle_hint.setText(f"(Frame {mid} will be the Transition State Guess)")
 
+    def _get_main_window(self) -> Optional[QtWidgets.QMainWindow]:
+        curr = self.parent()
+        while curr is not None:
+            if hasattr(curr, "coords") and (hasattr(curr, "zatoms") or hasattr(curr, "symbols")):
+                return curr
+            curr = curr.parent()
+        return None
+
     def _on_use_active_as_reactant(self):
-        parent = self.parent()
-        if parent and hasattr(parent, "symbols") and hasattr(parent, "coords"):
-            self.r_symbols = list(parent.symbols)
-            self.r_coords = np.array(parent.coords, dtype=np.float64)
-            self._update_status()
+        mw = self._get_main_window()
+        if mw is not None and hasattr(mw, "coords") and len(mw.coords) > 0:
+            syms = [a.symbol for a in getattr(mw, "zatoms", [])] if getattr(mw, "zatoms", None) else list(getattr(mw, "symbols", []))
+            if syms and len(syms) == len(mw.coords):
+                self.r_symbols = list(syms)
+                self.r_coords = np.array(mw.coords, dtype=np.float64)
+                self._update_status()
+                return
+        QtWidgets.QMessageBox.information(self, "No Active Molecule", "The active canvas in AgyMolden does not currently contain a molecule.")
+
+    def _on_use_active_as_product(self):
+        mw = self._get_main_window()
+        if mw is not None and hasattr(mw, "coords") and len(mw.coords) > 0:
+            syms = [a.symbol for a in getattr(mw, "zatoms", [])] if getattr(mw, "zatoms", None) else list(getattr(mw, "symbols", []))
+            if syms and len(syms) == len(mw.coords):
+                self.p_symbols = list(syms)
+                self.p_coords = np.array(mw.coords, dtype=np.float64)
+                self._update_status()
+                return
+        QtWidgets.QMessageBox.information(self, "No Active Molecule", "The active canvas in AgyMolden does not currently contain a molecule.")
+
+    def _on_paste_reactant(self):
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text().strip() if clipboard else ""
+        syms, coords = self._parse_xyz_string(text)
+        if not syms:
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Clipboard Text", "Clipboard does not contain recognizable Cartesian XYZ format."
+            )
+            return
+        self.r_symbols, self.r_coords = syms, coords
+        self._update_status()
+
+    def _on_paste_product(self):
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text().strip() if clipboard else ""
+        syms, coords = self._parse_xyz_string(text)
+        if not syms:
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Clipboard Text", "Clipboard does not contain recognizable Cartesian XYZ format."
+            )
+            return
+        self.p_symbols, self.p_coords = syms, coords
+        self._update_status()
 
     def _on_load_xyz(self, target: str):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -216,18 +273,6 @@ class ReactionPathDialog(QtWidgets.QDialog):
             self.p_symbols, self.p_coords = syms, coords
         self._update_status()
 
-    def _on_paste_product(self):
-        clipboard = QtWidgets.QApplication.clipboard()
-        text = clipboard.text().strip() if clipboard else ""
-        syms, coords = self._parse_xyz_string(text)
-        if not syms:
-            QtWidgets.QMessageBox.warning(
-                self, "Invalid Clipboard Text", "Clipboard does not contain recognizable Cartesian XYZ format."
-            )
-            return
-        self.p_symbols, self.p_coords = syms, coords
-        self._update_status()
-
     @staticmethod
     def _parse_xyz_file(path: str) -> Tuple[List[str], np.ndarray]:
         try:
@@ -238,26 +283,14 @@ class ReactionPathDialog(QtWidgets.QDialog):
 
     @staticmethod
     def _parse_xyz_string(text: str) -> Tuple[List[str], np.ndarray]:
-        lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-        if not lines:
-            return [], np.empty((0, 3))
-        # Check standard XYZ format: 1st line integer atom count
-        start_idx = 0
-        if lines[0].isdigit():
-            start_idx = 2  # skip count and comment line
-        syms = []
-        coords = []
-        for line in lines[start_idx:]:
-            parts = line.split()
-            if len(parts) >= 4:
-                try:
-                    s = parts[0]
-                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                    syms.append(s)
-                    coords.append([x, y, z])
-                except ValueError:
-                    continue
-        return syms, np.array(coords, dtype=np.float64) if coords else np.empty((0, 3))
+        from .zmatrix import parse_xyz
+        try:
+            syms, coords = parse_xyz(text)
+            if syms and len(coords) == len(syms):
+                return syms, coords
+        except Exception:
+            pass
+        return [], np.empty((0, 3))
 
     def _update_status(self):
         # Update labels

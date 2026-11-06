@@ -1232,6 +1232,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_open_xyz.triggered.connect(self._on_import_xyz)
         menu_file.addAction(act_open_xyz)
 
+        act_paste_xyz_file = QtGui.QAction("📥 Paste &Cartesian Coordinates from Clipboard...", self)
+        act_paste_xyz_file.setToolTip("Parse and load Cartesian XYZ coordinates from clipboard directly into the 3D viewer (Ctrl+Shift+V)")
+        act_paste_xyz_file.triggered.connect(self._on_paste_as_new_molecule)
+        menu_file.addAction(act_paste_xyz_file)
+
         act_open_inp = QtGui.QAction("Open newBRORSEN &Input File (*.inp)...", self)
         act_open_inp.setShortcut("Ctrl+I")
         act_open_inp.setToolTip("Open a newBRORSEN input file (.inp) into AGYMolden and the Input Builder")
@@ -1391,9 +1396,15 @@ class UIMixin(UIInspectorTabsMixin):
 
         self.act_paste_mol = QtGui.QAction("📋 &Paste Molecule / Fragment", self)
         self.act_paste_mol.setShortcut(QtGui.QKeySequence("Ctrl+V"))
-        self.act_paste_mol.setToolTip("Paste copied fragment or clipboard XYZ into the 3D viewport (Ctrl+V)")
+        self.act_paste_mol.setToolTip("Paste copied fragment, Cartesian XYZ coordinates, or SMILES/InChI into the 3D viewport (Ctrl+V)")
         self.act_paste_mol.triggered.connect(self._on_paste)
         menu_edit.addAction(self.act_paste_mol)
+
+        act_paste_xyz = QtGui.QAction("📥 Paste &XYZ Coordinates as Molecule", self)
+        act_paste_xyz.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
+        act_paste_xyz.setToolTip("Directly load XYZ coordinates from clipboard as the active molecule (replaces or resets canvas) (Ctrl+Shift+V)")
+        act_paste_xyz.triggered.connect(self._on_paste_as_new_molecule)
+        menu_edit.addAction(act_paste_xyz)
 
         menu_edit.addSeparator()
 

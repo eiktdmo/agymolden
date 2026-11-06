@@ -2,6 +2,7 @@
 
 import re
 import math
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict
 import numpy as np
@@ -645,7 +646,7 @@ def _parse_xyz_float(token: str) -> float:
     return float(token.replace("D", "e").replace("d", "e"))
 
 
-def parse_xyz(filepath_or_content: str, is_path: bool = True) -> Tuple[List[str], np.ndarray]:
+def parse_xyz(filepath_or_content: str, is_path: Optional[bool] = None) -> Tuple[List[str], np.ndarray]:
     """
     Read a standard or headerless XYZ format molecule.
     Properly handles:
@@ -654,7 +655,14 @@ def parse_xyz(filepath_or_content: str, is_path: bool = True) -> Tuple[List[str]
       - Atomic numbers (e.g. 6 -> C, 1 -> H) as well as element symbols and numbered labels (C1, Fe2)
       - Fortran D/d exponents (e.g. 1.234D-01)
       - Multi-frame XYZ files (reads the first complete frame cleanly)
+      - Auto-detection between file path and raw string content if is_path is None
     """
+    if is_path is None:
+        if "\n" in filepath_or_content or "\r" in filepath_or_content:
+            is_path = False
+        else:
+            is_path = os.path.isfile(filepath_or_content)
+
     if is_path:
         with open(filepath_or_content, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
