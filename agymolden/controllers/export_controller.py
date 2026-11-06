@@ -141,3 +141,41 @@ class ExportController:
         except Exception as e:
             dialog_service.error(self.mw, "Error Exporting CIF", str(e), exc=e)
         return None
+
+    def export_svg(self) -> Optional[str]:
+        """Prompt user and write infinite-resolution vector graphics to .svg."""
+        if len(self.mw.zatoms) == 0:
+            QtWidgets.QMessageBox.information(self.mw, "Export SVG", "No molecule to export.")
+            return None
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self.mw, "Export Scalable Vector Graphics (SVG)", "molecule.svg", "SVG Vector Graphics (*.svg);;All Files (*)"
+        )
+        if not path:
+            return None
+
+        from ..svg_export import export_molecule_to_svg
+        try:
+            symbols = [a.symbol for a in self.mw.zatoms]
+            coords = np.array(self.mw.coords, dtype=np.float64, copy=True)
+            bonds = list(self.mw._current_explicit_bonds())
+            view_mat = None
+            if hasattr(self.mw, "viewer") and self.mw.viewer and hasattr(self.mw.viewer, "rotation_matrix"):
+                view_mat = self.mw.viewer.rotation_matrix[:3, :3]
+
+            svg_txt = export_molecule_to_svg(
+                symbols=symbols,
+                coords=coords,
+                bonds=bonds,
+                view_matrix=view_mat,
+                width=1000,
+                height=1000,
+                background="transparent",
+            )
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(svg_txt)
+            self.mw.statusBar().showMessage(f"Exported Publication Vector SVG to {os.path.basename(path)}", 4500)
+            return path
+        except Exception as e:
+            dialog_service.error(self.mw, "Error Exporting SVG", str(e), exc=e)
+        return None

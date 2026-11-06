@@ -1279,6 +1279,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_export_png.triggered.connect(self._on_export_image)
         menu_file.addAction(act_export_png)
 
+        act_export_svg = QtGui.QAction("📐 Export &Scalable Vector Graphics (SVG)...", self)
+        act_export_svg.setToolTip("Export infinite-resolution 3D vector graphics for Illustrator, Inkscape, or LaTeX")
+        act_export_svg.triggered.connect(self._on_export_svg)
+        menu_file.addAction(act_export_svg)
+
         act_clip_img = QtGui.QAction("📷 Copy Viewport Image to Clipboard", self)
         act_clip_img.setShortcut("Ctrl+Shift+C")
         act_clip_img.setToolTip("Copy publication-quality 3D image with transparent background directly to system clipboard (Ctrl+Shift+C)")

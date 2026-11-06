@@ -1642,6 +1642,11 @@ class FileIOMixin:
             log.exception("Unhandled error copying viewport image to clipboard")
             QtWidgets.QMessageBox.warning(self, "Copy Image Failed", str(e))
 
+    def _on_export_svg(self):
+        """Export current 3D view as an infinite-resolution Scalable Vector Graphics (SVG) file."""
+        from .controllers import ExportController
+        ExportController(self).export_svg()
+
     def _on_export_image(self):
         """Export publication-quality image with custom resolution and background presets."""
         dlg = QtWidgets.QDialog(self)

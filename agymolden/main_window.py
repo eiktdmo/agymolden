@@ -1848,7 +1848,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             CommandItem("Fragment Library Picker", "Builder", "", self._on_open_fragment_library, "fragments amino acid functional group"),
             CommandItem("Align Principal Axes / Moments of Inertia", "Geometry", "", self._on_align_principal_axes, "align inertia axes center orientation"),
             # Export & Publishing
-            CommandItem("Export Scalable Vector Graphics (SVG)", "Export", "", self._on_export_image, "svg vector export publication drawing image png"),
+            CommandItem("Export Scalable Vector Graphics (SVG)", "Export", "", self._on_export_svg, "svg vector export publication drawing image png"),
             CommandItem("Export High-DPI Publication Image", "Export", "Ctrl+Shift+E", self._on_export_image, "dpi png export figure resolution publication"),
             CommandItem("Export Supporting Information (SI) Bundle", "Export", "", self._on_export_reproducibility_bundle, "si bundle zip reproducibility supporting information"),
             CommandItem("Copy Image to Clipboard", "Export", "Ctrl+Shift+C", lambda: self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True), "copy clipboard figure image"),
