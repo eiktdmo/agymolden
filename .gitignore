@@ -45,3 +45,4 @@ scratch_calculations/
 # Local scratch outputs (moved from project root)
 scratch/
 orca_calc*
+legacy_dist_archive/
