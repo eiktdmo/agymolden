@@ -2580,12 +2580,6 @@ class EditingMixin:
         symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
         coords = self.coords if len(self.coords) > 0 else None
 
-        dlg = ReactionPathDialog(
-            parent=self,
-            initial_symbols=symbols,
-            initial_coords=coords,
-        )
-
         def _on_adopted(adopted_syms, adopted_coords):
             self._push_undo_state()
             curr_bonds = self._current_explicit_bonds() if hasattr(self, "_current_explicit_bonds") else None
@@ -2607,9 +2601,22 @@ class EditingMixin:
                     self.viewer.set_molecule(p_syms, p_frames[0])
             self.statusBar().showMessage(f"Loaded {len(p_frames)} reaction path frames into player", 4000)
 
-        dlg.path_adopted.connect(_on_adopted)
-        dlg.trajectory_preview.connect(_on_preview_traj)
-        dlg.exec()
+        if hasattr(self, "dock_manager"):
+            dock = self.dock_manager.open_reaction_path(
+                initial_symbols=symbols,
+                initial_coords=coords,
+                on_adopted=_on_adopted,
+                on_preview_traj=_on_preview_traj,
+            )
+        else:
+            dlg = ReactionPathDialog(
+                parent=self,
+                initial_symbols=symbols,
+                initial_coords=coords,
+            )
+            dlg.path_adopted.connect(_on_adopted)
+            dlg.trajectory_preview.connect(_on_preview_traj)
+            dlg.exec()
 
     def _on_open_crest_explorer(self, filepath: Optional[str] = None):
         """Open CREST & Conformer Ensemble Explorer Dialog (Ctrl+Shift+E)."""

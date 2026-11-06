@@ -13,8 +13,9 @@ Features:
 - Layout persistence via QSettings (save/restore dock states)
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
+import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
@@ -123,6 +124,34 @@ class PythonConsoleDock(WorkspaceDockWidget):
         self.setWidget(self.console_widget)
 
 
+class ReactionPathDock(WorkspaceDockWidget):
+    """Dockable panel hosting the Reaction Path & Transition State (TS) Interpolator."""
+
+    def __init__(
+        self,
+        parent: Optional[QtWidgets.QWidget] = None,
+        initial_symbols: Optional[List[str]] = None,
+        initial_coords: Optional[np.ndarray] = None,
+    ):
+        super().__init__("🔄 Reaction Path & TS Interpolator", parent, object_name="dock_reaction_path")
+        from .dialog_reaction_path import ReactionPathDialog
+
+        self.path_dlg = ReactionPathDialog(
+            self,
+            initial_symbols=initial_symbols,
+            initial_coords=initial_coords,
+        )
+        self.setWidget(self.path_dlg)
+
+    @property
+    def path_adopted(self):
+        return self.path_dlg.path_adopted
+
+    @property
+    def trajectory_preview(self):
+        return self.path_dlg.trajectory_preview
+
+
 class WorkspaceDockManager:
     """Manages docks, menu actions, and layout persistence for MainWindow."""
 
@@ -207,6 +236,35 @@ class WorkspaceDockManager:
         dock.show()
         dock.raise_()
         self.docks["dihedral_scan"] = dock
+        return dock
+
+    def open_reaction_path(
+        self,
+        initial_symbols=None,
+        initial_coords=None,
+        on_adopted=None,
+        on_preview_traj=None,
+    ) -> ReactionPathDock:
+        # If an existing reaction path dock is present, remove it
+        if "reaction_path" in self.docks:
+            old_dock = self.docks.pop("reaction_path")
+            self.mw.removeDockWidget(old_dock)
+            old_dock.deleteLater()
+
+        dock = ReactionPathDock(
+            self.mw,
+            initial_symbols=initial_symbols,
+            initial_coords=initial_coords,
+        )
+        if on_adopted:
+            dock.path_adopted.connect(on_adopted)
+        if on_preview_traj:
+            dock.trajectory_preview.connect(on_preview_traj)
+
+        self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        dock.show()
+        dock.raise_()
+        self.docks["reaction_path"] = dock
         return dock
 
     def float_all_docks(self):

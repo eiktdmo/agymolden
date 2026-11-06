@@ -1912,6 +1912,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_dock_console.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_console().show())
         menu_docks.addAction(act_dock_console)
 
+        act_dock_ts = QtGui.QAction("🔄 Reaction Path & &TS Interpolator Dock", self)
+        act_dock_ts.setToolTip("Dock or show the reaction path and Transition State (IDPP) guess generator")
+        act_dock_ts.triggered.connect(self._on_open_reaction_path_dialog)
+        menu_docks.addAction(act_dock_ts)
+
         menu_docks.addSeparator()
 
         act_float_all = QtGui.QAction("🖥️ Multi-Monitor: &Float All Panels", self)

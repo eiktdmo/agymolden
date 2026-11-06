@@ -87,6 +87,19 @@ def test_dihedral_scan_dock(qapp):
     assert "dihedral_scan" in mgr.docks
 
 
+def test_reaction_path_dock(qapp):
+    from agymolden.dock_panels import ReactionPathDock
+    win = QtWidgets.QMainWindow()
+    mgr = WorkspaceDockManager(win)
+
+    symbols = ["C", "C"]
+    coords = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]], dtype=float)
+
+    rp_dock = mgr.open_reaction_path(initial_symbols=symbols, initial_coords=coords)
+    assert isinstance(rp_dock, ReactionPathDock)
+    assert "reaction_path" in mgr.docks
+
+
 def test_workspace_layout_save_reset(qapp):
     win = QtWidgets.QMainWindow()
     mgr = WorkspaceDockManager(win)
