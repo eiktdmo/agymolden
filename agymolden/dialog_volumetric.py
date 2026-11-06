@@ -78,6 +78,8 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         self.neg_color = (0.95, 0.30, 0.25)  # Vibrant Coral-Red (-)
         self._surface_undo_stack: List[Tuple[List[IsosurfaceMesh], float]] = []
         self._surface_redo_stack: List[Tuple[List[IsosurfaceMesh], float]] = []
+        self._cached_esp_mapped_mesh: Optional[IsosurfaceMesh] = None
+        self._esp_mapped_debounce_timer: Optional[QtCore.QTimer] = None
 
         self._init_ui()
 
@@ -199,6 +201,104 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         mo_layout.addWidget(self.combo_mo)
         self.grp_mo.setVisible(False)
         layout.addWidget(self.grp_mo)
+
+        # Reactive ESP-Mapped Controls Group (GaussView / Multiwfn style live sliders)
+        self.grp_esp_mapped = QtWidgets.QGroupBox("🎨 ESP-Mapped Density Controls (Live Reactive)")
+        esp_m_layout = QtWidgets.QFormLayout(self.grp_esp_mapped)
+        esp_m_layout.setSpacing(6)
+
+        # Colormap Palette
+        self.combo_esp_cmap = QtWidgets.QComboBox()
+        self.combo_esp_cmap.addItem("bwr_r (Red δ−, White neutral, Blue δ+)", "bwr_r")
+        self.combo_esp_cmap.addItem("RdBu (Red δ−, Gray neutral, Dark Blue δ+)", "RdBu")
+        self.combo_esp_cmap.addItem("coolwarm_r (Soft Red δ− to Blue δ+)", "coolwarm_r")
+        self.combo_esp_cmap.addItem("jet_r (Multiwfn Rainbow Red δ− to Blue δ+)", "jet_r")
+        self.combo_esp_cmap.addItem("Spectral (Spectral Red δ− to Violet δ+)", "Spectral")
+        self.combo_esp_cmap.currentIndexChanged.connect(self._on_esp_palette_or_range_changed)
+        esp_m_layout.addRow("Palette:", self.combo_esp_cmap)
+
+        # Density Isovalue (ρ)
+        row_dens = QtWidgets.QHBoxLayout()
+        self.slider_esp_dens = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_esp_dens.setRange(1, 100)  # 0.0001 to 0.0100
+        self.slider_esp_dens.setValue(10)      # 0.0010
+        self.spin_esp_dens = QtWidgets.QDoubleSpinBox()
+        self.spin_esp_dens.setRange(0.0001, 0.0500)
+        self.spin_esp_dens.setDecimals(4)
+        self.spin_esp_dens.setSingleStep(0.0005)
+        self.spin_esp_dens.setValue(0.0010)
+        self.spin_esp_dens.setSuffix(" a.u.")
+        self.slider_esp_dens.valueChanged.connect(lambda v: (self.spin_esp_dens.blockSignals(True), self.spin_esp_dens.setValue(v / 10000.0), self.spin_esp_dens.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        self.spin_esp_dens.valueChanged.connect(lambda v: (self.slider_esp_dens.blockSignals(True), self.slider_esp_dens.setValue(int(round(v * 10000.0))), self.slider_esp_dens.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        row_dens.addWidget(self.slider_esp_dens, stretch=1)
+        row_dens.addWidget(self.spin_esp_dens)
+        esp_m_layout.addRow("Density Iso (ρ):", row_dens)
+
+        # Color Scale Range (±V_lim)
+        self.chk_esp_auto_range = QtWidgets.QCheckBox("Auto-scale potential range ([-V_lim, +V_lim])")
+        self.chk_esp_auto_range.setChecked(True)
+        self.chk_esp_auto_range.toggled.connect(self._on_esp_palette_or_range_changed)
+        esp_m_layout.addRow("Scaling:", self.chk_esp_auto_range)
+
+        row_vlim = QtWidgets.QHBoxLayout()
+        self.slider_esp_vlim = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_esp_vlim.setRange(5, 500)  # 0.005 to 0.500
+        self.slider_esp_vlim.setValue(50)
+        self.slider_esp_vlim.setEnabled(False)
+        self.spin_esp_vlim = QtWidgets.QDoubleSpinBox()
+        self.spin_esp_vlim.setRange(0.005, 0.500)
+        self.spin_esp_vlim.setDecimals(3)
+        self.spin_esp_vlim.setSingleStep(0.005)
+        self.spin_esp_vlim.setValue(0.050)
+        self.spin_esp_vlim.setPrefix("± ")
+        self.spin_esp_vlim.setSuffix(" a.u.")
+        self.spin_esp_vlim.setEnabled(False)
+        self.slider_esp_vlim.valueChanged.connect(lambda v: (self.spin_esp_vlim.blockSignals(True), self.spin_esp_vlim.setValue(v / 1000.0), self.spin_esp_vlim.blockSignals(False), self._on_esp_palette_or_range_changed()))
+        self.spin_esp_vlim.valueChanged.connect(lambda v: (self.slider_esp_vlim.blockSignals(True), self.slider_esp_vlim.setValue(int(round(v * 1000.0))), self.slider_esp_vlim.blockSignals(False), self._on_esp_palette_or_range_changed()))
+        row_vlim.addWidget(self.slider_esp_vlim, stretch=1)
+        row_vlim.addWidget(self.spin_esp_vlim)
+        esp_m_layout.addRow("Potential Limit:", row_vlim)
+
+        # Box Margin
+        row_margin = QtWidgets.QHBoxLayout()
+        self.slider_esp_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_esp_margin.setRange(15, 120)  # 1.5 to 12.0
+        self.slider_esp_margin.setValue(35)
+        self.spin_esp_margin = QtWidgets.QDoubleSpinBox()
+        self.spin_esp_margin.setRange(1.5, 12.0)
+        self.spin_esp_margin.setDecimals(1)
+        self.spin_esp_margin.setSingleStep(0.5)
+        self.spin_esp_margin.setValue(3.5)
+        self.spin_esp_margin.setSuffix(" a₀")
+        self.slider_esp_margin.valueChanged.connect(lambda v: (self.spin_esp_margin.blockSignals(True), self.spin_esp_margin.setValue(v / 10.0), self.spin_esp_margin.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        self.spin_esp_margin.valueChanged.connect(lambda v: (self.slider_esp_margin.blockSignals(True), self.slider_esp_margin.setValue(int(round(v * 10.0))), self.slider_esp_margin.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        row_margin.addWidget(self.slider_esp_margin, stretch=1)
+        row_margin.addWidget(self.spin_esp_margin)
+        esp_m_layout.addRow("Box Margin:", row_margin)
+
+        # Grid Resolution
+        row_pts = QtWidgets.QHBoxLayout()
+        self.slider_esp_pts = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_esp_pts.setRange(20, 80)
+        self.slider_esp_pts.setValue(35)
+        self.spin_esp_pts = QtWidgets.QSpinBox()
+        self.spin_esp_pts.setRange(20, 100)
+        self.spin_esp_pts.setSingleStep(5)
+        self.spin_esp_pts.setValue(35)
+        self.spin_esp_pts.setSuffix(" pts")
+        self.slider_esp_pts.valueChanged.connect(lambda v: (self.spin_esp_pts.blockSignals(True), self.spin_esp_pts.setValue(v), self.spin_esp_pts.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        self.spin_esp_pts.valueChanged.connect(lambda v: (self.slider_esp_pts.blockSignals(True), self.slider_esp_pts.setValue(v), self.slider_esp_pts.blockSignals(False), self._schedule_esp_mapped_recompute()))
+        row_pts.addWidget(self.slider_esp_pts, stretch=1)
+        row_pts.addWidget(self.spin_esp_pts)
+        esp_m_layout.addRow("Grid Points:", row_pts)
+
+        self.chk_esp_extrema = QtWidgets.QCheckBox("Surface Extrema (V_min / V_max)")
+        self.chk_esp_extrema.setChecked(True)
+        self.chk_esp_extrema.toggled.connect(self._schedule_esp_mapped_recompute)
+        esp_m_layout.addRow("", self.chk_esp_extrema)
+
+        self.grp_esp_mapped.setVisible(False)
+        layout.addWidget(self.grp_esp_mapped)
 
         # Isosurface Parameters Group
         grp_params = QtWidgets.QGroupBox("Marching Cubes Isosurface Controls")
@@ -658,61 +758,8 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(self, "ESP Calculation", "Please load a .molden file first.")
             return
 
-        # Settings dialog with sliders for grid resolution and box margin
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("3D ESP Isopotential Grid Settings")
-        dlg.resize(460, 220)
-        vbox = QtWidgets.QVBoxLayout(dlg)
-        form = QtWidgets.QFormLayout()
-        form.setSpacing(10)
-
-        # Box margin (padding in Bohr)
-        margin_layout = QtWidgets.QHBoxLayout()
-        slider_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_margin.setRange(15, 120)  # 1.5 to 12.0 Bohr
-        slider_margin.setValue(35)
-        spin_margin = QtWidgets.QDoubleSpinBox()
-        spin_margin.setRange(1.5, 12.0)
-        spin_margin.setDecimals(1)
-        spin_margin.setSingleStep(0.5)
-        spin_margin.setValue(3.5)
-        spin_margin.setSuffix(" a₀")
-        slider_margin.valueChanged.connect(lambda v: spin_margin.setValue(v / 10.0))
-        spin_margin.valueChanged.connect(lambda v: slider_margin.setValue(int(round(v * 10.0))))
-        margin_layout.addWidget(slider_margin, stretch=1)
-        margin_layout.addWidget(spin_margin)
-        form.addRow("Box Size Margin:", margin_layout)
-
-        # Grid resolution (voxels/axis)
-        grid_layout = QtWidgets.QHBoxLayout()
-        default_pts = self._get_grid_pts(40)
-        slider_grid = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_grid.setRange(20, 80)
-        slider_grid.setValue(default_pts)
-        spin_grid = QtWidgets.QSpinBox()
-        spin_grid.setRange(20, 100)
-        spin_grid.setSingleStep(5)
-        spin_grid.setValue(default_pts)
-        spin_grid.setSuffix(" voxels/axis")
-        slider_grid.valueChanged.connect(spin_grid.setValue)
-        spin_grid.valueChanged.connect(slider_grid.setValue)
-        grid_layout.addWidget(slider_grid, stretch=1)
-        grid_layout.addWidget(spin_grid)
-        form.addRow("Grid Resolution:", grid_layout)
-
-        vbox.addLayout(form)
-        vbox.addStretch()
-
-        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(dlg.accept)
-        btns.rejected.connect(dlg.reject)
-        vbox.addWidget(btns)
-
-        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-            return
-
-        n_pts = int(spin_grid.value())
-        margin_b = float(spin_margin.value())
+        n_pts = self._get_grid_pts(40)
+        margin_b = 3.5
 
         def _compute():
             return compute_molden_esp_grid(self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
@@ -832,151 +879,100 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             self.viewer.surface_mesh_style = style
             self.viewer.update()
 
+    def _schedule_esp_mapped_recompute(self, delay_ms: int = 250):
+        """Debounce reactive changes to density isovalue, margin, or resolution."""
+        if not self.current_molden_path or not hasattr(self, "grp_esp_mapped") or not self.grp_esp_mapped.isVisible():
+            return
+        if self._esp_mapped_debounce_timer is None:
+            self._esp_mapped_debounce_timer = QtCore.QTimer(self)
+            self._esp_mapped_debounce_timer.setSingleShot(True)
+            self._esp_mapped_debounce_timer.timeout.connect(self._recompute_esp_mapped_density)
+        self._esp_mapped_debounce_timer.start(delay_ms)
+
+    def _on_esp_palette_or_range_changed(self):
+        """Instant (<5ms) recoloring when colormap palette or manual potential range changes."""
+        auto_range = self.chk_esp_auto_range.isChecked()
+        self.slider_esp_vlim.setEnabled(not auto_range)
+        self.spin_esp_vlim.setEnabled(not auto_range)
+
+        mesh = self._cached_esp_mapped_mesh
+        if mesh is None or not hasattr(mesh, "surface_values") or mesh.surface_values is None:
+            self._schedule_esp_mapped_recompute(delay_ms=50)
+            return
+
+        # Instant recolor of cached vertices
+        cmap_name = self.combo_esp_cmap.currentData() or "bwr_r"
+        v_esp_verts = mesh.surface_values
+
+        if auto_range:
+            abs_vals = np.abs(v_esp_verts)
+            max_abs = float(np.percentile(abs_vals, 98.0)) if len(abs_vals) > 0 else 0.05
+            lim = max(0.008, round(max_abs * 1.05, 3))
+            eff_esp_min = -lim
+            eff_esp_max = lim
+        else:
+            val_lim = float(self.spin_esp_vlim.value())
+            eff_esp_min = -val_lim
+            eff_esp_max = val_lim
+
+        denom = max(1e-6, (eff_esp_max - eff_esp_min))
+        norm_val = np.clip((v_esp_verts - eff_esp_min) / denom, 0.0, 1.0)
+
+        import matplotlib as mpl
+        try:
+            cmap = mpl.colormaps.get(cmap_name, mpl.colormaps["bwr_r"])
+            rgba = cmap(norm_val)
+            colors = rgba[:, :3].astype(np.float32)
+        except Exception:
+            colors = np.empty((len(v_esp_verts), 3), dtype=np.float32)
+            mask_low = norm_val < 0.5
+            t_low = (norm_val[mask_low] / 0.5)[:, None]
+            c_red = np.array([0.95, 0.15, 0.15], dtype=np.float32)
+            c_mid = np.array([0.95, 0.95, 0.95], dtype=np.float32)
+            c_blue = np.array([0.15, 0.50, 0.98], dtype=np.float32)
+            colors[mask_low] = (1.0 - t_low) * c_red + t_low * c_mid
+            t_high = ((norm_val[~mask_low] - 0.5) / 0.5)[:, None]
+            colors[~mask_low] = (1.0 - t_high) * c_mid + t_high * c_blue
+
+        mesh.vertex_colors = colors
+        mesh.esp_range = (eff_esp_min, eff_esp_max)
+        mesh.colormap_name = cmap_name
+
+        opacity = float(self.slider_opacity.value() if hasattr(self, "slider_opacity") else 85) / 100.0
+        self.surface_updated.emit([mesh], opacity)
+        r_str = f"Range: [{eff_esp_min:+.3f}, {eff_esp_max:+.3f}] a.u."
+        self.lbl_stats.setText(f"Instant recolor ({cmap_name}): {len(mesh.faces):,} triangles. {r_str}")
+
     def _on_compute_esp_mapped_density(self):
-        """Compute ESP-mapped electron density isosurface and update 3D viewer."""
+        """Show reactive ESP-mapped controls and trigger calculation immediately without modal prompt."""
         if not self.current_molden_path:
             QtWidgets.QMessageBox.information(self, "ESP-Mapped Density", "Please load a .molden file first.")
             return
 
-        # Prompt for colormap and range options
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("3D ESP-Mapped Electron Density Settings")
-        dlg.resize(520, 480)
-        vbox = QtWidgets.QVBoxLayout(dlg)
+        if hasattr(self, "grp_esp_mapped"):
+            self.grp_esp_mapped.setVisible(True)
 
-        form = QtWidgets.QFormLayout()
-        form.setSpacing(10)
+        self._recompute_esp_mapped_density()
 
-        combo_cmap = QtWidgets.QComboBox()
-        combo_cmap.addItem("bwr_r (Red = Negative δ−, White = Neutral, Blue = Positive δ+)", "bwr_r")
-        combo_cmap.addItem("RdBu (Red = Negative δ−, Light Gray = Neutral, Dark Blue = Positive δ+)", "RdBu")
-        combo_cmap.addItem("coolwarm_r (Balanced Soft Red δ− to Blue δ+)", "coolwarm_r")
-        combo_cmap.addItem("jet_r (Rainbow / Multiwfn Red δ− to Blue δ+)", "jet_r")
-        combo_cmap.addItem("Spectral (Spectral Rainbow Red δ− to Violet δ+)", "Spectral")
-        form.addRow("Colormap Palette:", combo_cmap)
-
-        # Electron Density Isovalue: Slider + Spinbox pair
-        dens_layout = QtWidgets.QHBoxLayout()
-        slider_dens = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_dens.setRange(1, 100)  # 0.0001 to 0.0100 a.u. (step 0.0001)
-        slider_dens.setValue(10)  # default 0.0010
-        spin_dens = QtWidgets.QDoubleSpinBox()
-        spin_dens.setRange(0.0001, 0.0500)
-        spin_dens.setDecimals(4)
-        spin_dens.setSingleStep(0.0005)
-        spin_dens.setValue(0.0010)
-        spin_dens.setSuffix(" a.u.")
-        slider_dens.valueChanged.connect(lambda v: spin_dens.setValue(v / 10000.0))
-        spin_dens.valueChanged.connect(lambda v: slider_dens.setValue(int(round(v * 10000.0))))
-        dens_layout.addWidget(slider_dens, stretch=1)
-        dens_layout.addWidget(spin_dens)
-        form.addRow("Density Isovalue (ρ):", dens_layout)
-
-        # Color Scaling Range: Auto or Slider/Spinbox Manual Limit
-        chk_auto_range = QtWidgets.QCheckBox("Auto-scale symmetric potential range [-V_lim, +V_lim] (Recommended)")
-        chk_auto_range.setChecked(True)
-        form.addRow("Color Scaling:", chk_auto_range)
-
-        range_layout = QtWidgets.QHBoxLayout()
-        slider_manual_range = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_manual_range.setRange(5, 500)  # 0.005 to 0.500 a.u.
-        slider_manual_range.setValue(50)  # default 0.050
-        slider_manual_range.setEnabled(False)
-        spin_manual_range = QtWidgets.QDoubleSpinBox()
-        spin_manual_range.setRange(0.005, 0.500)
-        spin_manual_range.setDecimals(3)
-        spin_manual_range.setSingleStep(0.005)
-        spin_manual_range.setValue(0.050)
-        spin_manual_range.setPrefix("± ")
-        spin_manual_range.setSuffix(" a.u.")
-        spin_manual_range.setEnabled(False)
-        slider_manual_range.valueChanged.connect(lambda v: spin_manual_range.setValue(v / 1000.0))
-        spin_manual_range.valueChanged.connect(lambda v: slider_manual_range.setValue(int(round(v * 1000.0))))
-        chk_auto_range.toggled.connect(lambda chk: (slider_manual_range.setEnabled(not chk), spin_manual_range.setEnabled(not chk)))
-        range_layout.addWidget(slider_manual_range, stretch=1)
-        range_layout.addWidget(spin_manual_range)
-        form.addRow("Manual Potential Limit:", range_layout)
-
-        # Surface Opacity: Slider + Spinbox pair
-        opacity_layout = QtWidgets.QHBoxLayout()
-        slider_op = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_op.setRange(10, 100)
-        slider_op.setValue(int(round((self.slider_opacity.value() if hasattr(self, "slider_opacity") else 85))))
-        spin_op = QtWidgets.QSpinBox()
-        spin_op.setRange(10, 100)
-        spin_op.setValue(slider_op.value())
-        spin_op.setSuffix(" %")
-        slider_op.valueChanged.connect(spin_op.setValue)
-        spin_op.valueChanged.connect(slider_op.setValue)
-        opacity_layout.addWidget(slider_op, stretch=1)
-        opacity_layout.addWidget(spin_op)
-        form.addRow("Surface Opacity:", opacity_layout)
-
-        # Evaluation Box Size Margin (Padding beyond outer atoms in Bohr): Slider + Spinbox pair
-        margin_layout = QtWidgets.QHBoxLayout()
-        slider_margin = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_margin.setRange(15, 100)  # 1.5 to 10.0 Bohr
-        slider_margin.setValue(35)  # 3.5 Bohr default
-        spin_margin = QtWidgets.QDoubleSpinBox()
-        spin_margin.setRange(1.5, 12.0)
-        spin_margin.setDecimals(1)
-        spin_margin.setSingleStep(0.5)
-        spin_margin.setValue(3.5)
-        spin_margin.setSuffix(" a₀")
-        slider_margin.valueChanged.connect(lambda v: spin_margin.setValue(v / 10.0))
-        spin_margin.valueChanged.connect(lambda v: slider_margin.setValue(int(round(v * 10.0))))
-        margin_layout.addWidget(slider_margin, stretch=1)
-        margin_layout.addWidget(spin_margin)
-        form.addRow("Box Size Margin:", margin_layout)
-
-        # 3D Grid Resolution: Slider + Spinbox pair (20³ to 90³)
-        grid_layout = QtWidgets.QHBoxLayout()
-        default_pts = self._get_grid_pts(40)
-        slider_grid = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider_grid.setRange(20, 90)
-        slider_grid.setValue(default_pts)
-        spin_grid = QtWidgets.QSpinBox()
-        spin_grid.setRange(20, 100)
-        spin_grid.setSingleStep(5)
-        spin_grid.setValue(default_pts)
-        spin_grid.setSuffix(" voxels/axis")
-        slider_grid.valueChanged.connect(spin_grid.setValue)
-        spin_grid.valueChanged.connect(slider_grid.setValue)
-        grid_layout.addWidget(slider_grid, stretch=1)
-        grid_layout.addWidget(spin_grid)
-        form.addRow("Grid Resolution:", grid_layout)
-
-        chk_extrema = QtWidgets.QCheckBox("Detect & label surface extrema (V_min nucleophilic, V_max electrophilic)")
-        chk_extrema.setChecked(True)
-        form.addRow("Surface Extrema:", chk_extrema)
-
-        vbox.addLayout(form)
-        vbox.addStretch()
-
-        btns = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        btns.accepted.connect(dlg.accept)
-        btns.rejected.connect(dlg.reject)
-        vbox.addWidget(btns)
-
-        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+    def _recompute_esp_mapped_density(self):
+        """Evaluate ESP-mapped electron density isosurface reactively."""
+        if not self.current_molden_path:
             return
 
-        cmap_clean = combo_cmap.currentData() or "bwr_r"
-        dens_iso = float(spin_dens.value())
-        selected_margin = float(spin_margin.value())
-        selected_opacity = float(slider_op.value()) / 100.0
-        do_extrema = chk_extrema.isChecked()
-        if chk_auto_range.isChecked():
+        cmap_clean = self.combo_esp_cmap.currentData() if hasattr(self, "combo_esp_cmap") else "bwr_r"
+        dens_iso = float(self.spin_esp_dens.value()) if hasattr(self, "spin_esp_dens") else 0.001
+        selected_margin = float(self.spin_esp_margin.value()) if hasattr(self, "spin_esp_margin") else 3.5
+        selected_opacity = float(self.slider_opacity.value() if hasattr(self, "slider_opacity") else 85) / 100.0
+        do_extrema = self.chk_esp_extrema.isChecked() if hasattr(self, "chk_esp_extrema") else True
+        if hasattr(self, "chk_esp_auto_range") and self.chk_esp_auto_range.isChecked():
             esp_lim_min = None
             esp_lim_max = None
         else:
-            val_lim = float(spin_manual_range.value())
+            val_lim = float(self.spin_esp_vlim.value()) if hasattr(self, "spin_esp_vlim") else 0.05
             esp_lim_min = -val_lim
             esp_lim_max = val_lim
 
-        n_pts = int(spin_grid.value())
+        n_pts = int(self.spin_esp_pts.value()) if hasattr(self, "spin_esp_pts") else 35
 
         def _compute():
             return compute_molden_esp_mapped_density(
@@ -997,6 +993,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "ESP-Mapped Density", "Could not generate ESP-mapped surface from current Molden file.")
                 return
 
+            self._cached_esp_mapped_mesh = mesh
             opacity = selected_opacity
             if hasattr(self, "slider_opacity"):
                 self.slider_opacity.blockSignals(True)
@@ -1006,7 +1003,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             n_triangles = len(mesh.faces)
             n_ext = len(mesh.extrema_points) if mesh.extrema_points else 0
             r_str = f"Range: [{mesh.esp_range[0]:+.3f}, {mesh.esp_range[1]:+.3f}] a.u." if getattr(mesh, "esp_range", None) else ""
-            self.lbl_stats.setText(f"Generated ESP-Mapped Density Envelope: {n_triangles:,} triangles, {n_ext} surface extrema. {r_str}")
+            self.lbl_stats.setText(f"ESP-Mapped Envelope: {n_triangles:,} triangles, {n_ext} surface extrema. {r_str}")
             self.lbl_info.setText(
                 f"<b>ESP-Mapped Isodensity Surface ({cmap_clean}, ρ={dens_iso}):</b> "
                 f"<span style='color: #ef4444;'>Red = Negative (Nucleophilic δ−)</span>, "

@@ -93,11 +93,15 @@ def test_quick_orca_dialog_options_and_esp(main_win):
     assert dlg.combo_method.currentData() == "B3LYP"
     assert dlg.combo_basis.currentData() == "def2-SVP"
 
-    # Verify ESP checkbox exists
-    assert hasattr(dlg, "chk_esp")
-    dlg.chk_esp.setChecked(True)
+    # Verify Molden checkbox exists (preferred over ORCA %plots esp crash)
+    assert hasattr(dlg, "chk_molden")
+    assert dlg.chk_molden.isChecked()
+
+    # Verify MO cube export exists
+    assert hasattr(dlg, "chk_mo_cubes")
+    dlg.chk_mo_cubes.setChecked(True)
     deck = dlg.get_orca_input_text()
-    assert "esp.cube" in deck
+    assert "homo.cube" in deck
     assert "%plots" in deck
 
     # Verify changing functional & basis

@@ -251,6 +251,12 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         self.chk_mo_cubes.toggled.connect(self._update_deck_preview)
         props_layout.addWidget(self.chk_mo_cubes, 1, 1)
 
+        self.chk_esp = QtWidgets.QCheckBox("⚡ Calculate Electrostatic Potential (ESP)")
+        self.chk_esp.setToolTip("Request ESP analysis via Molden orca_2mkl conversion and companion grid generation")
+        self.chk_esp.setChecked(False)
+        self.chk_esp.toggled.connect(self._update_deck_preview)
+        props_layout.addWidget(self.chk_esp, 2, 0)
+
         opts_layout.addWidget(grp_props)
 
         # 4. Molecule State & Resources
@@ -500,7 +506,8 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         if hasattr(self, "chk_mo_cubes") and self.chk_mo_cubes.isChecked():
             from .chemistry_checker import check_calculation_sanity
             symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
-            res_s = check_calculation_sanity(symbols, charge=self.spn_charge.value(), multiplicity=self.spn_mult.value())
+            c_check = self.coords if self.coords is not None and len(self.coords) == len(self.zatoms) else np.zeros((len(symbols), 3))
+            res_s = check_calculation_sanity(symbols, coords=c_check, charge=self.spn_charge.value(), multiplicity=self.spn_mult.value())
             n_elec = res_s.get("info", {}).get("n_electrons", 10)
             homo_idx = max(0, (n_elec // 2) - 1)
             lumo_idx = homo_idx + 1
