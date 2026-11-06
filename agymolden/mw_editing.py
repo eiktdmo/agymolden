@@ -2174,6 +2174,28 @@ class EditingMixin:
                 except Exception:
                     frag = None
 
+                # If not standard XYZ, check if clipboard contains a SMILES, InChI, or Chemical Name
+                if not frag and len(clip_text) < 500 and not clip_text.startswith("{") and not clip_text.startswith("<"):
+                    try:
+                        from .chem_identifiers import parse_smiles_or_inchi_to_3d
+                        s_syms, s_coords, s_bonds, s_bo = parse_smiles_or_inchi_to_3d(clip_text)
+                        if s_syms and len(s_coords) == len(s_syms):
+                            f_coords = np.array(s_coords, dtype=np.float64)
+                            anchor_c = f_coords[0] if len(f_coords) > 0 else np.zeros(3)
+                            rel_c = (f_coords - anchor_c).tolist()
+                            frag = {
+                                "name": f"Pasted ({clip_text[:20]})",
+                                "symbols": s_syms,
+                                "coords": rel_c,
+                                "bonds": s_bonds,
+                                "bond_orders": s_bo,
+                                "connect_idx": 0,
+                                "default_bond": estimate_bond_length(s_syms[0], "C"),
+                            }
+                            self.statusBar().showMessage(f"Converted '{clip_text}' from clipboard to 3D fragment ({len(s_syms)} atoms)!", 4000)
+                    except Exception:
+                        pass
+
         if not frag:
             self.statusBar().showMessage("Clipboard / fragment memory is empty. Select atoms and press Ctrl+C first.", 3500)
             return

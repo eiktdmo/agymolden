@@ -1774,6 +1774,31 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         dlg = ClusterScriptDialog(self, input_filename="calculation.inp")
         dlg.exec()
 
+    def _on_open_qc_doctor(self):
+        """Analyze calculation logs or output files with the AgyMolden QC Doctor."""
+        path = getattr(self, "_last_loaded_qm_log_path", None)
+        log_text = ""
+        if path and os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    log_text = f.read()
+            except Exception:
+                pass
+        elif hasattr(self, "_job_monitor_dlg") and self._job_monitor_dlg:
+            log_text = getattr(self._job_monitor_dlg, "raw_log_text", "")
+
+        if not log_text:
+            QtWidgets.QMessageBox.information(
+                self,
+                "QC Doctor",
+                "Please load or run a Quantum Chemistry calculation log (.out / .log) first.",
+            )
+            return
+
+        from .dialog_qc_doctor import QCDoctorDialog
+        dlg = QCDoctorDialog(self, log_text=log_text)
+        dlg.exec()
+
     def _on_open_workflow_pipeline_dialog(self):
         """Open Workflow Pipeline / Multi-Stage Recipe dialog."""
         from .calc_runner.dialog_pipeline import WorkflowPipelineDialog
@@ -1797,6 +1822,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
         commands = [
             # Calculations & Execution
+            CommandItem("AgyMolden QC Doctor (Crash Diagnostician)", "Calculate", "Ctrl+Alt+D", self._on_open_qc_doctor, "doctor diagnostic scf fix repair crash error"),
             CommandItem("Run ORCA Calculation", "Calculate", "Ctrl+R", self._on_quick_run_orca, "orca dft dft-d opt freq sp"),
             CommandItem("Open Universal Job Monitor & Convergence", "Calculate", "Ctrl+J", self._on_open_job_monitor, "monitor scf plot live logs"),
             CommandItem("HPC Batch Script Generator (SLURM / PBS)", "Calculate", "", self._on_open_cluster_script_generator, "cluster slurm pbs sge hpc submit"),
