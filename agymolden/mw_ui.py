@@ -1917,6 +1917,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_dock_ts.triggered.connect(self._on_open_reaction_path_dialog)
         menu_docks.addAction(act_dock_ts)
 
+        act_dock_hpc = QtGui.QAction("🖥️ HPC &Cluster Queue Dock", self)
+        act_dock_hpc.setToolTip("Dock or show the remote Slurm / HPC cluster job queue monitor")
+        act_dock_hpc.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_hpc_queue().show())
+        menu_docks.addAction(act_dock_hpc)
+
         menu_docks.addSeparator()
 
         act_float_all = QtGui.QAction("🖥️ Multi-Monitor: &Float All Panels", self)

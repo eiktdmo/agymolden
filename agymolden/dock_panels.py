@@ -152,6 +152,17 @@ class ReactionPathDock(WorkspaceDockWidget):
         return self.path_dlg.trajectory_preview
 
 
+class HpcQueueDock(WorkspaceDockWidget):
+    """Dockable panel hosting the remote HPC Cluster & Slurm queue monitor."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        super().__init__("🖥️ HPC Cluster Queue", parent, object_name="dock_hpc_queue")
+        from .calc_runner.hpc_queue import HpcQueueWidget
+
+        self.queue_widget = HpcQueueWidget(self)
+        self.setWidget(self.queue_widget)
+
+
 class WorkspaceDockManager:
     """Manages docks, menu actions, and layout persistence for MainWindow."""
 
@@ -203,6 +214,17 @@ class WorkspaceDockManager:
                 self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
             self.docks["python_console"] = dock
         return self.docks["python_console"] # type: ignore
+
+    def get_or_create_hpc_queue(self) -> HpcQueueDock:
+        if "hpc_queue" not in self.docks:
+            dock = HpcQueueDock(self.mw)
+            self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+            if "job_monitor" in self.docks:
+                self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
+            elif "output_viewer" in self.docks:
+                self.mw.tabifyDockWidget(self.docks["output_viewer"], dock)
+            self.docks["hpc_queue"] = dock
+        return self.docks["hpc_queue"] # type: ignore
 
     def open_dihedral_scan(
         self,
