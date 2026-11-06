@@ -613,9 +613,21 @@ class CalculationsMixin:
         self.viewer.update()
         if energy:
             self.statusBar().showMessage(f"Live Optimization Step: E = {energy:.8f} Hartree", 3000)
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                bus.job_step_received.emit(symbols, coords, float(energy or 0.0))
+        except (RuntimeError, AttributeError):
+            pass
 
     def _on_live_calc_completed(self, input_file: str):
         """Handle completion of live job: locate and open log / trajectory / molden / cube files."""
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                bus.job_completed.emit(input_file, True)
+        except (RuntimeError, AttributeError):
+            pass
         # Check if runner has a dedicated work_dir (e.g. RemoteSshRunner downloading to work_dir)
         job_mon = getattr(self, "_job_monitor_dlg", None)
         runner_work_dir = getattr(job_mon.runner, "work_dir", None) if job_mon and getattr(job_mon, "runner", None) else None

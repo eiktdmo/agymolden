@@ -153,6 +153,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Check for first-launch onboarding tour
         QtCore.QTimer.singleShot(1200, self._check_first_run_tour)
 
+    @property
+    def event_bus(self):
+        try:
+            from .events import get_event_bus
+            return get_event_bus()
+        except Exception:
+            return None
+
     def _auto_save_session(self):
         """Silently auto-save current molecule state and calculation history to a hidden project recovery file."""
         if not getattr(self, "zatoms", None):
@@ -352,6 +360,18 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         elif len(zatoms) == 0 and getattr(self, "symmetry_imposed", False):
             self.set_impose_symmetry(False)
 
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                if len(zatoms) > 0:
+                    bus.molecule_loaded.emit(
+                        symbols, self.coords, getattr(self, "current_file_path", "") or "Molecule"
+                    )
+                else:
+                    bus.molecule_cleared.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
     def _update_undo_redo_actions(self):
         can_undo = len(self.undo_stack) > 0
         can_redo = len(self.redo_stack) > 0
@@ -458,6 +478,18 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         elif len(zatoms) == 0 and getattr(self, "symmetry_imposed", False):
             self.set_impose_symmetry(False)
 
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                if len(zatoms) > 0:
+                    bus.molecule_loaded.emit(
+                        symbols, self.coords, getattr(self, "current_file_path", "") or "Molecule"
+                    )
+                else:
+                    bus.molecule_cleared.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
     def update_geometry_live(self):
         """Recompute 3D coordinates from zatoms and refresh viewport without camera reset."""
         local_coords = zmatrix_to_cartesian(self.zatoms)
@@ -492,6 +524,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.viewer.update_coords(self.coords, user_bonds=user_bonds)
         self._sync_raw_text()
         self._update_chemical_summary()
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                bus.geometry_changed.emit(self.coords)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _update_chemical_summary(self):
         """Update the permanent molecular formula and weight status in real time."""
@@ -1708,6 +1746,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         if hasattr(self, "_settings"):
             self._settings().setValue("color_theme", theme)
         self.viewer.update()
+        try:
+            bus = getattr(self, "event_bus", None)
+            if bus:
+                bus.theme_changed.emit(theme)
+        except (RuntimeError, AttributeError):
+            pass
 
     def apply_journal_preset(self, preset: str):
         """Apply publication-grade visual preset across viewer, theme actions, and status notification."""
