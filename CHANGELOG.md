@@ -4,6 +4,34 @@ All notable changes to **AgyMolden** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-06
+
+### Added
+- **QC Doctor™ Real Failure Diagnostic Corpus & 1-Click Auto-Fix & Relaunch (`agymolden/calc_runner/diagnostics.py`, `dialog_job_monitor.py`, `tests/test_qc_doctor_corpus.py`, `test_qc_doctor_autofix.py`)**:
+  - Expanded automated root-cause failure diagnostics across ORCA, Gaussian, Psi4, PySCF, and xTB (SCF non-convergence, trust-radius collapse, basis set linear dependency, Link 9999/502 errors).
+  - 1-Click `🩹 Auto-Fix & Relaunch` button in `JobMonitorDialog` that safely parses and injects recovery keywords directly into input decks and restarts the calculation immediately.
+- **AgyMolden Project Bundles (`.agyproj`) (`agymolden/project_bundle.py`, `mw_file_io.py`, `tests/test_project_bundle.py`)**:
+  - Full portable ZIP/JSON session persistence preserving 3D Cartesian coordinates, internal coordinates (Z-matrix), variables, calculation history, and viewer states.
+- **Searchable Command Palette (`Ctrl+K`) (`agymolden/dialog_command_palette.py`, `mw_ui.py`)**:
+  - Fuzzy-searchable overlay providing instant keyboard access to all calculation engines, analytical tools, builder modes, and export formats.
+- **Interactive Element Brush & Stamp HUD Ribbon (`agymolden/mw_ui.py`, `mw_editing.py`)**:
+  - Quick CPK-colored element buttons (**C**, **H**, **O**, **N**, **P**, **S**, **F**, **Cl**) and 1-click functional group / ring stamp menu (**-Phenyl**, **-Methyl**, **-OH**, **-NH2**, **-C=O**, **-NO2**, **-COOH**, **Water**).
+- **Live Empirical Molecular Formula & Weight HUD Pill (`agymolden/viewer.py`, `elements.py`)**:
+  - Translucent 3D viewport overlay displaying IUPAC Hill-system formula and exact molecular mass in real time during drawing.
+- **Pre-Flight Calculation Readiness Badge (`agymolden/mw_ui.py`, `main_window.py`)**:
+  - Reactive toolbar badge displaying calculation health (`🟢 Ready`, `⚪ Empty`, `⚠️ Clash`) with automatic nuclear clash detection (< 0.70 Å).
+- **Crystallographic CIF & Gaussian Cube Exporter (`agymolden/zmatrix.py`, `dialog_volumetric.py`, `tests/test_cif_and_cube_io.py`)**:
+  - Bidirectional CIF export projecting Cartesian coordinates to fractional lattice space via crystallographic metric tensor.
+  - Direct 1-click Gaussian `.cube` export for orbitals, total densities, and difference grids ($\Delta \rho = A - B$).
+- **Automated LaTeX Supporting Information (SI) Table Export (`agymolden/reproducibility.py`)**:
+  - Generates ACS/RSC publication-ready `\begin{table}` LaTeX snippets with energies, zero-point corrections, and coordinates.
+- **Session Auto-Save & Crash Recovery (`agymolden/main_window.py`)**:
+  - Background 60-second periodic heartbeat saving to `.agyproj` recovery file with startup restoration prompt after abnormal exits.
+- **Sequential Batch Calculation Queue (`agymolden/calc_runner/dialog_job_monitor.py`)**:
+  - Dedicated `📋 Batch Queue` tab in the job monitor to queue and sequentially execute multiple `.inp` decks across different engines.
+- **Opt-In Modern Impostor Shaders (`agymolden/viewer_meshes.py`, `viewer.py`, `dialog_preferences.py`)**:
+  - ChimeraX/Avogadro 2 style dual-source Blinn-Phong glossy shading with specular and Fresnel rim highlights, isolated safely behind a preferences toggle.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added

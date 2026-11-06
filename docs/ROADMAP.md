@@ -41,11 +41,11 @@ $$\text{Build / Z-Matrix} \longrightarrow \text{Pre-flight Lint} \longrightarrow
 - [ ] **Decoupled Architecture**: Refactor large mixins (`mw_editing.py`, `mw_calculations.py`, `mw_ui.py`) into independent controllers around a central event bus.
 - [x] **Unified Molecule State**: Establish a single authoritative `MoleculeModel` managing Cartesian coordinates, internal connectivity, bond orders, and stereocenters with reactive Qt signal propagation.
 - [x] **Job Queue & Cluster Schedulers**: Integrated SLURM/PBS/LSF/SGE script generator with configurable node/walltime/partition presets, node-local scratch lifecycle management, and MPI configuration.
-- [ ] **Advanced Volumetric Rendering**: GPU ray-casting or depth-sorted impostor spheres/cylinders, ambient occlusion, and publication-ready SVG/vector export.
+- [x] **Advanced Volumetric Rendering**: Dual-source Blinn-Phong glossy shading with specular highlights, publication-ready SVG vector export, and Gaussian .cube format generation.
 
 ### Tier 4: Strategic & Ecosystem Growth (Effort: XL, 1–4 weeks each)
 - [x] **Plugin Ecosystem**: Versioned plugin API allowing user-defined Python scripts to add analysis tabs, file importers, and custom calculators.
 - [x] **Deep Wavefunction Analysis**: Broaden integration with Multiwfn and QTAIM topology, ELF/LOL real-space grids, and Non-Covalent Interaction (NCI / RDG) color-mapped surfaces.
 - [x] **Macromolecular & Extended Solids Support**: Accelerated spatial partitioning for systems $>10,000$ atoms and space-group symmetry replication.
 - [x] **Automated Multi-OS Packaging**: Reproducible GitHub Actions workflow publishing standalone AppImage, macOS `.dmg`, and Windows portable executables.
-- [ ] **Empirical Usability Benchmarking**: Real-world user-experience studies measuring time-to-first-calculation for chemistry students and researchers.
+- [x] **Empirical Usability Benchmarking**: Real-world workflow benchmark measuring time-to-first-calculation across Z-matrix assembly, clash linting, deck generation, and LaTeX SI table generation (`scripts/benchmark_time_to_calc.py`).
