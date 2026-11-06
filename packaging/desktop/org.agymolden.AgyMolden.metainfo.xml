@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.agymolden.AgyMolden</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>AgyMolden</name>
+  <summary>Molden-inspired 3D Z-matrix molecular builder &amp; quantum chemistry workflow cockpit</summary>
+  <description>
+    <p>
+      AgyMolden is a high-performance, modern native Linux molecular modeling suite and quantum chemistry workbench.
+      It merges classic Molden-style internal coordinate editing (Z-matrices) with contemporary interactive 3D mechanics.
+    </p>
+    <p>Key Capabilities:</p>
+    <ul>
+      <li>Interactive 3D OpenGL Viewport with real-time Z-Matrix synchronization and elastic bond dragging.</li>
+      <li>Universal multi-engine quantum chemistry execution: ORCA, Gaussian, Psi4, PySCF, and xTB.</li>
+      <li>QC Doctor™ Automated Error Diagnostics: Instant pattern matching and 1-click automatic remediation for SCF convergence and trust-radius collapses.</li>
+      <li>Real-Space Wavefunction &amp; Surface Analysis: 3D MOs, Electrostatic Potential (ESP), NCI/RDG, ELF, and 2D planar contour slices.</li>
+      <li>Multi-format interoperability: XYZ, PDB, SDF/MOL, Tripos Mol2, CIF, Gaussian .fchk/.cube, Molden, and compressed .agyproj session bundles.</li>
+      <li>Publication Supporting Information (SI) Generator: 1-click LaTeX table and coordinate export.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.agymolden.AgyMolden.desktop</launchable>
+  <url type="homepage">https://github.com/eiktdmo/newagy</url>
+  <url type="bugtracker">https://github.com/eiktdmo/newagy/issues</url>
+  <url type="help">https://github.com/eiktdmo/newagy/blob/main/docs/USER_MANUAL.md</url>
+  <provides>
+    <binary>agymolden</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.1.0" date="2026-11-06">
+      <description>
+        <p>AgyMolden v1.1.0 release introduces:</p>
+        <ul>
+          <li>Searchable Command Palette (Ctrl+K).</li>
+          <li>QC Doctor™ 1-click auto-fix for ORCA, Gaussian, and Psi4.</li>
+          <li>Crystallographic CIF and Tripos Mol2 format support.</li>
+          <li>Native Gaussian .fchk formatted checkpoint reader.</li>
+          <li>Portable session bundles (.agyproj) and 60s crash-recovery autosave.</li>
+          <li>Publication LaTeX Supporting Information tables.</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

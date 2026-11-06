@@ -1,0 +1,32 @@
+app-id: org.agymolden.AgyMolden
+runtime: org.kde.Platform
+runtime-version: '6.6'
+sdk: org.kde.Sdk
+command: agymolden
+
+finish-args:
+  # Display and graphics
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # File access to read molecular inputs and write results
+  - --filesystem=host
+  # Network access for remote SSH calculations (if used)
+  - --share=network
+
+modules:
+  - name: python3-dependencies
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} "cclib>=1.7" "scikit-image>=0.19"
+
+  - name: agymolden
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} .
+      - install -Dm644 packaging/desktop/org.agymolden.AgyMolden.desktop ${FLATPAK_DEST}/share/applications/org.agymolden.AgyMolden.desktop
+      - install -Dm644 packaging/desktop/org.agymolden.AgyMolden.metainfo.xml ${FLATPAK_DEST}/share/metainfo/org.agymolden.AgyMolden.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../

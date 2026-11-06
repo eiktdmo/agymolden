@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=AgyMolden
+GenericName=Molecular Modeling & Quantum Chemistry Workbench
+Comment=Molden-inspired 3D Z-matrix molecular builder, QC Doctor™ diagnostic engine, and multi-package QM workflow cockpit
+Exec=agymolden %F
+Icon=org.agymolden.AgyMolden
+Terminal=false
+Categories=Science;Chemistry;3DGraphics;
+MimeType=chemical/x-xyz;chemical/x-pdb;chemical/x-mol2;chemical/x-cif;chemical/x-gaussian-input;chemical/x-gaussian-checkpoint;chemical/x-molden;application/x-agyproj;
+Keywords=chemistry;molden;zmatrix;orca;gaussian;pyscf;psi4;orbitals;esp;molecular;modeling;
+StartupNotify=true
+StartupWMClass=agymolden
