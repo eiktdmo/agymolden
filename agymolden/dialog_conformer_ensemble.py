@@ -359,6 +359,32 @@ class ConformerEnsembleDialog(QtWidgets.QDialog):
         self.lbl_stat_pop99.setStyleSheet("color: #a7f3d0; font-weight: bold;")
         m_layout.addWidget(self.lbl_stat_pop99, 2, 3)
 
+        m_layout.addWidget(QtWidgets.QLabel("S_conf (Entropy):"), 3, 0)
+        self.lbl_stat_sconf = QtWidgets.QLabel("—")
+        self.lbl_stat_sconf.setStyleSheet("color: #f59e0b; font-family: monospace; font-weight: bold;")
+        m_layout.addWidget(self.lbl_stat_sconf, 3, 1)
+
+        m_layout.addWidget(QtWidgets.QLabel("-T·ΔS_conf:"), 3, 2)
+        self.lbl_stat_tsconf = QtWidgets.QLabel("—")
+        self.lbl_stat_tsconf.setStyleSheet("color: #ec4899; font-family: monospace; font-weight: bold;")
+        m_layout.addWidget(self.lbl_stat_tsconf, 3, 3)
+
+        m_layout.addWidget(QtWidgets.QLabel("States (N_eff):"), 4, 0)
+        self.lbl_stat_neff = QtWidgets.QLabel("—")
+        self.lbl_stat_neff.setStyleSheet("color: #8b5cf6; font-weight: bold;")
+        m_layout.addWidget(self.lbl_stat_neff, 4, 1)
+
+        m_layout.addWidget(QtWidgets.QLabel("Ensemble ⟨R_g⟩:"), 4, 2)
+        self.lbl_stat_rg = QtWidgets.QLabel("—")
+        self.lbl_stat_rg.setStyleSheet("color: #06b6d4; font-family: monospace; font-weight: bold;")
+        m_layout.addWidget(self.lbl_stat_rg, 4, 3)
+
+        self.btn_copy_ensemble_si = QtWidgets.QPushButton("📋 Copy SI Summary")
+        self.btn_copy_ensemble_si.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; font-size: 11px; padding: 2px 6px;")
+        self.btn_copy_ensemble_si.setToolTip("Copy publication-ready Boltzmann ensemble statistics for Supporting Information")
+        self.btn_copy_ensemble_si.clicked.connect(self._on_copy_ensemble_si)
+        m_layout.addWidget(self.btn_copy_ensemble_si, 5, 0, 1, 4)
+
         rc_layout.addWidget(self.grp_metrics)
 
         # 3D Viewport Controls & Adoption
@@ -604,11 +630,32 @@ class ConformerEnsembleDialog(QtWidgets.QDialog):
             k99 = next((i + 1 for i, c in enumerate(self.all_conformers) if c.cumulative_pop >= 99.0), n_total)
             self.lbl_stat_pop90.setText(f"{k90} conformer(s)")
             self.lbl_stat_pop99.setText(f"{k99} conformer(s)")
+
+            from .ensemble_averager import calculate_ensemble_statistics
+            temp_k = float(self.spin_temp.value())
+            self._last_ensemble_stats = calculate_ensemble_statistics(self.all_conformers, temp_k)
+
+            self.lbl_stat_sconf.setText(f"{self._last_ensemble_stats['s_conf_cal']:.2f} cal/(mol·K)")
+            self.lbl_stat_tsconf.setText(f"{self._last_ensemble_stats['minus_t_s_kcal']:.3f} kcal/mol")
+            self.lbl_stat_neff.setText(f"{self._last_ensemble_stats['n_eff']:.2f}")
+            self.lbl_stat_rg.setText(f"{self._last_ensemble_stats['avg_rg']:.3f} Å")
         else:
             self.lbl_stat_emin.setText("—")
             self.lbl_stat_span.setText("0.00 kcal/mol")
             self.lbl_stat_pop90.setText("—")
             self.lbl_stat_pop99.setText("—")
+            self.lbl_stat_sconf.setText("—")
+            self.lbl_stat_tsconf.setText("—")
+            self.lbl_stat_neff.setText("—")
+            self.lbl_stat_rg.setText("—")
+            self._last_ensemble_stats = None
+
+    def _on_copy_ensemble_si(self):
+        """Copy formatted Boltzmann conformational statistics to system clipboard for journal SI."""
+        if getattr(self, "_last_ensemble_stats", None):
+            txt = self._last_ensemble_stats["summary_text"]
+            QtWidgets.QApplication.clipboard().setText(txt)
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied Boltzmann Ensemble SI Summary to clipboard!", self)
 
     def _on_table_selection_changed(self):
         row = self.table_conformers.currentRow()
