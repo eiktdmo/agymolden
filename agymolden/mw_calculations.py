@@ -708,122 +708,18 @@ class CalculationsMixin:
         selected_symbol: Optional[str] = None,
     ):
         """Populate both the Symmetry tab and 3D viewport symmetry combo boxes with Higher / Detected / Lower groups."""
-        self._available_symmetries = list(avail)
-        detected_sym = next((sym for sym, _, tag in avail if tag == "detected"), avail[0][0] if avail else "C1")
-        target_sym = selected_symbol or detected_sym
-
-        role_labels = {
-            "higher": "⬆ Higher (approx. supergroup)",
-            "detected": "★ Detected (exact)",
-            "lower": "⬇ Lower (subgroup)",
-        }
-
-        for combo_attr in ("combo_sym_group", "combo_view_sym_group"):
-            combo = getattr(self, combo_attr, None)
-            if combo is None:
-                continue
-            combo.blockSignals(True)
-            combo.clear()
-            sel_idx = 0
-            for idx, (sym, res, tag) in enumerate(avail):
-                role_txt = role_labels.get(tag, tag)
-                if combo_attr == "combo_view_sym_group":
-                    short_tag = "⬆ Higher" if tag == "higher" else ("★ Detected" if tag == "detected" else "⬇ Lower")
-                    item_txt = f"{sym} (Ord {res.order}) [{short_tag}]"
-                else:
-                    item_txt = f"{sym}  (Order {res.order})  —  {role_txt}"
-                combo.addItem(item_txt, sym)
-                if sym == target_sym:
-                    sel_idx = idx
-            if 0 <= sel_idx < combo.count():
-                combo.setCurrentIndex(sel_idx)
-            combo.blockSignals(False)
-
-        self._update_sym_step_buttons()
+        from .controllers import SymmetryController
+        SymmetryController(self).populate_available_symmetries(avail, selected_symbol=selected_symbol)
 
     def _update_sym_step_buttons(self):
         """Enable or disable the Higher / Lower step buttons based on current index in _available_symmetries."""
-        avail = getattr(self, "_available_symmetries", [])
-        combo = getattr(self, "combo_sym_group", None)
-        if not avail or combo is None or combo.count() == 0:
-            if hasattr(self, "btn_sym_higher"):
-                self.btn_sym_higher.setEnabled(False)
-            if hasattr(self, "btn_sym_lower"):
-                self.btn_sym_lower.setEnabled(False)
-            return
-        idx = combo.currentIndex()
-        # avail is sorted from highest order (index 0) to lowest order C1 (index len-1)
-        if hasattr(self, "btn_sym_higher"):
-            self.btn_sym_higher.setEnabled(idx > 0)
-        if hasattr(self, "btn_sym_lower"):
-            self.btn_sym_lower.setEnabled(0 <= idx < len(avail) - 1)
+        from .controllers import SymmetryController
+        SymmetryController(self).update_sym_step_buttons()
 
     def select_symmetry_group(self, group_symbol: str, enforce_if_higher: bool = True) -> Optional[PointGroupResult]:
-        """
-        Programmatically or interactively select a higher, detected, or lower point group symmetry `group_symbol`.
-        - Updates `_current_sym_res` and the Symmetry tab operations table.
-        - If `group_symbol` is a higher (approximate supergroup) symmetry and `enforce_if_higher` is True,
-          projects the coordinates into that higher point group so the higher symmetry holds exactly.
-        - If `symmetry_imposed` is enabled, updates `imposed_sym_res` to the selected group.
-        """
-        if len(self.zatoms) == 0:
-            return None
-        tol = self.spin_sym_tol.value() if hasattr(self, "spin_sym_tol") else 0.15
-        symbols = [a.symbol for a in self.zatoms]
-        avail = getattr(self, "_available_symmetries", None)
-        if not avail:
-            avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-            self._available_symmetries = avail
-
-        chosen_entry = next((item for item in avail if item[0] == group_symbol), None)
-        if chosen_entry is None:
-            # Recompute available symmetries in case geometry changed
-            avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-            self._available_symmetries = avail
-            chosen_entry = next((item for item in avail if item[0] == group_symbol), None)
-        if chosen_entry is None:
-            return getattr(self, "_current_sym_res", None)
-
-        sym_name, chosen_res, role_tag = chosen_entry
-
-        # If a higher (supergroup) symmetry was chosen and enforce_if_higher is requested,
-        # symmetrize coordinates into that higher group's exact representation subspace!
-        if role_tag == "higher" and enforce_if_higher and chosen_res.order > 1:
-            self._push_undo_state()
-            user_bonds = self._current_explicit_bonds()
-            old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-            sym_coords, enforced_res = enforce_point_group_symmetry(
-                symbols, self.coords, target_group=sym_name, tolerance=tol, reference_result=chosen_res
-            )
-            new_zatoms = cartesian_to_zmatrix(
-                symbols, sym_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
-            )
-            prev_imposed = getattr(self, "symmetry_imposed", False)
-            self.set_molecule_from_zatoms(new_zatoms, exact_coords=sym_coords)
-            if old_bo:
-                self.viewer.bond_orders = old_bo
-                self.viewer.update()
-            avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-            chosen_entry = next((item for item in avail if item[0] == sym_name), (sym_name, enforced_res, "detected"))
-            sym_name, chosen_res, role_tag = chosen_entry
-            if prev_imposed:
-                self.symmetry_imposed = True
-
-        self._current_sym_res = chosen_res
-        self._populate_available_symmetries(avail, selected_symbol=sym_name)
-        self._refresh_symmetry_ui(chosen_res, role_tag=role_tag)
-
-        if getattr(self, "symmetry_imposed", False):
-            self.set_impose_symmetry(True, chosen_res)
-        else:
-            # Automatically enable Impose Symmetry when user selects a specific symmetry group
-            self.set_impose_symmetry(True, chosen_res)
-            orbits = get_symmetry_orbits(symbols, self.coords, chosen_res)
-            self.statusBar().showMessage(
-                f"Selected & Imposed {sym_name} symmetry (Order {chosen_res.order}, {role_tag}, {len(orbits)} atom orbit(s)). Edits replicate across equivalent atoms.",
-                5000,
-            )
-        return chosen_res
+        """Programmatically or interactively select a higher, detected, or lower point group symmetry group_symbol."""
+        from .controllers import SymmetryController
+        return SymmetryController(self).select_symmetry_group(group_symbol, enforce_if_higher=enforce_if_higher)
 
     def _on_sym_group_combo_changed(self, idx: int):
         combo = getattr(self, "combo_sym_group", None)
@@ -865,125 +761,13 @@ class CalculationsMixin:
 
     def _refresh_symmetry_ui(self, res: PointGroupResult, role_tag: Optional[str] = None):
         """Populate symmetry labels and operations table from PointGroupResult without switching tabs."""
-        self.btn_sym_align.setEnabled(True)
-        self.btn_sym_enforce.setEnabled(True)
-        self.btn_sym_matrices.setEnabled(True)
-        self.btn_calc_reps.setEnabled(True)
-
-        avail = getattr(self, "_available_symmetries", [])
-        if role_tag is None and avail:
-            role_tag = next((tag for sym, _, tag in avail if sym == res.symbol), "detected")
-
-        role_badge = ""
-        if role_tag == "higher":
-            role_badge = " [Higher / Approx. Supergroup — click 'Enforce Symmetry' to snap]"
-        elif role_tag == "lower":
-            detected_sym = next((sym for sym, _, tag in avail if tag == "detected"), "")
-            role_badge = f" [Lower Subgroup of {detected_sym}]" if detected_sym else " [Lower Subgroup]"
-        elif role_tag == "detected":
-            role_badge = " [Detected]"
-
-        self.lbl_sym_group.setText(f"Point Group: {res.symbol}{role_badge}")
-        symbols = [a.symbol for a in self.zatoms]
-        orbits = get_symmetry_orbits(symbols, self.coords, res) if len(symbols) == len(self.coords) else []
-        orbit_summary = ", ".join(
-            f"{{{', '.join(f'{symbols[i]}{i+1}' for i in orb)}}}" for orb in orbits
-        ) if len(orbits) <= 12 else f"{len(orbits)} equivalence classes"
-
-        details_lines = [
-            f"Schoenflies Group: <b>{res.symbol}</b> (Group Order: {res.order})",
-            f"Inversion Center (i): {'Present' if res.has_inversion else 'Absent'}",
-            f"Horizontal Mirror Plane (σh): {'Present' if res.horizontal_planes_count > 0 else 'None'}",
-            f"Vertical/Dihedral Planes (σv/σd): {res.vertical_planes_count}",
-        ]
-        if orbit_summary:
-            details_lines.append(f"Symmetry Orbits ({len(orbits)}): <span style='color:#38bdf8;'>{orbit_summary}</span>")
-        if res.principal_axis is not None:
-            details_lines.append(
-                f"Principal Axis: [{res.principal_axis[0]:.3f}, {res.principal_axis[1]:.3f}, {res.principal_axis[2]:.3f}]"
-            )
-        self.lbl_sym_details.setText("<br>".join(details_lines))
-
-        prev_row = self.table_symmetry_ops.currentRow()
-        self.table_symmetry_ops.setRowCount(res.order)
-        for idx, op in enumerate(res.operations):
-            it_num = QtWidgets.QTableWidgetItem(str(idx + 1))
-            it_num.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            it_num.setForeground(QtGui.QBrush(QtGui.QColor("#a78bfa")))
-
-            it_op = QtWidgets.QTableWidgetItem(op.label)
-            it_op.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            it_op.setForeground(QtGui.QBrush(QtGui.QColor("#38bdf8")))
-
-            type_desc = op.op_type
-            if op.axis is not None:
-                ax = op.axis
-                type_desc += f" along [{ax[0]:.2f}, {ax[1]:.2f}, {ax[2]:.2f}]"
-            it_desc = QtWidgets.QTableWidgetItem(type_desc)
-
-            self.table_symmetry_ops.setItem(idx, 0, it_num)
-            self.table_symmetry_ops.setItem(idx, 1, it_op)
-            self.table_symmetry_ops.setItem(idx, 2, it_desc)
-
-        if res.order > 0:
-            self.table_symmetry_ops.selectRow(prev_row if 0 <= prev_row < res.order else 0)
-        self._update_sym_step_buttons()
+        from .controllers import SymmetryController
+        SymmetryController(self).refresh_symmetry_ui(res, role_tag=role_tag)
 
     def _on_detect_symmetry(self, checked_or_switch=True, *, switch_tab: bool = True, preferred_symbol: Optional[str] = None):
         """Analyze molecular 3D coordinates, discover higher/detected/lower symmetries, and update UI."""
-        # Note: QPushButton.clicked / QToolButton.clicked / QAction.triggered pass `checked: bool = False`
-        # as the first positional argument for non-checkable buttons!
-        if switch_tab is True and checked_or_switch is False:
-            # Determine if caller explicitly passed switch_tab=False positionally or if Qt signal passed checked=False:
-            # Callers wanting silent refresh pass keyword `switch_tab=False`.
-            pass
-        if len(self.zatoms) == 0:
-            if switch_tab:
-                QtWidgets.QMessageBox.information(
-                    self, "Point Group Symmetry", "Please add or load a molecule to analyze symmetry."
-                )
-            return
-
-        tol = self.spin_sym_tol.value()
-        if switch_tab:
-            self.statusBar().showMessage(f"Detecting point group symmetry (tol={tol:.2f} Å)...", 3000)
-
-        if switch_tab:
-            QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.CursorShape.WaitCursor))
-        try:
-            symbols = [a.symbol for a in self.zatoms]
-            avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-            detected_entry = next((item for item in avail if item[2] == "detected"), avail[0])
-            chosen_entry = detected_entry
-            if preferred_symbol:
-                chosen_entry = next((item for item in avail if item[0] == preferred_symbol), detected_entry)
-
-            res = chosen_entry[1]
-            role_tag = chosen_entry[2]
-            self._current_sym_res = res
-            self._populate_available_symmetries(avail, selected_symbol=chosen_entry[0])
-            self._refresh_symmetry_ui(res, role_tag=role_tag)
-
-            if switch_tab:
-                # Switch to Symmetry tab
-                idx = self.tabs.indexOf(getattr(self, "tab_symmetry", None))
-                if idx >= 0:
-                    self.tabs.setCurrentIndex(idx)
-                else:
-                    self.tabs.setCurrentIndex(4)
-                n_higher = sum(1 for _, _, t in avail if t == "higher")
-                n_lower = sum(1 for _, _, t in avail if t == "lower")
-                self.statusBar().showMessage(
-                    f"Detected: {detected_entry[0]} (Order {detected_entry[1].order}) | "
-                    f"Available: {n_higher} higher, {n_lower} lower subgroup(s)",
-                    5500,
-                )
-        except Exception as e:
-            if switch_tab:
-                dialog_service.error(self, "Symmetry Detection Error", f"Failed to detect symmetry:\n{e}", exc=e)
-        finally:
-            if switch_tab:
-                QtWidgets.QApplication.restoreOverrideCursor()
+        from .controllers import SymmetryController
+        SymmetryController(self).detect_symmetry(checked_or_switch, switch_tab=switch_tab, preferred_symbol=preferred_symbol)
 
     def _on_sym_slider_tol_changed(self, val: int):
         tol = val / 100.0
@@ -1004,142 +788,22 @@ class CalculationsMixin:
 
     def _on_align_symmetry(self):
         """Align molecule according to highest C_n (along Z) and principal plane (in XZ or XY)."""
-        if len(self.zatoms) == 0:
-            return
-
-        res = getattr(self, "_current_sym_res", None)
-        symbols = [a.symbol for a in self.zatoms]
-        self._push_undo_state()
-        user_bonds = self._current_explicit_bonds()
-        old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-        aligned_coords, _ = align_molecule_to_symmetry(symbols, self.coords, res)
-
-        # Update Z-matrix and keep exact aligned Cartesian coordinates
-        new_zatoms = cartesian_to_zmatrix(
-            symbols, aligned_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
-        )
-        self.set_molecule_from_zatoms(new_zatoms, exact_coords=aligned_coords)
-        if old_bo:
-            self.viewer.bond_orders = old_bo
-        self.viewer.align_camera_standard()
-
-        # Re-detect symmetry with aligned orientation
-        self._on_detect_symmetry()
-        self.statusBar().showMessage(
-            f"Aligned geometry to standard symmetry orientation (highest C_n along Z, displayed in screen plane).", 5000
-        )
+        from .controllers import SymmetryController
+        SymmetryController(self).align_symmetry()
 
     def _on_enforce_symmetry(self):
         """Project coordinates into exact point group subspace if tolerance is not fulfilled."""
-        if len(self.zatoms) == 0:
-            return
-
-        res = getattr(self, "_current_sym_res", None)
-        target = res.symbol if res else None
-        tol = self.spin_sym_tol.value()
-
-        self._push_undo_state()
-        symbols = [a.symbol for a in self.zatoms]
-        user_bonds = self._current_explicit_bonds()
-        old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-        sym_coords, new_res = enforce_point_group_symmetry(
-            symbols, self.coords, target_group=target, tolerance=tol, reference_result=res
-        )
-
-        # Update Z-matrix and keep exact symmetrized coordinates
-        new_zatoms = cartesian_to_zmatrix(
-            symbols, sym_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
-        )
-        self.set_molecule_from_zatoms(new_zatoms, exact_coords=sym_coords)
-        if old_bo:
-            self.viewer.bond_orders = old_bo
-            self.viewer.update()
-
-        # Re-detect symmetry with symmetrized geometry while keeping user's chosen target group
-        self._on_detect_symmetry(switch_tab=False, preferred_symbol=target or new_res.symbol)
-        self.set_impose_symmetry(True, self._current_sym_res)
-        self.statusBar().showMessage(
-            f"Enforced & Imposed {new_res.symbol} symmetry (Order {new_res.order}). Subsequent edits will preserve {new_res.symbol} symmetry!", 5500
-        )
+        from .controllers import SymmetryController
+        SymmetryController(self).enforce_symmetry()
 
     def _on_toggle_impose_symmetry(self, checked: bool):
         """Toggle GaussView-style Impose / Constrain Symmetry mode."""
         self.set_impose_symmetry(checked)
 
     def set_impose_symmetry(self, enabled: bool, sym_res: Optional[PointGroupResult] = None):
-        """
-        Enable or disable symmetry-constrained editing (Impose Symmetry).
-        When enabled, automatically detects the current point group (if not provided)
-        and locks its symmetry operations so subsequent structural edits (replacing atoms,
-        attaching ligands like CO, modifying bonds) replicate across all symmetry-equivalent atoms.
-        """
-        if enabled and len(self.zatoms) > 0:
-            tol = self.spin_sym_tol.value() if hasattr(self, "spin_sym_tol") else 0.15
-            symbols = [a.symbol for a in self.zatoms]
-            avail = getattr(self, "_available_symmetries", None)
-            if not avail:
-                avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-                self._available_symmetries = avail
-            if sym_res is None:
-                sym_res = getattr(self, "_current_sym_res", None)
-                if sym_res is None:
-                    detected_entry = next((item for item in avail if item[2] == "detected"), avail[0])
-                    sym_res = detected_entry[1]
-            # Check if sym_res is a higher (approximate supergroup) symmetry: if so, snap coordinates to it!
-            matching_entry = next((item for item in avail if item[0] == sym_res.symbol), None)
-            if matching_entry is not None and matching_entry[2] == "higher" and sym_res.order > 1:
-                user_bonds = self._current_explicit_bonds()
-                old_bo = dict(getattr(self.viewer, "bond_orders", {}))
-                sym_coords, sym_res = enforce_point_group_symmetry(
-                    symbols, self.coords, target_group=sym_res.symbol, tolerance=tol, reference_result=sym_res
-                )
-                new_zatoms = cartesian_to_zmatrix(
-                    symbols, sym_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
-                )
-                self.symmetry_imposed = False  # avoid recursive re-detection during set_molecule_from_zatoms
-                self.set_molecule_from_zatoms(new_zatoms, exact_coords=sym_coords)
-                if old_bo:
-                    self.viewer.bond_orders = old_bo
-                    self.viewer.update()
-                avail = find_available_symmetries(symbols, self.coords, base_tolerance=tol)
-                self._available_symmetries = avail
-
-            self._current_sym_res = sym_res
-            self.imposed_sym_res = sym_res
-            self.symmetry_imposed = True
-            self._populate_available_symmetries(avail, selected_symbol=sym_res.symbol)
-            self._refresh_symmetry_ui(sym_res)
-        else:
-            self.symmetry_imposed = False
-            self.imposed_sym_res = None
-
-        grp_label = self.imposed_sym_res.symbol if (self.symmetry_imposed and self.imposed_sym_res) else ""
-        if hasattr(self, "chk_impose_symmetry"):
-            self.chk_impose_symmetry.blockSignals(True)
-            self.chk_impose_symmetry.setChecked(self.symmetry_imposed)
-            self.chk_impose_symmetry.setText(
-                f"🔒 Impose Symmetry ({grp_label})" if grp_label else "🔒 Impose Symmetry"
-            )
-            self.chk_impose_symmetry.blockSignals(False)
-
-        if hasattr(self, "btn_impose_symmetry"):
-            self.btn_impose_symmetry.blockSignals(True)
-            self.btn_impose_symmetry.setChecked(self.symmetry_imposed)
-            if self.symmetry_imposed and grp_label:
-                self.btn_impose_symmetry.setText(f"🔒 Impose Symmetry: {grp_label}")
-                self.btn_impose_symmetry.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px;")
-            else:
-                self.btn_impose_symmetry.setText("🔒 Impose Symmetry: OFF")
-                self.btn_impose_symmetry.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold; padding: 5px;")
-            self.btn_impose_symmetry.blockSignals(False)
-
-        if self.symmetry_imposed and self.imposed_sym_res is not None:
-            self.statusBar().showMessage(
-                f"Imposed {self.imposed_sym_res.symbol} symmetry (Order {self.imposed_sym_res.order}): edits will replicate across symmetry-equivalent atoms.",
-                5000,
-            )
-        elif not enabled:
-            self.statusBar().showMessage("Symmetry constraint (Impose Symmetry) turned OFF.", 3500)
+        """Enable or disable symmetry-constrained editing (Impose Symmetry)."""
+        from .controllers import SymmetryController
+        SymmetryController(self).set_impose_symmetry(enabled, sym_res=sym_res)
 
     def _on_show_symmetry_matrices(self):
         """Produce and display 3x3 symmetry operation matrices with interactive selector and view-all capability."""
