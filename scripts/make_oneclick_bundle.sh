@@ -62,4 +62,11 @@ echo "==> Packaging AgyMolden_OneClick_Bundle.zip..."
 rm -f AgyMolden_OneClick_Bundle.zip
 (cd dist && zip -r ../AgyMolden_OneClick_Bundle.zip AgyMolden_OneClick_Bundle)
 
-echo "==> Successfully created AgyMolden_OneClick_Bundle.zip with version ${VERSION}!"
+# If parent Desktop directory exists, keep its zip and unzipped bundle synchronized
+if [ -d "/home/andres/Desktop" ]; then
+    cp -f AgyMolden_OneClick_Bundle.zip /home/andres/Desktop/AgyMolden_OneClick_Bundle.zip
+    unzip -qo AgyMolden_OneClick_Bundle.zip -d /home/andres/Desktop/
+    rm -f /home/andres/Desktop/AgyMolden_OneClick_Bundle/agymolden-1.0.0-py3-none-any.whl 2>/dev/null || true
+fi
+
+echo "==> Successfully created and synced AgyMolden_OneClick_Bundle.zip with version ${VERSION}!"
