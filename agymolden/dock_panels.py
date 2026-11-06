@@ -112,6 +112,17 @@ class DihedralScanDock(WorkspaceDockWidget):
         return self.scan_dlg.conformer_selected
 
 
+class PythonConsoleDock(WorkspaceDockWidget):
+    """Dockable panel hosting the interactive Python chemistry console."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, main_window: Optional[QtWidgets.QMainWindow] = None):
+        super().__init__("🐍 Python Console", parent, object_name="dock_python_console")
+        from .dock_console import PythonConsoleWidget
+
+        self.console_widget = PythonConsoleWidget(self, main_window=main_window)
+        self.setWidget(self.console_widget)
+
+
 class WorkspaceDockManager:
     """Manages docks, menu actions, and layout persistence for MainWindow."""
 
@@ -152,6 +163,17 @@ class WorkspaceDockManager:
         elif file_path:
             self.docks["output_viewer"].load_file(file_path) # type: ignore
         return self.docks["output_viewer"] # type: ignore
+
+    def get_or_create_console(self) -> PythonConsoleDock:
+        if "python_console" not in self.docks:
+            dock = PythonConsoleDock(self.mw, main_window=self.mw)
+            self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+            if "output_viewer" in self.docks:
+                self.mw.tabifyDockWidget(self.docks["output_viewer"], dock)
+            elif "job_monitor" in self.docks:
+                self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
+            self.docks["python_console"] = dock
+        return self.docks["python_console"] # type: ignore
 
     def open_dihedral_scan(
         self,

@@ -1906,6 +1906,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_dock_log.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_output_viewer().show())
         menu_docks.addAction(act_dock_log)
 
+        act_dock_console = QtGui.QAction("🐍 Python &Chemistry Console Dock", self)
+        act_dock_console.setToolTip("Dock or show the interactive Python scripting console (Alt+Shift+P)")
+        act_dock_console.setShortcut("Alt+Shift+P")
+        act_dock_console.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_console().show())
+        menu_docks.addAction(act_dock_console)
+
         menu_docks.addSeparator()
 
         act_float_all = QtGui.QAction("🖥️ Multi-Monitor: &Float All Panels", self)
