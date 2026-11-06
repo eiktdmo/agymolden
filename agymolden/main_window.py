@@ -1752,6 +1752,23 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         dlg = ClusterScriptDialog(self, input_filename="calculation.inp")
         dlg.exec()
 
+    def _on_open_workflow_pipeline_dialog(self):
+        """Open Workflow Pipeline / Multi-Stage Recipe dialog."""
+        from .calc_runner.dialog_pipeline import WorkflowPipelineDialog
+        dlg = WorkflowPipelineDialog(
+            parent=self,
+            input_dir=os.getcwd(),
+        )
+        dlg.exec()
+
+    def _on_align_principal_axes(self):
+        """Align molecule COM to origin and rotate onto principal inertial axes."""
+        from .builtin_plugins.align_principal_axes import PrincipalAxesAlignerPlugin
+        from .plugin_api import PluginContext
+        plugin = PrincipalAxesAlignerPlugin()
+        context = PluginContext(self)
+        plugin.run(context)
+
     def _on_open_command_palette(self):
         """Open modern searchable Command Palette (Ctrl+K)."""
         from .dialog_command_palette import CommandPaletteDialog, CommandItem
@@ -1764,22 +1781,22 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             CommandItem("Generate Quantum Chemistry Input Deck", "Calculate", "Ctrl+G", self._on_open_qm_dialog, "input deck orca gaussian pyscf psi4"),
             CommandItem("Optimize Geometry (Force Field / xTB)", "Calculate", "Ctrl+Shift+O", self._on_optimize_geometry, "minimize uff mmff xtb relax"),
             CommandItem("Workflow Pipeline / Multi-Stage Recipe", "Calculate", "", self._on_open_workflow_pipeline_dialog, "pipeline recipe sequence multistep"),
-            CommandItem("Visual Workflow DAG Studio", "Calculate", "", self._on_open_workflow_dag_dialog, "dag graph workflow pipeline stages"),
+            CommandItem("Visual Workflow DAG Studio", "Calculate", "", self._on_open_workflow_dag, "dag graph workflow pipeline stages"),
             # Wavefunction & Real-Space Surfaces
             CommandItem("Volumetric Orbitals & Density Studio", "Surfaces", "Ctrl+Alt+O", self._on_open_volumetric_dialog, "orbitals homo lumo density cubes marching"),
             CommandItem("3D Electrostatic Potential (ESP) Map", "Surfaces", "Ctrl+Alt+P", lambda: self._on_open_volumetric_dialog(target_tab="esp"), "esp potential electrostatic charge surface"),
             CommandItem("2D Planar ESP Slice & Contours", "Surfaces", "", self._on_open_esp_2d_dialog, "esp 2d contour slice plane"),
             CommandItem("Multiwfn Real-Space Analysis (NCI / ELF / LOL)", "Surfaces", "", self._on_open_multiwfn_dialog, "multiwfn nci rdg elf lol basin"),
             # Reaction Paths & Conformers
-            CommandItem("Interactive IRC Reaction Sweeper", "Reactivity", "", self._on_open_irc_sweeper_dialog, "irc sweeper reaction barrier mep path ts"),
+            CommandItem("Interactive IRC Reaction Sweeper", "Reactivity", "", self._on_open_irc_sweeper, "irc sweeper reaction barrier mep path ts"),
             CommandItem("Transition State IDPP Path Interpolator", "Reactivity", "", self._on_open_reaction_path_dialog, "ts idpp transit interpolation saddle"),
-            CommandItem("CREST Conformer Ensemble Explorer", "Conformers", "", self._on_open_crest_explorer_dialog, "crest ensemble boltzmann cluster conformers"),
-            CommandItem("1D/2D Conformer PES Scan", "Conformers", "", self._on_open_conformer_scan_dialog, "pes scan dihedral rigid relaxed"),
+            CommandItem("CREST Conformer Ensemble Explorer", "Conformers", "", self._on_open_crest_explorer, "crest ensemble boltzmann cluster conformers"),
+            CommandItem("1D/2D Conformer PES Scan", "Conformers", "", self._on_conformer_search, "pes scan dihedral rigid relaxed"),
             # Builder & Structure Tools
-            CommandItem("Cycle Welder & Ring Annulation", "Builder", "Ctrl+W", self._on_open_cycle_welder_dialog, "cycle ring welder fuse annulate benzene"),
+            CommandItem("Cycle Welder & Ring Annulation", "Builder", "Ctrl+W", self._on_open_cycle_welder, "cycle ring welder fuse annulate benzene"),
             CommandItem("Add Hydrogens (Valence Fill)", "Builder", "Ctrl+H", self._on_add_hydrogens, "hydrogens add valency protonate"),
             CommandItem("Clean 3D Geometry (UFF / MMFF)", "Builder", "", self._on_optimize_geometry, "clean uff forcefield rough 3d minimize"),
-            CommandItem("Periodic Table Element Picker", "Builder", "", self._on_open_periodic_table, "element periodic table c n o"),
+            CommandItem("Periodic Table Element Picker", "Builder", "", lambda: PeriodicTableDialog(self).exec(), "element periodic table c n o"),
             CommandItem("Fragment Library Picker", "Builder", "", self._on_open_fragment_library, "fragments amino acid functional group"),
             CommandItem("Align Principal Axes / Moments of Inertia", "Geometry", "", self._on_align_principal_axes, "align inertia axes center orientation"),
             # Export & Publishing
@@ -1792,7 +1809,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             CommandItem("Export Crystallographic CIF File", "Export", "", self._on_export_cif, "export cif crystal solid state"),
             # App Settings & Help
             CommandItem("Application Preferences & Rendering Options", "Settings", "", self._on_open_preferences, "preferences theme background color rendering"),
-            CommandItem("Unit & Energy Converter", "Tools", "", self._on_open_unit_converter, "convert hartree kcal kj ev cm-1"),
+            CommandItem("Unit & Energy Converter", "Tools", "", self._open_unit_converter, "convert hartree kcal kj ev cm-1"),
             CommandItem("Interactive Onboarding Tour", "Help", "", self._on_open_onboarding_tour, "tour guide walkthrough welcome help"),
         ]
 

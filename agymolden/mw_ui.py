@@ -1481,11 +1481,8 @@ class UIMixin(UIInspectorTabsMixin):
         menu_invert.addAction(act_mir_yz)
 
         act_flush_mem = QtGui.QAction("Flush &Memory Clipboard", self)
-        act_flush_mem.setShortcuts([
-            QtGui.QKeySequence("Ctrl+K"),
-            QtGui.QKeySequence("Ctrl+Shift+X"),
-        ])
-        act_flush_mem.setToolTip("Flush atom and fragment clipboard memory (Ctrl+K or Ctrl+Shift+X). Double-clicking canvas will prompt Periodic Table / Fragment picker.")
+        act_flush_mem.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
+        act_flush_mem.setToolTip("Flush atom and fragment clipboard memory (Ctrl+Shift+X). Double-clicking canvas will prompt Periodic Table / Fragment picker.")
         act_flush_mem.triggered.connect(self._on_flush_memory)
         menu_edit.addAction(act_flush_mem)
 
