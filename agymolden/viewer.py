@@ -175,6 +175,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.cylinder_radius: float = 0.08
         self.style_mode: str = "Ball & Stick" # Ball & Stick, Spacefill, Wireframe
         self.use_modern_shaders: bool = True
+        self.use_depth_cueing: bool = True
         self.show_publication_outlines: bool = False
 
         # Camera state
@@ -924,6 +925,10 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         loc_modern_glossy = glGetUniformLocation(self.shader_program, "u_modern_glossy")
         if loc_modern_glossy != -1:
             glUniform1i(loc_modern_glossy, 1 if getattr(self, "use_modern_shaders", False) else 0)
+
+        loc_depth_cue = glGetUniformLocation(self.shader_program, "u_depth_cue")
+        if loc_depth_cue != -1:
+            glUniform1i(loc_depth_cue, 1 if getattr(self, "use_depth_cueing", True) else 0)
 
         # 1. Render Bonds (Cylinders) via GPU instancing
         if self.style_mode != "Spacefill":

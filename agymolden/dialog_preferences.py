@@ -54,6 +54,13 @@ class PreferencesDialog(QtWidgets.QDialog):
         )
         v_layout.addRow("", self.chk_modern_shaders)
 
+        self.chk_depth_cue = QtWidgets.QCheckBox("Enable Screen-Space Depth Cueing & Cavity Ambient Occlusion")
+        self.chk_depth_cue.setToolTip(
+            "Apply soft contact shadowing in molecular cavities and atmospheric depth falloff (QuteMol/PyMOL style)\n"
+            "to maximize 3D depth perception for macromolecules and complexes."
+        )
+        v_layout.addRow("", self.chk_depth_cue)
+
         self.combo_default_dpi = QtWidgets.QComboBox()
         self.combo_default_dpi.addItem("300 DPI (Standard Journal Submission)", 300)
         self.combo_default_dpi.addItem("600 DPI (High-Density Print / Line Art)", 600)
@@ -138,6 +145,7 @@ class PreferencesDialog(QtWidgets.QDialog):
             self.spin_msaa.setCurrentIndex(idx_msaa)
 
         self.chk_modern_shaders.setChecked(self.settings.value("viewport/modern_shaders", True, type=bool))
+        self.chk_depth_cue.setChecked(self.settings.value("viewport/depth_cue", True, type=bool))
 
         dpi = self.settings.value("export/default_dpi", 300, type=int)
         idx_dpi = self.combo_default_dpi.findData(dpi)
@@ -164,6 +172,7 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.settings.setValue("viewport/show_indices", self.chk_indices.isChecked())
         self.settings.setValue("viewport/msaa", self.spin_msaa.currentData())
         self.settings.setValue("viewport/modern_shaders", self.chk_modern_shaders.isChecked())
+        self.settings.setValue("viewport/depth_cue", self.chk_depth_cue.isChecked())
         self.settings.setValue("export/default_dpi", self.combo_default_dpi.currentData())
         self.settings.setValue("calc/default_engine", self.combo_default_engine.currentData())
         self.settings.setValue("viewport/mouse_mode", self.combo_mouse_mode.currentData())
@@ -181,6 +190,7 @@ class PreferencesDialog(QtWidgets.QDialog):
                 parent.viewer.show_labels = self.chk_labels.isChecked()
                 parent.viewer.show_indices = self.chk_indices.isChecked()
                 parent.viewer.use_modern_shaders = self.chk_modern_shaders.isChecked()
+                parent.viewer.use_depth_cueing = self.chk_depth_cue.isChecked()
                 parent.viewer.mouse_mode = self.combo_mouse_mode.currentData()
                 parent.viewer.update()
             if hasattr(parent, "spin_sym_tol"):

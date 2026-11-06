@@ -161,6 +161,7 @@ uniform int u_is_highlighted;
 uniform int u_use_instancing;
 uniform int u_publication_outline;
 uniform int u_modern_glossy;
+uniform int u_depth_cue;
 
 out vec4 frag_color;
 
@@ -205,7 +206,16 @@ void main() {
         float fresnel = pow(1.0 - max(dot(norm, view_dir), 0.0), 3.0);
         vec3 rim = 0.18 * fresnel * mix(base_col, vec3(1.0), 0.5);
 
-        result = ambient + diffuse1 + diffuse2 + specular1 + rim;
+        // Cavity ambient occlusion / contact obscurance
+        float cavity_ao = clamp(0.70 + 0.30 * dot(norm, view_dir), 0.60, 1.0);
+
+        result = (ambient * cavity_ao) + diffuse1 + diffuse2 + specular1 + rim;
+
+        // Screen-space depth cueing (atmospheric depth falloff)
+        if (u_depth_cue == 1) {
+            float depth_falloff = 1.0 - (gl_FragCoord.z * 0.22);
+            result *= depth_falloff;
+        }
     } else {
         // Legacy Ambient
         float ambient_strength = 0.35;
