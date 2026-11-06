@@ -78,6 +78,33 @@ DIAGNOSIS_RULES = [
         "remedy": "Increase %maxcore per process, reduce parallel thread count (%pal), or use resolution of identity (RI-J / RIJCOSX) approximations.",
         "keywords": ["%maxcore 4000", "! RIJCOSX"],
     },
+    {
+        "pattern": r"(Disk quota exceeded|No space left on device|Write error on file|File write failed)",
+        "type": "Disk Scratch Space Full",
+        "severity": "fatal",
+        "headline": "Scratch Directory Storage Exhausted",
+        "explanation": "The 2-electron integrals or temporary matrices exceeded the available storage on /tmp or scratch volume.",
+        "remedy": "Redirect scratch to a high-capacity drive, enable direct integral evaluation (RI-J/RIJCOSX), or use semi-direct algorithms.",
+        "keywords": ["%scf Direct end", "! RIJCOSX Def2/J"],
+    },
+    {
+        "pattern": r"(Charge and multiplicity are not compatible|Multiplicity.*not possible for|Incompatible charge and multiplicity)",
+        "type": "Spin Multiplicity Inconsistency",
+        "severity": "fatal",
+        "headline": "Incompatible Charge and Spin Multiplicity",
+        "explanation": "The number of electrons implied by the chemical formula and specified net charge cannot physically support the requested spin state (e.g. an odd electron count cannot form a singlet).",
+        "remedy": "Check the molecular formula. For odd number of electrons use doublet (mult=2) or quartet (mult=4); for even electrons use singlet (mult=1) or triplet (mult=3).",
+        "keywords": ["* xyz 0 1", "* xyz 0 2"],
+    },
+    {
+        "pattern": r"(Convergence failure in DIIS|DIIS.*failed|Newton-Raphson step failed)",
+        "type": "DIIS Extrapolation Failure",
+        "severity": "fatal",
+        "headline": "DIIS Error Vector Divergence",
+        "explanation": "Direct Inversion in the Iterative Subspace (DIIS) accumulated ill-conditioned Fock matrices due to near-degenerate frontier orbitals or severe spin contamination.",
+        "remedy": "Reset DIIS history or switch to damp/level-shifted orbital iterations (AutoTRAH or Q-Chem RCA).",
+        "keywords": ["! AutoTRAH", "%scf Shift 0.3 end"],
+    },
 ]
 
 

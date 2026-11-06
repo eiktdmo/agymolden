@@ -2056,6 +2056,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_dock_hpc.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_hpc_queue().show())
         menu_docks.addAction(act_dock_hpc)
 
+        act_dock_doctor = QtGui.QAction("🩺 QC &Doctor Diagnostics Dock", self)
+        act_dock_doctor.setToolTip("Dock or show calculation failure diagnostics and crash auto-repair remedies")
+        act_dock_doctor.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.open_qc_doctor())
+        menu_docks.addAction(act_dock_doctor)
+
         menu_docks.addSeparator()
 
         act_float_all = QtGui.QAction("🖥️ Multi-Monitor: &Float All Panels", self)

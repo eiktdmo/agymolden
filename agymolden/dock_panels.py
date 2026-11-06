@@ -163,6 +163,25 @@ class HpcQueueDock(WorkspaceDockWidget):
         self.setWidget(self.queue_widget)
 
 
+class QCDoctorDock(WorkspaceDockWidget):
+    """Dockable panel hosting the QC Doctor calculation diagnostics and crash auto-repair."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, log_text: str = ""):
+        super().__init__("🩺 QC Doctor Diagnostics", parent, object_name="dock_qc_doctor")
+        from .dialog_qc_doctor import QCDoctorDialog
+
+        self.doctor_dialog = QCDoctorDialog(self, log_text=log_text)
+        self.setWidget(self.doctor_dialog)
+
+    def diagnose_log(self, log_text: str):
+        from .qc_doctor import diagnose_qm_log
+        from .dialog_qc_doctor import QCDoctorDialog
+
+        new_dlg = QCDoctorDialog(self, log_text=log_text)
+        self.setWidget(new_dlg)
+        self.doctor_dialog = new_dlg
+
+
 class WorkspaceDockManager:
     """Manages docks, menu actions, and layout persistence for MainWindow."""
 
@@ -287,6 +306,23 @@ class WorkspaceDockManager:
         dock.show()
         dock.raise_()
         self.docks["reaction_path"] = dock
+        return dock
+
+    def open_qc_doctor(self, log_text: str = "") -> QCDoctorDock:
+        """Open or activate the QC Doctor calculation diagnostics dock."""
+        if "qc_doctor" in self.docks:
+            dock = self.docks["qc_doctor"]
+            if log_text:
+                dock.diagnose_log(log_text)
+            dock.show()
+            dock.raise_()
+            return dock
+
+        dock = QCDoctorDock(self.mw, log_text=log_text)
+        self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        dock.show()
+        dock.raise_()
+        self.docks["qc_doctor"] = dock
         return dock
 
     def float_all_docks(self):
