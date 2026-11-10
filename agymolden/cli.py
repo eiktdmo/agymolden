@@ -117,6 +117,130 @@ def _load_structure(filepath: str):
         return syms, coords, None, {}
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run an automated diagnostic check on the local AgyMolden environment and installed engines."""
+    import platform
+    import shutil
+    from .qm_detect import detect_qm_executable
+
+    print("============================================================")
+    print(" AgyMolden Environment & QM Engines Diagnostic (Doctor)")
+    print("============================================================")
+    print(f" OS / Platform:         {platform.system()} {platform.release()} ({platform.machine()})")
+    print(f" Python Executable:     {sys.executable}")
+    print(f" Python Version:        {platform.python_version()}")
+
+    # Check Core GUI dependencies
+    try:
+        import PyQt6
+        from PyQt6 import QtCore
+        qt_ver = QtCore.PYQT_VERSION_STR
+        print(f" PyQt6:                 ✔ Installed (v{qt_ver})")
+    except ImportError as e:
+        print(f" PyQt6:                 ✖ Missing ({e})")
+
+    try:
+        import OpenGL
+        print(f" PyOpenGL:              ✔ Installed (v{OpenGL.__version__})")
+    except ImportError as e:
+        print(f" PyOpenGL:              ✖ Missing ({e})")
+
+    # Check SciPy stack
+    import numpy
+    import scipy
+    import matplotlib
+    print(f" NumPy:                 ✔ Installed (v{numpy.__version__})")
+    print(f" SciPy:                 ✔ Installed (v{scipy.__version__})")
+    print(f" Matplotlib:            ✔ Installed (v{matplotlib.__version__})")
+
+    # Check Optional Packages
+    for pkg in ("scikit-image", "cclib", "spglib", "ase", "pyscf", "torchani", "mace"):
+        try:
+            mod = __import__(pkg.replace("-", "_"))
+            ver = getattr(mod, "__version__", "Available")
+            print(f" {pkg:<22} ✔ Installed (v{ver})")
+        except ImportError:
+            print(f" {pkg:<22} ○ Optional (Not installed)")
+
+    print("\n---------------- Installed Quantum Chemistry Engines ----------------")
+    for eng in ("xtb", "orca", "gaussian", "pyscf", "psi4", "qchem", "openlowdin"):
+        det = detect_qm_executable(eng)
+        if det and det.found:
+            status = f"✔ Found at: {det.resolved_path} ({det.version_str or 'Detected'})"
+        else:
+            status = "○ Not detected in PATH / default folders"
+        print(f" {eng.upper():<12} {status}")
+    print("============================================================")
+    return 0
+
+
+def cmd_install_desktop(args: argparse.Namespace) -> int:
+    """Create a native OS application desktop shortcut and launcher without standalone compilation."""
+    import platform
+    import shutil
+    import stat
+
+    os_type = platform.system().lower()
+    py_exe = os.path.abspath(sys.executable)
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(pkg_dir, "icons", "app_icon.png")
+    if not os.path.isfile(icon_path):
+        icon_path = os.path.join(pkg_dir, "icons", "app.png")
+
+    if "linux" in os_type:
+        desktop_dir = os.path.expanduser("~/.local/share/applications")
+        os.makedirs(desktop_dir, exist_ok=True)
+        desktop_file = os.path.join(desktop_dir, "agymolden.desktop")
+        content = f"""[Desktop Entry]
+Type=Application
+Name=AgyMolden
+Comment=Quantum Chemistry Molecular Builder & Orbitals Viewer
+Exec={py_exe} -m agymolden %F
+Icon={icon_path if os.path.isfile(icon_path) else 'applications-science'}
+Terminal=false
+Categories=Science;Chemistry;Education;
+MimeType=chemical/x-molden;chemical/x-xyz;chemical/x-pdb;
+"""
+        with open(desktop_file, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(desktop_file, os.stat(desktop_file).st_mode | stat.S_IXUSR | stat.S_IRUSR)
+        print(f"✔ Created Linux Desktop Entry: {desktop_file}")
+        desktop_user_dir = os.path.expanduser("~/Desktop")
+        if os.path.isdir(desktop_user_dir):
+            user_shortcut = os.path.join(desktop_user_dir, "agymolden.desktop")
+            shutil.copy2(desktop_file, user_shortcut)
+            os.chmod(user_shortcut, os.stat(user_shortcut).st_mode | stat.S_IXUSR | stat.S_IRUSR)
+            print(f"✔ Copied shortcut to Desktop: {user_shortcut}")
+        return 0
+
+    elif "darwin" in os_type:
+        desktop_user_dir = os.path.expanduser("~/Desktop")
+        launcher_path = os.path.join(desktop_user_dir, "AgyMolden.command")
+        content = f"""#!/bin/bash
+cd "{os.path.expanduser('~')}"
+exec "{py_exe}" -m agymolden "$@"
+"""
+        with open(launcher_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(launcher_path, os.stat(launcher_path).st_mode | stat.S_IXUSR | stat.S_IRUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print(f"✔ Created macOS Launcher on Desktop: {launcher_path}")
+        return 0
+
+    elif "win" in os_type:
+        desktop_user_dir = os.path.expanduser("~/Desktop")
+        bat_path = os.path.join(desktop_user_dir, "AgyMolden.bat")
+        py_win = py_exe.replace("python.exe", "pythonw.exe") if os.path.isfile(py_exe.replace("python.exe", "pythonw.exe")) else py_exe
+        content = f"""@echo off\r\nstart "" "{py_win}" -m agymolden %*\r\n"""
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"✔ Created Windows Launcher on Desktop: {bat_path}")
+        return 0
+
+    else:
+        print(f"Desktop shortcut creation not supported on {platform.system()}.")
+        return 1
+
+
 def cmd_gen(args: argparse.Namespace) -> int:
     """Generate quantum chemistry input file."""
     if not os.path.isfile(args.struct):
@@ -356,5 +480,11 @@ def build_cli_parser() -> argparse.ArgumentParser:
     p_bundle.add_argument("-o", "--output", help="Output zip archive name (default: <stem>_SI_bundle.zip)")
     p_bundle.add_argument("--title", help="Job or molecule title for the SI report")
     p_bundle.add_argument("--input", help="Explicit path to associated QM input file")
+
+    # 6. doctor
+    subparsers.add_parser("doctor", help="Run diagnostic health-check on Python environment and QM engine binaries")
+
+    # 7. install-desktop
+    subparsers.add_parser("install-desktop", help="Install native OS desktop shortcut and launcher without compiling binaries")
 
     return parser
