@@ -320,24 +320,47 @@ def evaluate_semiempirical_orbital_grid(
 
     for at_idx, mu_list in atom_groups.items():
         ax, ay, az = float(coords[at_idx, 0]), float(coords[at_idx, 1]), float(coords[at_idx, 2])
-        dx = (X - ax) / BOHR_TO_ANGSTROM
-        dy = (Y - ay) / BOHR_TO_ANGSTROM
-        dz = (Z - az) / BOHR_TO_ANGSTROM
+        # Find maximum cutoff radius where Slater decay exp(-zeta * r_bohr) > 1e-6
+        min_zeta = min(zeta for _, _, zeta in mu_list)
+        r_cut_bohr = 14.0 / max(0.2, min_zeta)
+        r_cut_ang = r_cut_bohr * BOHR_TO_ANGSTROM
+
+        # Spatial bounding box slice to avoid evaluating faraway empty grid voxels
+        x_mask = np.abs(xs - ax) <= r_cut_ang
+        y_mask = np.abs(ys - ay) <= r_cut_ang
+        z_mask = np.abs(zs - az) <= r_cut_ang
+        if not (np.any(x_mask) and np.any(y_mask) and np.any(z_mask)):
+            continue
+
+        ix0, ix1 = np.where(x_mask)[0][[0, -1]]
+        iy0, iy1 = np.where(y_mask)[0][[0, -1]]
+        iz0, iz1 = np.where(z_mask)[0][[0, -1]]
+
+        sub_X = X[ix0:ix1+1, iy0:iy1+1, iz0:iz1+1]
+        sub_Y = Y[ix0:ix1+1, iy0:iy1+1, iz0:iz1+1]
+        sub_Z = Z[ix0:ix1+1, iy0:iy1+1, iz0:iz1+1]
+
+        dx = (sub_X - ax) / BOHR_TO_ANGSTROM
+        dy = (sub_Y - ay) / BOHR_TO_ANGSTROM
+        dz = (sub_Z - az) / BOHR_TO_ANGSTROM
         r = np.sqrt(dx * dx + dy * dy + dz * dz) + 1e-6
 
+        sub_grid = np.zeros(sub_X.shape, dtype=np.float32)
         for mu, o_type, zeta in mu_list:
             coeff = float(c_vec[mu])
             # Normalized valence Slater-type orbital radial part
             norm_fac = math.sqrt((zeta ** 3) / math.pi)
             rad = norm_fac * np.exp(-zeta * r)
             if o_type == "s":
-                grid_3d += coeff * rad
+                sub_grid += coeff * rad
             elif o_type == "px":
-                grid_3d += coeff * (zeta * dx) * rad
+                sub_grid += coeff * (zeta * dx) * rad
             elif o_type == "py":
-                grid_3d += coeff * (zeta * dy) * rad
+                sub_grid += coeff * (zeta * dy) * rad
             elif o_type == "pz":
-                grid_3d += coeff * (zeta * dz) * rad
+                sub_grid += coeff * (zeta * dz) * rad
+
+        grid_3d[ix0:ix1+1, iy0:iy1+1, iz0:iz1+1] += sub_grid
 
     step_x = np.array([(c_max[0] - c_min[0]) / max(1, nx - 1), 0.0, 0.0], dtype=np.float64)
     step_y = np.array([0.0, (c_max[1] - c_min[1]) / max(1, ny - 1), 0.0], dtype=np.float64)
