@@ -317,6 +317,11 @@ class UIMixin(UIInspectorTabsMixin):
         self.chk_hbonds.toggled.connect(self._on_toggle_hbonds)
         display_layout.addWidget(self.chk_hbonds)
 
+        self.chk_nci = QtWidgets.QCheckBox("Non-Covalent (NCI / π-π)")
+        self.chk_nci.setToolTip("Real-time Non-Covalent Interactions: Halogen bonds (orange) and aromatic π-π stacking (purple)")
+        self.chk_nci.toggled.connect(self._on_toggle_nci)
+        display_layout.addWidget(self.chk_nci)
+
         self.chk_forces = QtWidgets.QCheckBox("Nuclear Forces (F)")
         self.chk_forces.setToolTip("GaussView / newBRORSEN style: Display 3D nuclear force / Cartesian gradient vectors (-dE/dx) for geometry optimization diagnostics")
         self.chk_forces.toggled.connect(self._on_toggle_forces)

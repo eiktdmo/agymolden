@@ -1544,13 +1544,19 @@ class FileIOMixin:
                 f.write(html_content)
 
             self.statusBar().showMessage(f"Exported interactive 3D HTML to {os.path.basename(path)}", 4000)
-            QtWidgets.QMessageBox.information(
+            res_box = QtWidgets.QMessageBox.information(
                 self,
                 "HTML Export Complete",
                 f"Interactive 3D HTML successfully generated:\n{path}\n\n"
                 "This file is completely self-contained and can be opened in any web browser, "
-                "tablet, or phone without installing Python."
+                "tablet, or phone without installing Python.\n\n"
+                "Would you like to open it in your default web browser now?",
+                QtWidgets.QMessageBox.StandardButton.Open | QtWidgets.QMessageBox.StandardButton.Ok,
+                QtWidgets.QMessageBox.StandardButton.Open,
             )
+            if res_box == QtWidgets.QMessageBox.StandardButton.Open:
+                import webbrowser
+                webbrowser.open(f"file://{os.path.abspath(path)}")
         except Exception as e:
             dialog_service.error(self, "Error Exporting HTML", str(e), exc=e)
 

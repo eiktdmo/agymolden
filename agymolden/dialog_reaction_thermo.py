@@ -177,7 +177,8 @@ class ReactionThermoDialog(QtWidgets.QDialog):
             # Role combo
             combo_role = QtWidgets.QComboBox()
             combo_role.addItem("Reactant", "reactant")
-            combo_role.addItem("Transition State", "ts")
+            combo_role.addItem("Intermediate", "intermediate")
+            combo_role.addItem("Transition State (TS)", "ts")
             combo_role.addItem("Product", "product")
             idx = combo_role.findData(s.role)
             if idx >= 0:
@@ -287,11 +288,33 @@ class ReactionThermoDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Plot Warning", f"Cannot generate energy profile: {e}")
             return
 
-        # Prepare states: Reactants (0.0), Transition State (ΔG‡ if present), Products (ΔGrxn)
-        states = [("Reactants", 0.0)]
-        if res.has_ts and res.delta_g_act_kcal is not None:
-            states.append(("TS‡", res.delta_g_act_kcal))
-        states.append(("Products", res.delta_g_rxn_kcal))
+        # Prepare multi-state reaction profile:
+        # If user has multiple intermediate or TS states, render full multistep profile
+        intermediates = [s for s in self.species if s.role == "intermediate"]
+        ts_list = [s for s in self.species if s.role == "ts"]
+
+        if intermediates or len(ts_list) > 1:
+            states = []
+            g_ref = res.g_reactants_ha
+            # Reactants
+            states.append(("Reactants", 0.0, "#38bdf8"))
+            # Sequential species in order of table
+            for s in self.species:
+                if s.role in ("ts", "intermediate"):
+                    g_val = s.free_energy_val or 0.0
+                    rel_kcal = (g_val - g_ref) * 627.509474
+                    col = "#f43f5e" if s.role == "ts" else "#a855f7"
+                    label = f"{s.name}‡" if s.role == "ts" else s.name
+                    states.append((label, rel_kcal, col))
+            # Products
+            states.append(("Products", res.delta_g_rxn_kcal, "#10b981"))
+        else:
+            states = [
+                ("Reactants", 0.0, "#38bdf8")
+            ]
+            if res.has_ts and res.delta_g_act_kcal is not None:
+                states.append(("TS‡", res.delta_g_act_kcal, "#f43f5e"))
+            states.append(("Products", res.delta_g_rxn_kcal, "#10b981"))
 
         # Launch Profile Dialog
         dlg = QtWidgets.QDialog(self)
@@ -310,14 +333,10 @@ class ReactionThermoDialog(QtWidgets.QDialog):
         ys = []
         w = 0.35  # platform half-width
 
-        # Distinct colors: Reactant (slate), TS (rose), Product (emerald)
-        colors = ["#38bdf8", "#f43f5e", "#10b981"] if len(states) == 3 else ["#38bdf8", "#10b981"]
-
-        for idx, (label, val) in enumerate(states):
+        for idx, (label, val, col) in enumerate(states):
             x_center = float(idx + 1)
             xs.append(x_center)
             ys.append(val)
-            col = colors[idx]
             # Horizontal energy plateau bar
             ax.hlines(val, x_center - w, x_center + w, colors=col, linewidth=3.5, label=label)
             # Text annotation
@@ -325,7 +344,7 @@ class ReactionThermoDialog(QtWidgets.QDialog):
             txt = f"{label}\n{prefix}{val:.1f} kcal/mol" if idx > 0 else f"{label}\n0.0 kcal/mol"
             y_offset = 1.2 if val >= 0 else -2.2
             ax.text(x_center, val + y_offset, txt, ha="center", va="bottom" if val >= 0 else "top",
-                    color=col, fontweight="bold", fontsize=11)
+                    color=col, fontweight="bold", fontsize=10)
 
         # Dashed connecting reaction pathway splines
         for i in range(len(states) - 1):
