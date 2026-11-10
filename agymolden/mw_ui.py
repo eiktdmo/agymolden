@@ -1352,6 +1352,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_open_zmat.triggered.connect(self._on_open_zmat)
         menu_file.addAction(act_open_zmat)
 
+        act_gallery = QtGui.QAction("📚 Chemistry &Sample & Benchmark Gallery...", self)
+        act_gallery.setToolTip("Open curated benchmark structures (Ferrocene, C60, Diels-Alder TS, Water Prism) in 1 click")
+        act_gallery.triggered.connect(self._on_open_sample_gallery)
+        menu_file.addAction(act_gallery)
+
         act_open_xyz = QtGui.QAction("Import &XYZ File...", self)
         act_open_xyz.triggered.connect(self._on_import_xyz)
         menu_file.addAction(act_open_xyz)
@@ -1900,6 +1905,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_plugins.setToolTip("Run custom Python scripts or load user plugins from ~/.agymolden/plugins/ (Ctrl+Shift+Y)")
         act_plugins.triggered.connect(self._on_open_script_runner)
         menu_tools.addAction(act_plugins)
+
+        act_addons = QtGui.QAction("🧩 &Add-ons & Scientific Backend Manager...", self)
+        act_addons.setToolTip("Inspect and 1-click install optional packages (PySCF, RDKit, ASE, TorchANI, Spglib) directly inside the app")
+        act_addons.triggered.connect(self._on_open_addons_manager)
+        menu_tools.addAction(act_addons)
 
         # Surfaces & Electrostatic Potential Menu
         menu_surfaces = menubar.addMenu("&Surfaces")

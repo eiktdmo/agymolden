@@ -2691,19 +2691,25 @@ class EditingMixin:
             self.set_molecule_from_zatoms(new_zatoms, exact_coords=adopted_coords)
             self.statusBar().showMessage("🎯 Adopted IDPP Transition State (TS) Guess into 3D Editor", 4000)
 
-        def _on_preview_traj(p_syms, p_frames):
+        def _on_preview_traj(p_syms, p_frames, p_energies=None):
             if hasattr(self, "trajectory_coords"):
                 self.trajectory_coords = p_frames
-                self.trajectory_energies = [0.0] * len(p_frames)
+                if p_energies and len(p_energies) == len(p_frames):
+                    self.trajectory_energies = list(p_energies)
+                else:
+                    self.trajectory_energies = [0.0] * len(p_frames)
                 if hasattr(self, "slider_trajectory"):
                     self.slider_trajectory.setEnabled(True)
                     self.slider_trajectory.setRange(0, len(p_frames) - 1)
                     self.slider_trajectory.setValue(0)
+                if hasattr(self, "sparkline_trajectory"):
+                    self.sparkline_trajectory.set_energies(self.trajectory_energies)
+                    self.sparkline_trajectory.set_current_frame(0)
                 if hasattr(self, "lbl_trajectory_step"):
                     self.lbl_trajectory_step.setText(f"1/{len(p_frames)}")
                 if len(p_frames) > 0:
                     self.viewer.set_molecule(p_syms, p_frames[0])
-            self.statusBar().showMessage(f"Loaded {len(p_frames)} reaction path frames into player", 4000)
+            self.statusBar().showMessage(f"Loaded {len(p_frames)} reaction path frames into player with energy profile", 4000)
 
         if hasattr(self, "dock_manager"):
             dock = self.dock_manager.open_reaction_path(

@@ -2053,23 +2053,36 @@ class FileIOMixin:
         # 1. Linux: .desktop file
         if sys.platform.startswith("linux"):
             desktop_file = os.path.join(desktop_dir, "AgyMolden.desktop")
+            app_menu_dir = os.path.join(home, ".local", "share", "applications")
+            os.makedirs(app_menu_dir, exist_ok=True)
+            app_menu_file = os.path.join(app_menu_dir, "agymolden.desktop")
+
             content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=AgyMolden
 Comment=Quantum Chemistry & Molecular Builder Workbench
-Exec="{py_exe}" -m agymolden
+Exec="{py_exe}" -m agymolden %f
 Icon=applications-science
 Terminal=false
 Categories=Science;Chemistry;Education;
+MimeType=chemical/x-molden;chemical/x-xyz;chemical/x-pdb;
+StartupNotify=true
 """
             try:
+                # Write to desktop
                 with open(desktop_file, "w", encoding="utf-8") as f:
                     f.write(content)
                 os.chmod(desktop_file, os.stat(desktop_file).st_mode | stat.S_IEXEC)
+
+                # Write to applications menu
+                with open(app_menu_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.chmod(app_menu_file, os.stat(app_menu_file).st_mode | stat.S_IEXEC)
+
                 QtWidgets.QMessageBox.information(
                     self, "Desktop Shortcut Created",
-                    f"Successfully created shortcut:\n{desktop_file}\n\nYou can now launch AgyMolden directly from your Desktop."
+                    f"Successfully created shortcut and App Menu entry:\n• {desktop_file}\n• {app_menu_file}\n\nAgyMolden is now integrated into your OS launcher and Desktop!"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(self, "Shortcut Error", f"Could not write desktop shortcut: {e}")

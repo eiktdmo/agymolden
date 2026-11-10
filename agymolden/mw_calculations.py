@@ -1452,6 +1452,43 @@ class CalculationsMixin:
         dlg = PythonScriptRunnerDialog(self)
         dlg.exec()
 
+    def _on_open_addons_manager(self):
+        """Open in-app scientific backend and extensions manager."""
+        from .dialog_addons import ExtensionManagerDialog
+        dlg = ExtensionManagerDialog(self)
+        dlg.exec()
+
+    def _on_open_sample_gallery(self):
+        """Open curated chemistry sample and tutorial gallery dialog."""
+        from .dialog_samples import SampleGalleryDialog
+        dlg = SampleGalleryDialog(self)
+        dlg.sample_selected.connect(self._load_sample_xyz_string)
+        dlg.exec()
+
+    def _load_sample_xyz_string(self, xyz_text: str):
+        """Parse raw XYZ text and load it into the active molecule canvas."""
+        lines = [line.strip() for line in xyz_text.strip().splitlines() if line.strip()]
+        if not lines:
+            return
+        try:
+            # Skip atom count and comment line if present
+            start_idx = 0
+            if lines[0].isdigit():
+                start_idx = 2
+            symbols = []
+            coords = []
+            for line in lines[start_idx:]:
+                parts = line.split()
+                if len(parts) >= 4:
+                    symbols.append(parts[0])
+                    coords.append([float(parts[1]), float(parts[2]), float(parts[3])])
+            if symbols:
+                self.load_cartesian_molecule(symbols, np.array(coords, dtype=np.float64))
+                self.statusBar().showMessage(f"✔ Successfully loaded {len(symbols)} atoms from Sample Gallery.", 5000)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Load Error", f"Failed to parse sample geometry:\n{e}")
+
+
 
 
 
