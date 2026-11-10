@@ -69,7 +69,7 @@ class CalculationsMixin:
     def _get_selected_opt_method(self) -> str:
         if hasattr(self, "combo_opt_method") and self.combo_opt_method.currentIndex() >= 0:
             data = self.combo_opt_method.currentData()
-            if data in ("auto_hybrid", "uff_mmff", "semiempirical"):
+            if data in ("auto_hybrid", "uff_mmff", "semiempirical", "mlip"):
                 return data
         return "uff_mmff"
 
@@ -77,6 +77,8 @@ class CalculationsMixin:
         method = self._get_selected_opt_method()
         if method == "semiempirical":
             label = "Semiempirical QM (GFN0-xTB)"
+        elif method == "mlip":
+            label = "MLIP (ANI-2x / MACE / Hybrid QM)"
         elif method == "auto_hybrid":
             label = "Auto Hybrid (MMFF / UFF)"
         else:
@@ -86,7 +88,7 @@ class CalculationsMixin:
         self.statusBar().showMessage(f"Selected calculation engine: {label}", 3500)
 
     def _on_optimize_geometry(self):
-        """Optimize molecular geometry using selected force field (UFF/MMFF94s) or Semiempirical QM (GFN0-xTB)."""
+        """Optimize molecular geometry using selected force field (UFF/MMFF94s), Semiempirical QM, or MLIP."""
         if len(self.zatoms) < 2:
             QtWidgets.QMessageBox.information(
                 self, "Optimize Geometry", "At least 2 atoms are required for geometry optimization."
@@ -96,6 +98,8 @@ class CalculationsMixin:
         method = self._get_selected_opt_method()
         if method == "semiempirical":
             method_label = "Semiempirical QM (GFN0-xTB)"
+        elif method == "mlip":
+            method_label = "MLIP (ANI-2x / MACE / Hybrid QM)"
         elif method == "auto_hybrid":
             method_label = "Auto Hybrid (MMFF / UFF)"
         else:
@@ -112,6 +116,12 @@ class CalculationsMixin:
         imposed = self._get_active_imposed_symmetry() if not frozen else None
 
         def run_opt(c0, iters):
+            if method == "mlip":
+                from .mlip_engine import optimize_geometry_mlip
+                return optimize_geometry_mlip(
+                    symbols, c0, user_bonds=user_bonds, max_iter=iters,
+                    user_bond_orders=bo, frozen_indices=frozen
+                )
             if method == "semiempirical":
                 from .semiempirical import optimize_geometry_semiempirical
                 return optimize_geometry_semiempirical(
@@ -150,11 +160,14 @@ class CalculationsMixin:
         opt_coords, final_e, qm_props, sym_msg = result
         sym_kept = sym_msg.startswith("Optimized with")
         qm_summary = ""
-        if method == "semiempirical":
+        if method in ("semiempirical", "mlip"):
             gap = qm_props.get("gap_ev", 0.0)
             homo = qm_props.get("homo_ev", 0.0)
             lumo = qm_props.get("lumo_ev", 0.0)
-            qm_summary = f" | HOMO: {homo:.2f} eV, LUMO: {lumo:.2f} eV, Gap: {gap:.2f} eV"
+            backend = qm_props.get("mlip_backend", "")
+            b_tag = f" [{backend}]" if backend else ""
+            qm_summary = f"{b_tag} | HOMO: {homo:.2f} eV, LUMO: {lumo:.2f} eV, Gap: {gap:.2f} eV"
+            self._semiempirical_qm_props = qm_props
 
         # Reconstruct Z-matrix from optimized Cartesian coordinates preserving references
         new_zatoms = cartesian_to_zmatrix(
@@ -965,12 +978,12 @@ class CalculationsMixin:
                 + (f"HOMO is MO #{homo_idx+1}{gap_str}" if homo_idx is not None else "")
             )
 
-        path = source_path or getattr(self, "_active_molden_path", "")
+        path = source_path or getattr(self, "_active_molden_path", "") or ""
 
         # Auto-detect companion positron/electron Molden files in the same directory
         self._companion_positron_molden_path = None
-        base_dir = os.path.dirname(path)
-        fname = os.path.basename(path)
+        base_dir = os.path.dirname(path) if path else ""
+        fname = os.path.basename(path) if path else ""
         pos_candidates = []
         elec_candidates = []
         if "_electrons" in fname:
@@ -1095,24 +1108,54 @@ class CalculationsMixin:
 
     def _on_mo_table_selected(self):
         selected = self.table_orbitals.selectedItems()
-        if not selected or not hasattr(self, "_active_molden_path") or not self._active_molden_path:
+        if not selected:
             return
         row = self.table_orbitals.row(selected[0])
         if hasattr(self, "mo_ladder_widget"):
             self.mo_ladder_widget.set_selected_orbital(row)
-        try:
-            from .volumetric import compute_molden_mo_atom_contributions
-            comp_str = compute_molden_mo_atom_contributions(self._active_molden_path, row)
-            if comp_str and hasattr(self, "lbl_mo_status"):
-                mo_type = self.table_orbitals.item(row, 1).text() if self.table_orbitals.item(row, 1) else f"MO #{row + 1}"
-                self.lbl_mo_status.setText(f"🧬 <b>MO #{row + 1} ({mo_type}) Composition:</b> {comp_str}")
-        except Exception as e:
-            log.debug("Failed computing MO atom contributions: %s", e)
+        if getattr(self, "_active_molden_path", None) and os.path.isfile(self._active_molden_path):
+            try:
+                from .volumetric import compute_molden_mo_atom_contributions
+                comp_str = compute_molden_mo_atom_contributions(self._active_molden_path, row)
+                if comp_str and hasattr(self, "lbl_mo_status"):
+                    mo_type = self.table_orbitals.item(row, 1).text() if self.table_orbitals.item(row, 1) else f"MO #{row + 1}"
+                    self.lbl_mo_status.setText(f"🧬 <b>MO #{row + 1} ({mo_type}) Composition:</b> {comp_str}")
+            except Exception as e:
+                log.debug("Failed computing MO atom contributions: %s", e)
         self._render_mo_orbital(row)
 
     def _render_mo_orbital(self, mo_index: int):
         from .volumetric import evaluate_molden_orbital_grid, generate_orbital_surfaces
-        if not hasattr(self, "_active_molden_path") or not os.path.isfile(self._active_molden_path):
+        has_molden = bool(getattr(self, "_active_molden_path", None) and os.path.isfile(self._active_molden_path))
+        if not has_molden:
+            # Built-in Semiempirical Tight-Binding MO evaluation (zero external dependencies)
+            if not getattr(self, "zatoms", None) or len(self.zatoms) == 0:
+                return
+            from .semiempirical import evaluate_semiempirical_orbital_grid
+            isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.030
+            opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.80
+            n_pts = int(self.combo_quick_grid.currentData() or 36) if hasattr(self, "combo_quick_grid") else 36
+            symbols = [a.symbol for a in self.zatoms]
+            coords = np.array(self.coords, dtype=np.float64, copy=True)
+            qm_props = getattr(self, "_semiempirical_qm_props", None)
+            vol = evaluate_semiempirical_orbital_grid(
+                symbols, coords, orbital_index=mo_index, nx=n_pts, ny=n_pts, nz=n_pts, qm_props=qm_props
+            )
+            if vol is None:
+                return
+            max_abs = float(np.max(np.abs(vol.grid_data)))
+            eff_iso = isovalue if (isovalue < max_abs and max_abs > 1e-5) else round(max_abs * 0.45, 4)
+            pos_c, neg_c = self._get_mo_phase_colors()
+            meshes = generate_orbital_surfaces(vol, isovalue=max(1e-4, eff_iso), pos_color=pos_c, neg_color=neg_c)
+            self._current_rendered_mo_vol = vol
+            self._current_rendered_mo_index = mo_index
+            if meshes:
+                self.viewer.active_isosurfaces = meshes
+                self.viewer.surface_opacity = opacity
+                self.viewer.update()
+                self.statusBar().showMessage(
+                    f"Rendered Instant Semiempirical MO #{mo_index + 1} (Isovalue={eff_iso:.4f})", 4000
+                )
             return
 
         isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.030

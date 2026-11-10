@@ -293,6 +293,29 @@ def replicate_supercell(
     return rep_symbols, all_coords, new_cell
 
 
+def _classify_bravais_crystal_system(unit_cell: UnitCell, tol: float = 0.05, angle_tol: float = 0.5) -> Tuple[str, str, int]:
+    """Pure-Python crystallographic system and default space group classifier when spglib is unavailable."""
+    a, b, c = unit_cell.a, unit_cell.b, unit_cell.c
+    al, be, ga = unit_cell.alpha, unit_cell.beta, unit_cell.gamma
+    ab_eq = abs(a - b) <= tol
+    bc_eq = abs(b - c) <= tol
+    all_90 = abs(al - 90.0) <= angle_tol and abs(be - 90.0) <= angle_tol and abs(ga - 90.0) <= angle_tol
+
+    if ab_eq and bc_eq and all_90:
+        return "Pm-3m", "m-3m", 221
+    if ab_eq and abs(al - 90.0) <= angle_tol and abs(be - 90.0) <= angle_tol and abs(ga - 120.0) <= angle_tol:
+        return "P6/mmm", "6/mmm", 191
+    if ab_eq and all_90:
+        return "P4/mmm", "4/mmm", 123
+    if all_90:
+        return "Pmmm", "mmm", 47
+    if abs(al - 90.0) <= angle_tol and abs(ga - 90.0) <= angle_tol:
+        return "P2/m", "2/m", 10
+    if ab_eq and bc_eq and abs(al - be) <= angle_tol and abs(be - ga) <= angle_tol:
+        return "R-3m", "-3m", 166
+    return "P1", "1", 1
+
+
 def analyze_spacegroup(
     symbols: List[str],
     coords: np.ndarray,
@@ -300,7 +323,8 @@ def analyze_spacegroup(
     symprec: float = 1e-3,
 ) -> Dict[str, Any]:
     """
-    Analyzes crystallographic symmetry and space group using spglib if available.
+    Analyzes crystallographic symmetry and space group using spglib if available
+    (with a pure-Python Bravais crystal system fallback).
     Returns a dict with:
       - available: bool
       - spacegroup_str: str (e.g. "Fm-3m (225)")
@@ -313,17 +337,27 @@ def analyze_spacegroup(
     if len(symbols) == 0 or len(coords) == 0:
         return {"available": False, "error": "No coordinates provided"}
 
+    lattice = unit_cell.lattice_vectors
+    if np.linalg.det(lattice) <= 1e-6:
+        return {"available": False, "error": "Invalid or zero unit cell volume"}
+
     try:
         import spglib
         from .elements import get_atomic_number
-    except ImportError as e:
-        return {"available": False, "error": f"spglib not installed: {e}"}
+    except ImportError:
+        intl, pg, num = _classify_bravais_crystal_system(unit_cell, tol=max(1e-2, symprec))
+        return {
+            "available": True,
+            "spacegroup_str": f"{intl} ({num})",
+            "number": num,
+            "international": intl,
+            "hall": intl,
+            "pointgroup": pg,
+            "wyckoffs": ["a"] * len(symbols),
+            "error": None,
+        }
 
     try:
-        lattice = unit_cell.lattice_vectors
-        if np.linalg.det(lattice) <= 1e-6:
-            return {"available": False, "error": "Invalid or zero unit cell volume"}
-
         # Fractional coordinates
         frac_coords = coords @ np.linalg.inv(lattice)
         frac_coords = frac_coords % 1.0  # wrap to [0, 1)
@@ -359,6 +393,96 @@ def analyze_spacegroup(
         return {"available": False, "error": str(ex)}
 
 
+def _pure_numpy_surface_slab(
+    symbols: List[str],
+    coords: np.ndarray,
+    unit_cell: UnitCell,
+    hkl: Tuple[int, int, int],
+    layers: int,
+    vacuum: float,
+) -> Tuple[List[str], np.ndarray, UnitCell]:
+    """Pure-NumPy surface slab generator along Miller plane (h, k, l) when ASE is not installed."""
+    M = unit_cell.lattice_vectors
+    B = unit_cell.reciprocal_lattice_vectors / (2.0 * np.pi)
+    h, k, l = hkl
+    normal = h * B[0] + k * B[1] + l * B[2]
+    n_norm = float(np.linalg.norm(normal))
+    if n_norm < 1e-12:
+        raise ValueError("Invalid Miller indices producing zero normal vector.")
+    z_hat = normal / n_norm
+    d_spacing = 1.0 / n_norm
+
+    in_plane_candidates = []
+    for u in range(-2, 3):
+        for v in range(-2, 3):
+            for w in range(-2, 3):
+                if (u, v, w) != (0, 0, 0) and (u * h + v * k + w * l) == 0:
+                    vec = u * M[0] + v * M[1] + w * M[2]
+                    length = float(np.linalg.norm(vec))
+                    if length > 1e-4:
+                        in_plane_candidates.append((length, vec))
+    in_plane_candidates.sort(key=lambda item: item[0])
+
+    if len(in_plane_candidates) >= 2:
+        v1 = in_plane_candidates[0][1]
+        v2 = None
+        for _, cand in in_plane_candidates[1:]:
+            cross_len = float(np.linalg.norm(np.cross(v1, cand)))
+            if cross_len > 1e-3:
+                v2 = cand
+                break
+        if v2 is None:
+            v2 = np.cross(z_hat, v1)
+    else:
+        ref = np.array([1.0, 0.0, 0.0]) if abs(z_hat[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        v1 = np.cross(z_hat, ref)
+        v1 = (v1 / np.linalg.norm(v1)) * unit_cell.a
+        v2 = np.cross(z_hat, v1)
+        v2 = (v2 / np.linalg.norm(v2)) * unit_cell.b
+
+    a_len = float(np.linalg.norm(v1))
+    b_len = float(np.linalg.norm(v2))
+    cos_gamma = float(np.clip(np.dot(v1, v2) / (a_len * b_len), -1.0, 1.0))
+    gamma_deg = float(np.degrees(np.arccos(cos_gamma)))
+
+    e1 = v1 / a_len
+    e3 = z_hat
+    e2 = np.cross(e3, e1)
+    R = np.vstack([e1, e2, e3])
+
+    rep_syms, rep_coords, _ = replicate_supercell(
+        symbols, coords, unit_cell, nx=max(2, layers), ny=max(2, layers), nz=max(2, layers), remove_duplicates=True
+    )
+    proj = rep_coords @ R.T
+    slab_thickness = layers * d_spacing
+    c_len = slab_thickness + 2.0 * max(1.0, vacuum)
+
+    slab_basis = np.array([
+        [a_len, 0.0, 0.0],
+        [b_len * cos_gamma, b_len * np.sin(np.radians(gamma_deg)), 0.0],
+        [0.0, 0.0, c_len],
+    ])
+    inv_basis = np.linalg.inv(slab_basis)
+    frac = proj @ inv_basis
+
+    mask = (
+        (frac[:, 0] >= -1e-4) & (frac[:, 0] < 1.0 - 1e-4) &
+        (frac[:, 1] >= -1e-4) & (frac[:, 1] < 1.0 - 1e-4) &
+        (proj[:, 2] >= -1e-3) & (proj[:, 2] <= slab_thickness + 1e-3)
+    )
+    sel_indices = np.nonzero(mask)[0]
+    if len(sel_indices) == 0:
+        sel_indices = np.arange(min(len(rep_syms), len(symbols) * layers))
+
+    out_syms = [rep_syms[i] for i in sel_indices]
+    out_coords = proj[sel_indices].copy()
+    out_coords[:, 2] -= float(np.min(out_coords[:, 2]))
+    out_coords[:, 2] += vacuum
+
+    new_uc = UnitCell(a=a_len, b=b_len, c=c_len, alpha=90.0, beta=90.0, gamma=gamma_deg)
+    return out_syms, out_coords, new_uc
+
+
 def build_surface_slab(
     symbols: List[str],
     coords: np.ndarray,
@@ -368,7 +492,8 @@ def build_surface_slab(
     vacuum: float = 10.0,
 ) -> Tuple[List[str], np.ndarray, UnitCell]:
     """
-    Constructs an (h, k, l) surface slab with specified layers and vacuum using ASE.
+    Constructs an (h, k, l) surface slab with specified layers and vacuum using ASE
+    (with pure-NumPy crystallographic slab fallback if ASE is not installed).
     Safeguarded against zero-volume cells and invalid Miller indices.
     """
     if len(symbols) == 0 or len(coords) == 0:
@@ -380,15 +505,15 @@ def build_surface_slab(
     if vacuum < 0.0:
         raise ValueError("Vacuum thickness cannot be negative.")
 
-    try:
-        from ase import Atoms
-        from ase.build import surface
-    except ImportError as e:
-        raise RuntimeError(f"ASE is required for surface slab building: {e}")
-
     cell_matrix = unit_cell.lattice_vectors
     if np.linalg.det(cell_matrix) <= 1e-6:
         raise ValueError("Lattice vectors form a degenerate or zero-volume cell.")
+
+    try:
+        from ase import Atoms
+        from ase.build import surface
+    except ImportError:
+        return _pure_numpy_surface_slab(symbols, coords, unit_cell, hkl, layers, vacuum)
 
     atoms = Atoms(symbols=symbols, positions=coords, cell=cell_matrix, pbc=True)
     slab = surface(atoms, indices=hkl, layers=layers, vacuum=vacuum)

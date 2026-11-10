@@ -91,18 +91,27 @@ source agymolden_env/bin/activate
 
 if [ "$NEED_INSTALL" -eq 1 ]; then
     echo "[2/2] Installing dependencies for AgyMolden (PyQt6, NumPy, SciPy, Matplotlib)..."
-    echo "This one-time installation takes ~30-60 seconds depending on your connection."
-    pip install --upgrade pip >/dev/null 2>&1 || true
-    if ! pip install "$WHL_FILE"; then
-        echo ""
-        echo "[ERROR] Failed to install $WHL_FILE."
-        read -p "Press Enter to exit..."
-        exit 1
+    echo "This one-time installation takes ~15-45 seconds depending on your connection."
+    if command -v uv &>/dev/null; then
+        echo "⚡ Using 'uv' for accelerated package installation..."
+        uv pip install --python agymolden_env/bin/python "$WHL_FILE" || pip install "$WHL_FILE"
+    else
+        pip install --upgrade pip >/dev/null 2>&1 || true
+        if ! pip install "$WHL_FILE"; then
+            echo ""
+            echo "[ERROR] Failed to install $WHL_FILE."
+            read -p "Press Enter to exit..."
+            exit 1
+        fi
     fi
     echo "Installation complete!"
 else
     # Update wheel if newer wheel was placed in directory
-    pip install --no-deps --upgrade "$WHL_FILE" >/dev/null 2>&1 || true
+    if command -v uv &>/dev/null; then
+        uv pip install --python agymolden_env/bin/python --no-deps --upgrade "$WHL_FILE" >/dev/null 2>&1 || true
+    else
+        pip install --no-deps --upgrade "$WHL_FILE" >/dev/null 2>&1 || true
+    fi
 fi
 
 echo ""

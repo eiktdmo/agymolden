@@ -88,7 +88,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.setAcceptDrops(True)
         self.setStyleSheet(DARK_THEME_QSS)
 
-        # Core molecule state
+        # Core molecule state (delegated to self.model as single source of truth)
         self.model = MoleculeModel(self)
         self.zatoms: List[ZAtom] = []
         self.coords: np.ndarray = np.empty((0, 3), dtype=np.float64)
@@ -154,6 +154,46 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
         # Check for first-launch onboarding tour
         QtCore.QTimer.singleShot(1200, self._check_first_run_tour)
+
+    @property
+    def zatoms(self) -> List[ZAtom]:
+        return self.model.zatoms
+
+    @zatoms.setter
+    def zatoms(self, val: List[ZAtom]):
+        self.model.zatoms = val
+
+    @property
+    def coords(self) -> np.ndarray:
+        return self.model.coords
+
+    @coords.setter
+    def coords(self, val: np.ndarray):
+        self.model.coords = np.asarray(val, dtype=np.float64)
+
+    @property
+    def variables(self) -> Dict[str, float]:
+        return self.model.variables
+
+    @variables.setter
+    def variables(self, val: Dict[str, float]):
+        self.model.variables = val
+
+    @property
+    def cross_bonds(self) -> set:
+        return self.model.cross_bonds
+
+    @cross_bonds.setter
+    def cross_bonds(self, val: set):
+        self.model.cross_bonds = set(val)
+
+    @property
+    def strict_topology(self) -> bool:
+        return self.model.strict_topology
+
+    @strict_topology.setter
+    def strict_topology(self, val: bool):
+        self.model.strict_topology = bool(val)
 
     @property
     def event_bus(self):

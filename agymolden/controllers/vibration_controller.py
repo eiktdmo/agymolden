@@ -34,7 +34,13 @@ class VibrationController:
             return
 
         method = self.mw._get_selected_opt_method()
-        method_label = "Semiempirical QM (GFN0-xTB)" if method == "semiempirical" else "Analytical UFF/MMFF94s"
+        eff_method = "semiempirical" if method in ("semiempirical", "mlip") else method
+        if method == "mlip":
+            method_label = "MLIP / Semiempirical QM"
+        elif method == "semiempirical":
+            method_label = "Semiempirical QM (GFN0-xTB)"
+        else:
+            method_label = "Analytical UFF/MMFF94s"
         self.mw.statusBar().showMessage(f"Calculating vibrational Hessian and normal modes ({method_label})...", 4000)
 
         symbols = [a.symbol for a in self.mw.zatoms]
@@ -45,7 +51,7 @@ class VibrationController:
         def compute():
             return compute_force_field_vibrations(
                 symbols, start_coords, user_bonds=user_bonds, optimize_first=False,
-                method=method, user_bond_orders=bo
+                method=eff_method, user_bond_orders=bo
             )
 
         def done(result):

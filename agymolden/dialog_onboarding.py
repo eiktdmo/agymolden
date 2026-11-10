@@ -99,14 +99,18 @@ class OnboardingTourDialog(QtWidgets.QDialog):
             "</ul>"
         ))
 
-        # Quick sample loading buttons
+        # Quick sample loading & workspace mode buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_water = QtWidgets.QPushButton("💧 Load Water (H₂O)")
         btn_water.clicked.connect(lambda: self._load_sample("h2o"))
         btn_benzene = QtWidgets.QPushButton("⬡ Load Benzene (C₆H₆)")
         btn_benzene.clicked.connect(lambda: self._load_sample("benzene"))
+        btn_student = QtWidgets.QPushButton("🎓 Activate Student / Essentials Mode")
+        btn_student.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px; border-radius: 4px;")
+        btn_student.clicked.connect(lambda: self._activate_workspace_mode("student"))
         btn_row.addWidget(btn_water)
         btn_row.addWidget(btn_benzene)
+        btn_row.addWidget(btn_student)
         btn_row.addStretch()
         cl1.addLayout(btn_row)
 
@@ -210,6 +214,14 @@ class OnboardingTourDialog(QtWidgets.QDialog):
 
     def _on_toggle_startup(self, checked: bool):
         self.settings.setValue("show_onboarding_on_startup", checked)
+
+    def _activate_workspace_mode(self, mode_key: str):
+        parent = self.parent()
+        if parent and hasattr(parent, "combo_workspace_mode"):
+            for i in range(parent.combo_workspace_mode.count()):
+                if parent.combo_workspace_mode.itemData(i) == mode_key:
+                    parent.combo_workspace_mode.setCurrentIndex(i)
+                    break
 
     def _load_sample(self, sample_key: str):
         parent = self.parent()

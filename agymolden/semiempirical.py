@@ -266,7 +266,201 @@ def compute_semiempirical_properties(
         "gap_ev": max(0.0, lumo_ev - homo_ev),
         "charges": charges,
         "wiberg_bond_orders": wiberg,
+        "eigvals_ev": eigvals,
+        "eigvecs": eigvecs,
+        "occupancies": occ,
+        "orb_types": orb_types,
     }
+
+
+def evaluate_semiempirical_orbital_grid(
+    symbols: List[str],
+    coords: np.ndarray,
+    orbital_index: int = 0,
+    nx: int = 36,
+    ny: int = 36,
+    nz: int = 36,
+    margin_ang: float = 2.5,
+    qm_props: Optional[Dict] = None,
+):
+    """
+    Evaluate a 3D valence Slater-type Molecular Orbital grid directly in pure NumPy
+    from the built-in Semiempirical Tight-Binding (GFN0-xTB / SCC-TB) wavefunction.
+    Requires ZERO external binaries or PySCF installation.
+    """
+    from .volumetric import VolumetricData, BOHR_TO_ANGSTROM
+
+    if qm_props is None or "eigvecs" not in qm_props:
+        qm_props = compute_semiempirical_properties(symbols, coords)
+
+    eigvecs = qm_props.get("eigvecs")
+    eigvals = qm_props.get("eigvals_ev")
+    orb_types = qm_props.get("orb_types")
+    if eigvecs is None or orb_types is None or len(orb_types) == 0:
+        return None
+
+    n_mo = eigvecs.shape[1]
+    mo_idx = max(0, min(n_mo - 1, orbital_index))
+    c_vec = eigvecs[:, mo_idx]
+
+    c_min = np.min(coords, axis=0) - margin_ang
+    c_max = np.max(coords, axis=0) + margin_ang
+    xs = np.linspace(c_min[0], c_max[0], nx, dtype=np.float32)
+    ys = np.linspace(c_min[1], c_max[1], ny, dtype=np.float32)
+    zs = np.linspace(c_min[2], c_max[2], nz, dtype=np.float32)
+
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    grid_3d = np.zeros((nx, ny, nz), dtype=np.float32)
+
+    # Group basis functions by atom for fast vectorized evaluation
+    atom_groups: Dict[int, List[Tuple[int, str, float]]] = {}
+    for mu, (at_idx, o_type, _h_ii, zeta) in enumerate(orb_types):
+        if abs(c_vec[mu]) > 1e-5:
+            atom_groups.setdefault(at_idx, []).append((mu, o_type, float(zeta)))
+
+    for at_idx, mu_list in atom_groups.items():
+        ax, ay, az = float(coords[at_idx, 0]), float(coords[at_idx, 1]), float(coords[at_idx, 2])
+        dx = (X - ax) / BOHR_TO_ANGSTROM
+        dy = (Y - ay) / BOHR_TO_ANGSTROM
+        dz = (Z - az) / BOHR_TO_ANGSTROM
+        r = np.sqrt(dx * dx + dy * dy + dz * dz) + 1e-6
+
+        for mu, o_type, zeta in mu_list:
+            coeff = float(c_vec[mu])
+            # Normalized valence Slater-type orbital radial part
+            norm_fac = math.sqrt((zeta ** 3) / math.pi)
+            rad = norm_fac * np.exp(-zeta * r)
+            if o_type == "s":
+                grid_3d += coeff * rad
+            elif o_type == "px":
+                grid_3d += coeff * (zeta * dx) * rad
+            elif o_type == "py":
+                grid_3d += coeff * (zeta * dy) * rad
+            elif o_type == "pz":
+                grid_3d += coeff * (zeta * dz) * rad
+
+    step_x = np.array([(c_max[0] - c_min[0]) / max(1, nx - 1), 0.0, 0.0], dtype=np.float64)
+    step_y = np.array([0.0, (c_max[1] - c_min[1]) / max(1, ny - 1), 0.0], dtype=np.float64)
+    step_z = np.array([0.0, 0.0, (c_max[2] - c_min[2]) / max(1, nz - 1)], dtype=np.float64)
+    e_ev = float(eigvals[mo_idx]) if eigvals is not None and mo_idx < len(eigvals) else 0.0
+
+    return VolumetricData(
+        title=f"TB-QM MO #{mo_idx + 1} (E = {e_ev:+.2f} eV)",
+        comment="Built-in Semiempirical Tight-Binding Orbital Grid",
+        symbols=list(symbols),
+        atom_coords=np.array(coords, dtype=np.float64, copy=True),
+        origin=c_min.astype(np.float64),
+        voxels_x=nx,
+        voxels_y=ny,
+        voxels_z=nz,
+        step_x=step_x,
+        step_y=step_y,
+        step_z=step_z,
+        grid_data=grid_3d,
+        is_orbital=True,
+        orbital_index=mo_idx + 1,
+    )
+
+
+def compute_semiempirical_esp_mapped_density(
+    symbols: List[str],
+    coords: np.ndarray,
+    nx: int = 36,
+    ny: int = 36,
+    nz: int = 36,
+    margin_ang: float = 2.5,
+    iso_density: float = 0.03,
+    qm_props: Optional[Dict] = None,
+):
+    """
+    Compute a 3D electron density isosurface colored by Molecular Electrostatic Potential (ESP)
+    using the built-in Semiempirical Tight-Binding SCC charges and promolecular/valence density.
+    Works out-of-the-box with zero external QM binaries!
+    """
+    from .volumetric import VolumetricData, extract_isosurface, BOHR_TO_ANGSTROM
+
+    if qm_props is None or "charges" not in qm_props:
+        qm_props = compute_semiempirical_properties(symbols, coords)
+
+    charges = qm_props["charges"]
+    c_min = np.min(coords, axis=0) - margin_ang
+    c_max = np.max(coords, axis=0) + margin_ang
+    xs = np.linspace(c_min[0], c_max[0], nx, dtype=np.float32)
+    ys = np.linspace(c_min[1], c_max[1], ny, dtype=np.float32)
+    zs = np.linspace(c_min[2], c_max[2], nz, dtype=np.float32)
+
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    rho_grid = np.zeros((nx, ny, nz), dtype=np.float32)
+
+    for i, sym in enumerate(symbols):
+        if sym == "X":
+            continue
+        p = _get_tb_param(sym)
+        zeta = float(p["zeta_s"])
+        z_val = float(p["z_val"])
+        dx = (X - float(coords[i, 0])) / BOHR_TO_ANGSTROM
+        dy = (Y - float(coords[i, 1])) / BOHR_TO_ANGSTROM
+        dz = (Z - float(coords[i, 2])) / BOHR_TO_ANGSTROM
+        r = np.sqrt(dx * dx + dy * dy + dz * dz) + 1e-6
+        rho_grid += float(z_val * (zeta ** 3) / (8.0 * math.pi)) * np.exp(-1.6 * zeta * r)
+
+    step_x = np.array([(c_max[0] - c_min[0]) / max(1, nx - 1), 0.0, 0.0], dtype=np.float64)
+    step_y = np.array([0.0, (c_max[1] - c_min[1]) / max(1, ny - 1), 0.0], dtype=np.float64)
+    step_z = np.array([0.0, 0.0, (c_max[2] - c_min[2]) / max(1, nz - 1)], dtype=np.float64)
+
+    vol = VolumetricData(
+        title="Semiempirical Electron Density",
+        comment="Tight-Binding Valence Electron Density",
+        symbols=list(symbols),
+        atom_coords=np.array(coords, dtype=np.float64, copy=True),
+        origin=c_min.astype(np.float64),
+        voxels_x=nx,
+        voxels_y=ny,
+        voxels_z=nz,
+        step_x=step_x,
+        step_y=step_y,
+        step_z=step_z,
+        grid_data=rho_grid,
+        is_orbital=False,
+        orbital_index=None,
+    )
+
+    eff_iso = min(iso_density, float(np.max(rho_grid)) * 0.4)
+    mesh = extract_isosurface(vol, isovalue=max(1e-4, eff_iso), color=(0.8, 0.8, 0.8))
+    if mesh is None or len(mesh.vertices) == 0:
+        return None
+
+    # Evaluate SCC electrostatic potential V(r) = sum_A q_A / |r - R_A| at surface vertices
+    verts = mesh.vertices
+    v_esp = np.zeros(len(verts), dtype=np.float32)
+    for i, sym in enumerate(symbols):
+        if sym == "X":
+            continue
+        q_i = float(charges[i])
+        dist_bohr = np.linalg.norm(verts - coords[i], axis=1) / BOHR_TO_ANGSTROM
+        v_esp += q_i / np.maximum(dist_bohr, 0.4)
+
+    vmax = max(0.02, float(np.percentile(np.abs(v_esp), 95)))
+    t_norm = np.clip((v_esp + vmax) / (2.0 * vmax), 0.0, 1.0)
+
+    # Red (negative ESP, nucleophilic) -> White (neutral) -> Blue (positive ESP, electrophilic)
+    colors = np.zeros((len(verts), 3), dtype=np.float32)
+    low_mask = t_norm < 0.5
+    s_low = t_norm[low_mask] * 2.0
+    colors[low_mask, 0] = 0.92
+    colors[low_mask, 1] = 0.15 + 0.80 * s_low
+    colors[low_mask, 2] = 0.15 + 0.80 * s_low
+
+    high_mask = ~low_mask
+    s_high = (t_norm[high_mask] - 0.5) * 2.0
+    colors[high_mask, 0] = 0.95 - 0.80 * s_high
+    colors[high_mask, 1] = 0.95 - 0.65 * s_high
+    colors[high_mask, 2] = 0.95
+
+    mesh.vertex_colors = colors
+    mesh.surface_values = v_esp
+    mesh.esp_range = (-vmax, +vmax)
+    return mesh
 
 
 def optimize_geometry_semiempirical(

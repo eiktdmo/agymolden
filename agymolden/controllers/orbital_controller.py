@@ -33,8 +33,53 @@ class OrbitalController:
     def __init__(self, main_window: Any):
         self.mw = main_window
 
+    def _populate_semiempirical_mos_if_needed(self) -> bool:
+        """Compute and populate built-in Semiempirical Tight-Binding (GFN0-xTB / SCC-TB) MOs when no Molden file is loaded."""
+        if not getattr(self.mw, "zatoms", None) or len(self.mw.zatoms) == 0:
+            return False
+        from ..semiempirical import compute_semiempirical_properties
+        from ..volumetric import MoldenFileData, MoldenMO
+
+        symbols = [a.symbol for a in self.mw.zatoms]
+        coords = np.array(self.mw.coords, dtype=np.float64, copy=True)
+        props = compute_semiempirical_properties(symbols, coords)
+        self.mw._semiempirical_qm_props = props
+
+        eigvals_ev = props.get("eigvals_ev", [])
+        eigvecs = props.get("eigvecs")
+        occ = props.get("occupancies", [])
+        if eigvecs is None or len(eigvals_ev) == 0:
+            return False
+
+        orbitals = []
+        for idx, e_ev in enumerate(eigvals_ev):
+            e_au = float(e_ev) / 27.211386
+            occ_val = float(occ[idx]) if idx < len(occ) else 0.0
+            coefs = {mu + 1: float(eigvecs[mu, idx]) for mu in range(eigvecs.shape[0])}
+            orbitals.append(
+                MoldenMO(sym=f"A{idx + 1}", energy=e_au, spin="Alpha", occupancy=occ_val, coefficients=coefs)
+            )
+
+        data = MoldenFileData(
+            title="Built-in Semiempirical Tight-Binding Wavefunction",
+            symbols=symbols,
+            coords=coords,
+            orbitals=orbitals,
+        )
+        self.mw._active_molden_path = None
+        self.mw.set_orbitals_from_data(
+            data,
+            auto_render=False,
+            source_path="",
+            source_label="Built-in Semiempirical QM (GFN0-xTB)",
+        )
+        return True
+
     def quick_view_homo(self) -> None:
         """1-Click quick view of the Highest Occupied Molecular Orbital (HOMO)."""
+        if not (hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data):
+            self._populate_semiempirical_mos_if_needed()
+
         if hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data:
             homo_idx = 0
             for idx, mo in enumerate(self.mw._active_molden_data.orbitals):
@@ -52,6 +97,9 @@ class OrbitalController:
 
     def quick_view_lumo(self) -> None:
         """1-Click quick view of the Lowest Unoccupied Molecular Orbital (LUMO)."""
+        if not (hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data):
+            self._populate_semiempirical_mos_if_needed()
+
         if hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data:
             lumo_idx = 0
             for idx, mo in enumerate(self.mw._active_molden_data.orbitals):
@@ -136,6 +184,22 @@ class OrbitalController:
                 molden_path = last_res["molden_file"]
                 self.mw._active_molden_path = molden_path
         if not molden_path or not os.path.isfile(molden_path):
+            if getattr(self.mw, "zatoms", None) and len(self.mw.zatoms) > 0:
+                from ..semiempirical import compute_semiempirical_esp_mapped_density
+                symbols = [a.symbol for a in self.mw.zatoms]
+                coords = np.array(self.mw.coords, dtype=np.float64, copy=True)
+                opacity = (self.mw.slider_quick_opacity.value() / 100.0) if hasattr(self.mw, "slider_quick_opacity") else 0.85
+                mesh = compute_semiempirical_esp_mapped_density(symbols, coords)
+                if mesh is not None:
+                    self.mw.viewer.active_isosurfaces = [mesh]
+                    self.mw.viewer.surface_opacity = opacity
+                    self.mw.viewer.update()
+                    e_rng = getattr(mesh, "esp_range", (-0.05, 0.05))
+                    self.mw.statusBar().showMessage(
+                        f"Rendered Instant Built-in SCC-TB ESP Surface (V_ESP ∈ [{e_rng[0]:+.3f}, {e_rng[1]:+.3f}] a.u.)",
+                        5000,
+                    )
+                    return
             self.mw._on_open_volumetric_dialog()
             return
 

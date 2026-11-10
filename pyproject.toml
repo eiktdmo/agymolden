@@ -30,22 +30,33 @@ dependencies = [
     "numpy>=1.23",
     "scipy>=1.9",
     "matplotlib>=3.5",
-    "scikit-image>=0.19",
-    "cclib>=1.7",
-    "spglib>=2.0",
-    "ase>=3.22",
 ]
 
 [project.optional-dependencies]
 all = [
+    "scikit-image>=0.19",
+    "cclib>=1.7",
+    "spglib>=2.0",
+    "ase>=3.22",
     "rdkit>=2022.03",
     "basis_set_exchange>=0.9",
     "pyscf>=2.0; sys_platform != 'win32'",
+]
+pbc = [
+    "spglib>=2.0",
+    "ase>=3.22",
+]
+surfaces = [
+    "scikit-image>=0.19",
 ]
 qm = [
     "pyscf>=2.0; sys_platform != 'win32'",
     "cclib>=1.7",
     "basis_set_exchange>=0.9",
+]
+mlip = [
+    "ase>=3.22",
+    "torchani>=2.2",
 ]
 
 [project.scripts]

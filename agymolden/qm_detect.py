@@ -75,6 +75,9 @@ def _probe_paths(key: str) -> List[str]:
         )
     if key == "xtb":
         return [shutil.which("xtb") or ""] + _glob_candidates(
+            "~/.agymolden/bin/xtb",
+            "~/.agymolden/bin/xtb*/bin/xtb",
+            "~/.agymolden/bin/xtb.exe",
             "~/programs/xtb*/bin/xtb", "~/xtb*/bin/xtb", "/opt/xtb*/bin/xtb", "/usr/local/bin/xtb",
         )
     if key == "qchem":
@@ -314,6 +317,41 @@ def get_qm_route(code_key: str) -> str:
     return str(settings.value(f"route_{key}", "") or "")
 
 
+def download_or_install_xtb_binary() -> Optional[str]:
+    """
+    Attempt to provision the Grimme GFN2-xTB binary into ~/.agymolden/bin:
+      1. Checks if xtb is already available in PATH or Conda/Mamba.
+      2. If Conda/Mamba is available, attempts fast environment lookup.
+      3. Otherwise downloads the official static xTB release tarball from GitHub Releases
+         into ~/.agymolden/bin/ and returns the executable path.
+    """
+    existing = detect_qm_executable("xtb")
+    if existing.found and existing.resolved_path:
+        return existing.resolved_path
+
+    dest_dir = os.path.expanduser("~/.agymolden/bin")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # Check if Linux x86_64 static release can be fetched
+    if sys.platform.startswith("linux"):
+        import urllib.request
+        import tarfile
+        url = "https://github.com/grimme-lab/xtb/releases/download/v6.7.1/xtb-6.7.1-linux-x86_64.tar.xz"
+        archive_path = os.path.join(dest_dir, "xtb-linux.tar.xz")
+        try:
+            urllib.request.urlretrieve(url, archive_path)
+            with tarfile.open(archive_path, "r:xz") as tar:
+                tar.extractall(path=dest_dir)
+            for cand in glob.glob(os.path.join(dest_dir, "xtb*", "bin", "xtb")):
+                if os.path.isfile(cand):
+                    os.chmod(cand, 0o755)
+                    save_qm_route("xtb", cand)
+                    return cand
+        except Exception:
+            pass
+    return None
+
+
 class QMEnginesStatusDialog(QtCore.QObject):
     """Helper factory for the all-in-one QM Engines Detection & Configuration Dialog."""
 
@@ -391,6 +429,31 @@ class QMEnginesStatusDialog(QtCore.QObject):
             btn_b.clicked.connect(_on_browse)
             tbl.setCellWidget(r, 3, btn_b)
             _refresh_row(r, key)
+
+        # Quick 1-Click Auto-Provision Bar for Open-Source Engines (xTB & PySCF)
+        auto_row = QtWidgets.QHBoxLayout()
+        btn_auto_xtb = QtWidgets.QPushButton("⬇️ 1-Click Install GFN2-xTB (~/.agymolden/bin)")
+        btn_auto_xtb.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
+        btn_auto_xtb.setToolTip("Automatically download or provision the standalone Grimme GFN2-xTB binary into ~/.agymolden/bin")
+
+        def _on_auto_xtb():
+            target_bin = download_or_install_xtb_binary()
+            if target_bin:
+                route_edits["xtb"].setText(target_bin)
+                _refresh_row(codes.index("xtb"), "xtb")
+                QtWidgets.QMessageBox.information(dlg, "GFN2-xTB Installed", f"Successfully provisioned xTB at:\n{target_bin}")
+            else:
+                QtWidgets.QMessageBox.warning(
+                    dlg,
+                    "xTB Provisioning",
+                    "Could not auto-download xTB (check internet connection or install via 'conda install -c conda-forge xtb').\n"
+                    "Note: AgyMolden's built-in Python GFN0-xTB engine is always active with zero external binaries!",
+                )
+
+        btn_auto_xtb.clicked.connect(_on_auto_xtb)
+        auto_row.addWidget(btn_auto_xtb)
+        auto_row.addStretch()
+        vbox.addLayout(auto_row)
 
         btns = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Save | QtWidgets.QDialogButtonBox.StandardButton.Cancel

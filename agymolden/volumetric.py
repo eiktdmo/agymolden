@@ -21,7 +21,127 @@ try:
     from skimage.measure import marching_cubes
     _HAS_MARCHING_CUBES = True
 except ImportError:
-    _HAS_MARCHING_CUBES = False
+    marching_cubes = None
+    _HAS_MARCHING_CUBES = True  # Pure-NumPy marching tetrahedra fallback is always available
+
+
+def _pure_numpy_marching_tetrahedra(
+    grid: np.ndarray, level: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Pure-NumPy vectorized Marching Tetrahedra isosurface extractor.
+    Provides a zero-compiler fallback when scikit-image is not installed.
+    Decomposes each 3D voxel cube into 6 tetrahedra and interpolates edge crossings.
+    """
+    nx, ny, nz = grid.shape
+    if nx < 2 or ny < 2 or nz < 2:
+        return np.empty((0, 3)), np.empty((0, 3), dtype=np.uint32), np.empty((0, 3))
+
+    # 8 cube corner offsets: (dx, dy, dz)
+    # 0:(0,0,0), 1:(1,0,0), 2:(1,1,0), 3:(0,1,0), 4:(0,0,1), 5:(1,0,1), 6:(1,1,1), 7:(0,1,1)
+    c_offsets = np.array([
+        [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+        [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
+    ], dtype=np.float32)
+
+    # 6 tetrahedra sharing the main diagonal (0 -> 6)
+    tets = [
+        (0, 5, 1, 6),
+        (0, 1, 2, 6),
+        (0, 2, 3, 6),
+        (0, 3, 7, 6),
+        (0, 7, 4, 6),
+        (0, 4, 5, 6),
+    ]
+
+    # Precompute voxel values at the 8 corners for active cells
+    v0 = grid[:-1, :-1, :-1]
+    v1 = grid[1:, :-1, :-1]
+    v2 = grid[1:, 1:, :-1]
+    v3 = grid[:-1, 1:, :-1]
+    v4 = grid[:-1, :-1, 1:]
+    v5 = grid[1:, :-1, 1:]
+    v6 = grid[1:, 1:, 1:]
+    v7 = grid[:-1, 1:, 1:]
+
+    c_min = np.minimum.reduce([v0, v1, v2, v3, v4, v5, v6, v7])
+    c_max = np.maximum.reduce([v0, v1, v2, v3, v4, v5, v6, v7])
+    active_mask = (c_min <= level) & (c_max >= level)
+    ix, iy, iz = np.nonzero(active_mask)
+    if len(ix) == 0:
+        return np.empty((0, 3)), np.empty((0, 3), dtype=np.uint32), np.empty((0, 3))
+
+    base_coords = np.column_stack([ix, iy, iz]).astype(np.float32)
+    c_vals = np.column_stack([
+        v0[ix, iy, iz], v1[ix, iy, iz], v2[ix, iy, iz], v3[ix, iy, iz],
+        v4[ix, iy, iz], v5[ix, iy, iz], v6[ix, iy, iz], v7[ix, iy, iz],
+    ]).astype(np.float32) - float(level)
+
+    all_tris = []
+
+    def _interp(p_a, p_b, val_a, val_b):
+        denom = val_a - val_b
+        denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
+        t = np.clip(val_a / denom, 0.0, 1.0)[:, None]
+        return p_a + t * (p_b - p_a)
+
+    for t0, t1, t2, t3 in tets:
+        p = [base_coords + c_offsets[tk] for tk in (t0, t1, t2, t3)]
+        val = [c_vals[:, tk] for tk in (t0, t1, t2, t3)]
+        # Classify vertices > 0
+        b0 = val[0] > 0.0
+        b1 = val[1] > 0.0
+        b2 = val[2] > 0.0
+        b3 = val[3] > 0.0
+        code = (b0.astype(np.int32) << 3) | (b1.astype(np.int32) << 2) | (b2.astype(np.int32) << 1) | b3.astype(np.int32)
+
+        for case_id in range(1, 15):
+            sel = np.nonzero(code == case_id)[0]
+            if len(sel) == 0:
+                continue
+            ins = [i for i in range(4) if (case_id >> (3 - i)) & 1]
+            outs = [i for i in range(4) if not ((case_id >> (3 - i)) & 1)]
+
+            if len(ins) == 1:
+                i0 = ins[0]
+                o0, o1, o2 = outs
+                va = _interp(p[i0][sel], p[o0][sel], val[i0][sel], val[o0][sel])
+                vb = _interp(p[i0][sel], p[o1][sel], val[i0][sel], val[o1][sel])
+                vc = _interp(p[i0][sel], p[o2][sel], val[i0][sel], val[o2][sel])
+                all_tris.append(np.stack([va, vb, vc], axis=1))
+            elif len(ins) == 3:
+                o0 = outs[0]
+                i0, i1, i2 = ins
+                va = _interp(p[o0][sel], p[i0][sel], val[o0][sel], val[i0][sel])
+                vb = _interp(p[o0][sel], p[i2][sel], val[o0][sel], val[i2][sel])
+                vc = _interp(p[o0][sel], p[i1][sel], val[o0][sel], val[i1][sel])
+                all_tris.append(np.stack([va, vb, vc], axis=1))
+            elif len(ins) == 2:
+                i0, i1 = ins
+                o0, o1 = outs
+                v00 = _interp(p[i0][sel], p[o0][sel], val[i0][sel], val[o0][sel])
+                v01 = _interp(p[i0][sel], p[o1][sel], val[i0][sel], val[o1][sel])
+                v10 = _interp(p[i1][sel], p[o0][sel], val[i1][sel], val[o0][sel])
+                v11 = _interp(p[i1][sel], p[o1][sel], val[i1][sel], val[o1][sel])
+                all_tris.append(np.stack([v00, v01, v11], axis=1))
+                all_tris.append(np.stack([v00, v11, v10], axis=1))
+
+    if not all_tris:
+        return np.empty((0, 3)), np.empty((0, 3), dtype=np.uint32), np.empty((0, 3))
+
+    tris = np.concatenate(all_tris, axis=0)  # shape (N_tri, 3, 3)
+    verts_vox = tris.reshape(-1, 3)
+    faces = np.arange(len(verts_vox), dtype=np.uint32).reshape(-1, 3)
+
+    # Compute outward normals from gradient of scalar field (-grad(field))
+    gx, gy, gz = np.gradient(grid)
+    vi = np.clip(np.round(verts_vox[:, 0]).astype(int), 0, nx - 1)
+    vj = np.clip(np.round(verts_vox[:, 1]).astype(int), 0, ny - 1)
+    vk = np.clip(np.round(verts_vox[:, 2]).astype(int), 0, nz - 1)
+    normals = -np.column_stack([gx[vi, vj, vk], gy[vi, vj, vk], gz[vi, vj, vk]]).astype(np.float32)
+    n_norm = np.linalg.norm(normals, axis=1, keepdims=True) + 1e-12
+    normals /= n_norm
+    return verts_vox, faces, normals
 
 from .elements import ELEMENT_DATA
 
@@ -1878,11 +1998,14 @@ def extract_isosurface(
         return None
 
     try:
-        # marching_cubes returns vertices in fractional voxel coordinates (0 to nx-1, etc.)
-        # Suppress NumPy 2.5+ in-place shape mutation warnings originating inside skimage Lewiner implementation
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*Setting the shape on a NumPy array.*")
-            verts_vox, faces, normals, _ = marching_cubes(grid, level=isovalue)
+        if marching_cubes is not None:
+            # marching_cubes returns vertices in fractional voxel coordinates (0 to nx-1, etc.)
+            # Suppress NumPy 2.5+ in-place shape mutation warnings originating inside skimage Lewiner implementation
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*Setting the shape on a NumPy array.*")
+                verts_vox, faces, normals, _ = marching_cubes(grid, level=isovalue)
+        else:
+            verts_vox, faces, normals = _pure_numpy_marching_tetrahedra(grid, level=isovalue)
     except (RuntimeError, ValueError):
         return None
 

@@ -53,21 +53,37 @@ if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null 2>&1; then
     fi
 fi
 
-# 3. Create or reuse virtual environment
+# 3. Create or reuse virtual environment (prefers ultra-fast 'uv' if available)
 echo
 echo "Setting up Python virtual environment in .venv..."
-if [ ! -d ".venv" ]; then
-    "$PYTHON_BIN" -m venv .venv || {
-        echo "❌ Failed to create .venv. Try: sudo apt install python3-venv"
-        exit 1
-    }
+if command -v uv >/dev/null 2>&1; then
+    echo "⚡ Detected 'uv' package manager — using fast installation path!"
+    if [ ! -d ".venv" ]; then
+        uv venv .venv --python "$PYTHON_BIN"
+    fi
+    uv pip install --python .venv/bin/python -e ".[all]" || uv pip install --python .venv/bin/python -e .
+else
+    if [ ! -d ".venv" ]; then
+        "$PYTHON_BIN" -m venv .venv || {
+            echo "❌ Failed to create .venv. Try: sudo apt install python3-venv"
+            exit 1
+        }
+    fi
+
+    # 4. Install / upgrade pip and package with full source support
+    echo "Installing dependencies..."
+    chmod +x .venv/bin/pip .venv/bin/pip3 2>/dev/null || true
+    .venv/bin/python -m pip install --upgrade pip
+    .venv/bin/python -m pip install -e ".[all,qm]" || .venv/bin/python -m pip install -e ".[all]" || .venv/bin/python -m pip install -e .
 fi
 
-# 4. Install / upgrade pip and package with full source support
-echo "Installing dependencies..."
-chmod +x .venv/bin/pip .venv/bin/pip3 2>/dev/null || true
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e ".[all,qm]" || .venv/bin/python -m pip install -e ".[all]" || .venv/bin/python -m pip install -e .
+# Optional standalone build flag (--build-standalone)
+if [ "${1:-}" = "--build-standalone" ]; then
+    echo
+    echo "Building standalone executable via PyInstaller..."
+    .venv/bin/python -m pip install pyinstaller
+    .venv/bin/pyinstaller agymolden.spec --noconfirm --clean
+fi
 
 # 5. Create launcher symlinks and desktop entry if on Linux
 chmod +x run.py

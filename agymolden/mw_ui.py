@@ -723,12 +723,14 @@ class UIMixin(UIInspectorTabsMixin):
         self.combo_opt_method.addItem("Analytical UFF / MMFF94s", "uff_mmff")
         self.combo_opt_method.addItem("Auto (Hybrid MMFF / UFF)", "auto_hybrid")
         self.combo_opt_method.addItem("GFN0-xTB (Semiempirical QM)", "semiempirical")
+        self.combo_opt_method.addItem("🧠 MLIP (ANI-2x / MACE / Hybrid QM)", "mlip")
         self.combo_opt_method.setStyleSheet("font-size: 11px; padding: 3px 6px;")
         self.combo_opt_method.setToolTip(
             "Select geometry optimization & vibrational engine:\n"
             "• Analytical UFF / MMFF94s: Built-in pure analytical force field (universal coverage, periodic torsions)\n"
             "• Auto (Hybrid MMFF / UFF): Tries RDKit MMFF94 for organic accuracy, auto-falling back to Analytical UFF\n"
-            "• GFN0-xTB (Semiempirical QM): Self-Consistent Tight-Binding QM with Wiberg bond orders & charges"
+            "• GFN0-xTB (Semiempirical QM): Self-Consistent Tight-Binding QM with Wiberg bond orders & charges\n"
+            "• MLIP (ANI-2x / MACE / Hybrid QM): Universal Neural Network Interatomic Potential with SCC-TB + D3 fallback"
         )
         self.combo_opt_method.currentIndexChanged.connect(self._on_opt_method_changed)
 
@@ -2320,12 +2322,14 @@ class UIMixin(UIInspectorTabsMixin):
         btn_qm.setToolTip("Generate calculation input for Gaussian, ORCA, PySCF, openLOWDIN, xTB (Ctrl+G)")
         btn_qm.clicked.connect(self._on_open_qm_dialog)
         toolbar_qm.addWidget(btn_qm)
+        self.btn_toolbar_qm_setup = btn_qm
 
         btn_brorsen = QtWidgets.QToolButton()
         btn_brorsen.setText("✨ newBRORSEN")
         btn_brorsen.setToolTip("Generate input files for newBRORSEN (Positrons, NEO, CCSD(T)) (Ctrl+B)")
         btn_brorsen.clicked.connect(self._on_open_brorsen_dialog)
         toolbar_qm.addWidget(btn_brorsen)
+        self.btn_toolbar_brorsen = btn_brorsen
 
         toolbar_qm.addSeparator()
 
@@ -2378,12 +2382,15 @@ class UIMixin(UIInspectorTabsMixin):
         toolbar_qm.addWidget(lbl_mode)
 
         self.combo_workspace_mode = QtWidgets.QComboBox()
-        self.combo_workspace_mode.addItem("🔨 Build & Edit", "build")
+        self.combo_workspace_mode.addItem("🎓 Student / Essentials", "student")
+        self.combo_workspace_mode.addItem("🔨 Build & Edit (Full)", "build")
         self.combo_workspace_mode.addItem("⚛️ Calculate (QM)", "calculate")
         self.combo_workspace_mode.addItem("📊 Analyze Results", "analyze")
+        self.combo_workspace_mode.setCurrentIndex(1)
         self.combo_workspace_mode.setToolTip(
             "Workspace Perspective Switcher:\n"
-            "• Build & Edit: Focuses on molecular assembly, Z-matrix, 3D builder, and geometry editing.\n"
+            "• Student / Essentials: Decluttered workspace with instant Semiempirical QM (GFN0-xTB) for newcomers.\n"
+            "• Build & Edit (Full): Full Z-matrix, 3D builder, and geometry editing suite.\n"
             "• Calculate (QM): Focuses on ORCA, Gaussian, multiwfn, PBC, and pre-flight checks.\n"
             "• Analyze Results: Focuses on Vibrations, Spectra (IR/UV/NMR/DOS), and Molecular Orbitals."
         )
@@ -2502,13 +2509,37 @@ class UIMixin(UIInspectorTabsMixin):
         dlg.exec()
 
     def _on_workspace_mode_changed(self, index: int):
-        """Switches active workspace perspective (Build, Calculate, Analyze) for streamlined workflows."""
+        """Switches active workspace perspective (Student/Essentials, Build, Calculate, Analyze) for streamlined workflows."""
         mode_data = self.combo_workspace_mode.currentData()
         if not hasattr(self, "tabs"):
             return
 
-        # Target tabs for each mode
-        if mode_data == "build":
+        is_student = (mode_data == "student")
+        for adv_btn_attr in ("btn_toolbar_brorsen", "btn_toolbar_qm_setup"):
+            btn = getattr(self, adv_btn_attr, None)
+            if btn is not None:
+                btn.setVisible(not is_student)
+
+        if is_student:
+            # Automatically select Semiempirical QM (GFN0-xTB) so students get instant orbitals, ESP & frequencies
+            if hasattr(self, "combo_opt_method"):
+                for i in range(self.combo_opt_method.count()):
+                    if self.combo_opt_method.itemData(i) == "semiempirical":
+                        self.combo_opt_method.setCurrentIndex(i)
+                        break
+            builder_idx = getattr(self, "tab_builder", None)
+            if builder_idx is not None:
+                idx = self.tabs.indexOf(builder_idx)
+                if idx >= 0:
+                    self.tabs.setCurrentIndex(idx)
+            else:
+                self.tabs.setCurrentIndex(0)
+            self.statusBar().showMessage(
+                "🎓 Student / Essentials Mode active: Instant Semiempirical QM enabled (1-Click Optimize, HOMO/LUMO, ESP & IR)!",
+                5000,
+            )
+
+        elif mode_data == "build":
             # Show builder tab or Z-matrix
             builder_idx = getattr(self, "tab_builder", None)
             if builder_idx is not None:
