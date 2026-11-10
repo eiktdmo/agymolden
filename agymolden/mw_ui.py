@@ -1852,6 +1852,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_overlay.triggered.connect(self._on_open_structure_overlay)
         menu_tools.addAction(act_overlay)
 
+        act_fmo_align = QtGui.QAction("⚡ &Frontier Orbital (FMO) Alignment & Reactivity Matcher...", self)
+        act_fmo_align.setToolTip("Compare Donor-Acceptor HOMO/LUMO levels side-by-side with chemical hardness (η) and electrophilicity (ω)")
+        act_fmo_align.triggered.connect(self._on_open_fmo_alignment)
+        menu_tools.addAction(act_fmo_align)
+
         act_benchmark = QtGui.QAction("⚖️ Cross-Engine &Benchmark & Result Comparison...", self)
         act_benchmark.setShortcut("Ctrl+Shift+M")
         act_benchmark.setToolTip("Compare multiple calculation logs side-by-side across Gaussian, ORCA, PySCF, and xTB (energetics, ΔE, frontier gap, and Kabsch SVD RMSD matrix) (Ctrl+Shift+M)")
@@ -2251,6 +2256,11 @@ class UIMixin(UIInspectorTabsMixin):
         menu_help.addAction(act_manual)
 
         menu_help.addSeparator()
+        act_citations = QtGui.QAction("📜 &Cite Used Tools && Methods...", self)
+        act_citations.setToolTip("Generate BibTeX and computational methods text acknowledging AgyMolden, UFF, PySCF, IDPP, and Spglib")
+        act_citations.triggered.connect(self._on_open_citations_dialog)
+        menu_help.addAction(act_citations)
+
         act_desktop_icon = QtGui.QAction("🖥️ Create &Desktop / App Shortcut...", self)
         act_desktop_icon.setToolTip("Create a convenient 1-click desktop icon for launching AgyMolden on your operating system.")
         act_desktop_icon.triggered.connect(self._on_create_desktop_shortcut)

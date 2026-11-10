@@ -1488,6 +1488,39 @@ class CalculationsMixin:
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Load Error", f"Failed to parse sample geometry:\n{e}")
 
+    def _on_open_fmo_alignment(self):
+        """Open Frontier Molecular Orbital (FMO) Alignment dialog."""
+        from .dialog_fmo_alignment import FMOAlignmentDialog
+
+        # Extract active molecule's HOMO/LUMO if available
+        homo_a = -5.80
+        lumo_a = -1.20
+        name_a = "Active Molecule"
+
+        res = getattr(self, "_last_qm_res", None) or getattr(self, "_last_qm_result", None)
+        if res:
+            if getattr(res, "homo_ev", None) is not None:
+                homo_a = float(res.homo_ev)
+            if getattr(res, "lumo_ev", None) is not None:
+                lumo_a = float(res.lumo_ev)
+        elif len(self.zatoms) > 0:
+            name_a = f"{self.zatoms[0].symbol}-System"
+
+        dlg = FMOAlignmentDialog(
+            parent=self,
+            sys1_name=name_a,
+            sys1_homo=homo_a,
+            sys1_lumo=lumo_a,
+        )
+        dlg.exec()
+
+    def _on_open_citations_dialog(self):
+        """Open automated BibTeX citation and computational methods dialog."""
+        from .dialog_citations import CitationDialog
+        dlg = CitationDialog(self)
+        dlg.exec()
+
+
 
 
 
