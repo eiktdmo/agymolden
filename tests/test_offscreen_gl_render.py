@@ -83,3 +83,10 @@ def test_headless_image_export_resolutions_and_dpi(tmp_path, win):
     # Check embedded physical DPI (dots per meter)
     expected_dpm_300 = int(300 / 0.0254)
     assert abs(img_4x.dotsPerMeterX() - expected_dpm_300) <= 2
+
+
+def test_instanced_bond_shader_branching():
+    """Verify that the fragment shader branches properly for instanced bonds (u_use_instancing >= 1)."""
+    from agymolden.viewer_meshes import FRAGMENT_SHADER_SRC
+    assert "u_use_instancing >= 1" in FRAGMENT_SHADER_SRC
+    assert "u_use_instancing == 1" not in FRAGMENT_SHADER_SRC

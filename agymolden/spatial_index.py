@@ -21,11 +21,18 @@ def find_steric_clashes(
     symbols: List[str],
     coords: np.ndarray,
     bonds: Optional[Set[Tuple[int, int]]] = None,
-    threshold_ratio: float = 0.70,
+    threshold_ratio: float = 0.58,
     min_absolute_dist: float = 0.70,
+    ignore_1_3: bool = True,
 ) -> List[Tuple[int, int, str, str, float, float]]:
     """
     Find severe non-bonded steric clashes using spatial indexing (O(N log N)).
+
+    Excludes 1-2 bonded pairs and optionally 1-3 angle pairs (atoms sharing a common bonded neighbor).
+    In standard chemistry (CHARMM/Amber/UFF/MMFF94), steric non-bonded interactions apply to 1-4
+    and non-bonded atoms; 1-2 and 1-3 distances are governed by bond length and valence angle potentials.
+    Severe clashes are flagged when atoms are closer than threshold_ratio * (r_vdw_i + r_vdw_j)
+    or closer than min_absolute_dist (< 0.70 A).
 
     Returns:
         List of tuples: (i, j, sym_i, sym_j, distance, threshold_distance)
@@ -34,7 +41,19 @@ def find_steric_clashes(
     if n < 2:
         return []
 
-    bonded_set = bonds if bonds is not None else set()
+    bonded_set = {norm_bond(u, v) for u, v in bonds} if bonds is not None else set()
+    one_three_set: Set[Tuple[int, int]] = set()
+    if ignore_1_3 and bonded_set:
+        adj: Dict[int, Set[int]] = {}
+        for u, v in bonded_set:
+            adj.setdefault(u, set()).add(v)
+            adj.setdefault(v, set()).add(u)
+        for apex, nbrs in adj.items():
+            nbr_list = list(nbrs)
+            for idx_a in range(len(nbr_list)):
+                for idx_b in range(idx_a + 1, len(nbr_list)):
+                    one_three_set.add(norm_bond(nbr_list[idx_a], nbr_list[idx_b]))
+
     clashes: List[Tuple[int, int, str, str, float, float]] = []
 
     # Maximum possible van der Waals radius sum cutoff (~4.5 A)
@@ -47,7 +66,8 @@ def find_steric_clashes(
             si, sj = symbols[i], symbols[j]
             if si == "X" or sj == "X":
                 continue
-            if norm_bond(i, j) in bonded_set:
+            pair_k = norm_bond(i, j)
+            if pair_k in bonded_set or pair_k in one_three_set:
                 continue
             vdw_sum = get_vdw_radius(si) + get_vdw_radius(sj)
             limit = max(min_absolute_dist, vdw_sum * threshold_ratio)
@@ -65,7 +85,8 @@ def find_steric_clashes(
                 sj = symbols[j]
                 if sj == "X":
                     continue
-                if norm_bond(i, j) in bonded_set:
+                pair_k = norm_bond(i, j)
+                if pair_k in bonded_set or pair_k in one_three_set:
                     continue
                 vdw_sum = r_i + get_vdw_radius(sj)
                 limit = max(min_absolute_dist, vdw_sum * threshold_ratio)

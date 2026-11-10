@@ -88,6 +88,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.show_qtaim_bond_paths: bool = False
         self.unit_cell: Optional[Any] = None         # UnitCell object (Periodic Boundary Conditions)
         self.show_unit_cell: bool = True
+        self.show_ghost_atoms: bool = False          # Translucent periodic boundary ghost atoms (VESTA / Mercury style)
         self.transparent_bg: bool = False
         self.bg_color_mode: str = "white"  # "dark" or "white" (default: white)
         self.mouse_mode: str = "standard"  # "standard", "gaussview", or "chemcraft"
@@ -109,6 +110,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         # Selection & Picking
         self.selected_atom_idx: Optional[int] = None
         self.multi_selected: List[int] = [] # For distance / angle / dihedral measurement
+        self.pinned_measurements: List[List[int]] = [] # Pinned persistent measurements [[idx1, idx2], [idx1, idx2, idx3], ...] for publication figures
         self.frozen_atoms: set = set() # Constrained / frozen atom indices (Chemcraft/GaussView style)
         self.show_publication_outlines: bool = False # IboView/QuteMol style silhouette outlines & hemisphere lighting
         self.show_manipulator_gizmo: bool = False # 3D translation & rotation manipulator gizmo on selected atoms (off by default)
@@ -442,6 +444,81 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                         hbonds.append((idx_d, idx_h, idx_a))
 
         return hbonds
+
+    def _detect_non_covalent_interactions(self, coords: np.ndarray) -> List[Tuple[str, np.ndarray, np.ndarray, float]]:
+        """
+        Detect non-covalent interactions (NCI):
+        1. Halogen bonds: C-X ... Y (where X = Cl, Br, I; Y = O, N, S; angle C-X...Y >= 140°, dist 2.4 - 3.8 A)
+        2. Pi-Pi stacking: Centroid to centroid of aromatic rings (dist 3.2 - 4.4 A, angle between normals <= 30° or >= 60° for T-shaped)
+        Returns list of (type_str, start_pos, end_pos, distance).
+        """
+        ncis = []
+        n = len(self.symbols)
+        if n < 4 or len(coords) != n:
+            return ncis
+
+        # 1. Halogen Bonds (sigma-hole)
+        halogens = {"CL", "Cl", "BR", "Br", "I"}
+        acceptors = {"O", "N", "S"}
+        carbon_halogens = []
+        for u, v in self.bonds:
+            if 0 <= u < n and 0 <= v < n:
+                if self.symbols[u].upper() == "C" and self.symbols[v] in halogens:
+                    carbon_halogens.append((u, v))
+                elif self.symbols[v].upper() == "C" and self.symbols[u] in halogens:
+                    carbon_halogens.append((v, u))
+
+        for idx_c, idx_x in carbon_halogens:
+            pc, px = coords[idx_c], coords[idx_x]
+            v_cx = px - pc
+            len_cx = np.linalg.norm(v_cx)
+            if len_cx < 1e-4:
+                continue
+            for idx_y, sym_y in enumerate(self.symbols):
+                if idx_y == idx_c or idx_y == idx_x:
+                    continue
+                if sym_y not in acceptors:
+                    continue
+                py = coords[idx_y]
+                v_xy = py - px
+                dist_xy = float(np.linalg.norm(v_xy))
+                if 2.4 <= dist_xy <= 3.8:
+                    cos_th = np.dot(v_cx, v_xy) / (len_cx * dist_xy)
+                    ang_deg = math.degrees(math.acos(np.clip(cos_th, -1.0, 1.0)))
+                    if ang_deg >= 135.0:
+                        ncis.append(("Halogen Bond", px, py, dist_xy))
+
+        # 2. Pi-Pi Ring Stacking
+        from .ring_perception import RingPerception
+        try:
+            rp = RingPerception(self.symbols, coords, self.bonds)
+            rings = rp.find_rings(max_size=6)
+            aromatic_rings = [r for r in rings if len(r) in (5, 6)]
+            if len(aromatic_rings) >= 2:
+                centroids = []
+                normals = []
+                for ring in aromatic_rings:
+                    pts = coords[list(ring)]
+                    c_pt = np.mean(pts, axis=0)
+                    # SVD normal
+                    svd = np.linalg.svd(pts - c_pt)
+                    norm_vec = svd[2][2]
+                    centroids.append(c_pt)
+                    normals.append(norm_vec / np.linalg.norm(norm_vec))
+
+                for r1 in range(len(centroids)):
+                    for r2 in range(r1 + 1, len(centroids)):
+                        c1, c2 = centroids[r1], centroids[r2]
+                        d_cent = float(np.linalg.norm(c1 - c2))
+                        if 3.2 <= d_cent <= 4.4:
+                            dot_n = abs(float(np.dot(normals[r1], normals[r2])))
+                            ang_n = math.degrees(math.acos(np.clip(dot_n, -1.0, 1.0)))
+                            if ang_n <= 32.0 or ang_n >= 60.0:  # Parallel or T-shaped
+                                ncis.append(("π-π Stacking", c1, c2, d_cent))
+        except Exception:
+            pass
+
+        return ncis
 
     def _bond_order_name(self, u: int, v: int) -> str:
         key = (min(u, v), max(u, v))
@@ -882,6 +959,56 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         if len(self.coords) == 0:
+            # Render Clean Jumpstart / Welcome Overlay when viewport is empty (Newcomer Friendly)
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            is_white_vp = (getattr(self, "bg_color_mode", "dark") == "white" and not getattr(self, "transparent_bg", False))
+
+            card_w = min(480, w - 40)
+            card_h = 195
+            card_x = (w - card_w) // 2
+            card_y = (h - card_h) // 2
+
+            # Background card
+            card_rect = QtCore.QRect(card_x, card_y, card_w, card_h)
+            painter.setBrush(QtGui.QColor(248, 250, 252, 235) if is_white_vp else QtGui.QColor(15, 23, 42, 225))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1" if is_white_vp else "#334155"), 1.5))
+            painter.drawRoundedRect(card_rect, 10, 10)
+
+            # Logo & Welcome Title
+            painter.setFont(QtGui.QFont("DejaVu Sans", 14, QtGui.QFont.Weight.Bold))
+            painter.setPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"))
+            painter.drawText(card_x + 20, card_y + 36, "⚛️ AgyMolden Quantum Workbench")
+
+            # Quick Tips / Shortcuts subtitle
+            painter.setFont(QtGui.QFont("DejaVu Sans", 9))
+            painter.setPen(QtGui.QColor("#475569" if is_white_vp else "#94a3b8"))
+            painter.drawText(card_x + 20, card_y + 60, "Click any option below or use its shortcut to begin:")
+
+            # Interactive Clickable Hotspots
+            shortcuts = [
+                ("📂 Open Molecular File...", "Ctrl+O", "open_file"),
+                ("✏️ Build from Name / SMILES...", "Ctrl+Shift+B", "build_name"),
+                ("📚 Open Example Gallery...", "Gallery", "open_gallery"),
+                ("🚀 Quick ORCA Calculation Studio...", "F5", "quick_orca"),
+                ("⚡ Command Palette...", "Ctrl+K", "cmd_palette"),
+            ]
+            sy = card_y + 82
+            self._welcome_hotspots = []
+            for label, key, action_key in shortcuts:
+                row_rect = QtCore.QRect(card_x + 16, sy - 14, card_w - 32, 20)
+                self._welcome_hotspots.append((row_rect, action_key))
+
+                # Pill / hover highlight
+                painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                painter.setPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"))
+                painter.drawText(card_x + 24, sy, f"• {label}")
+                painter.setPen(QtGui.QColor("#475569" if is_white_vp else "#cbd5e1"))
+                painter.drawText(card_x + card_w - 95, sy, f"[{key}]")
+                sy += 21
+
+            painter.end()
             return
 
         render_coords = self.get_render_coords()
@@ -933,9 +1060,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         # 1. Render Bonds (Cylinders) via GPU instancing
         if self.style_mode != "Spacefill":
             glBindVertexArray(self.cyl_vao)
-            # Reference vector perpendicular to view line of sight
+            # Reference vectors for camera orientation
             right_cam, up_cam = self._get_camera_axes()
+            view_cam = np.cross(right_cam, up_cam)
             deloc = self._delocalized_bonds()
+
+            # Pre-compute adjacency graph for in-plane molecular vector calculation (GaussView / Chemcraft style)
+            adj_graph: Dict[int, List[int]] = {}
+            for u, w in self.bonds:
+                adj_graph.setdefault(u, []).append(w)
+                adj_graph.setdefault(w, []).append(u)
+
             cyl_instances = []
             for i1, i2 in self.bonds:
                 p1 = render_coords[i1]
@@ -950,16 +1085,60 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 b_key = (min(i1, i2), max(i1, i2))
                 order = self.bond_orders.get(b_key, 1)
 
-                # Determine cylinder offsets perpendicular to bond vector
-                # Perpendicular direction in screen/camera plane
-                perp = np.cross(v_norm, up_cam)
-                if np.linalg.norm(perp) < 1e-3:
-                    perp = np.cross(v_norm, right_cam)
-                perp_norm = np.linalg.norm(perp)
-                if perp_norm > 1e-4:
-                    perp = perp / perp_norm
+                # Determine cylinder offsets perpendicular to bond vector:
+                # 1. Primary candidate: In-plane molecular perpendicular direction (Chemcraft / GaussView standard)
+                #    In planar fragments (like carbonyls, alkenes, aromatics), the double bond should lie
+                #    in the plane formed by the bonded atoms and their substituent neighbors.
+                nbrs = [k for k in adj_graph.get(i1, []) if k != i2] + [k for k in adj_graph.get(i2, []) if k != i1]
+                in_plane_candidate = None
+                if nbrs:
+                    normals = []
+                    for k in nbrs:
+                        pk = render_coords[k]
+                        vec_k = pk - p1
+                        n_k = np.cross(v_norm, vec_k)
+                        len_nk = np.linalg.norm(n_k)
+                        if len_nk > 1e-3:
+                            normals.append(n_k / len_nk)
+                    if normals:
+                        avg_n = normals[0].copy()
+                        for nk in normals[1:]:
+                            if np.dot(nk, avg_n) < 0:
+                                avg_n -= nk
+                            else:
+                                avg_n += nk
+                        len_avg = np.linalg.norm(avg_n)
+                        if len_avg > 1e-3:
+                            avg_n /= len_avg
+                            # In-plane perpendicular is perpendicular to both bond axis and molecular plane normal
+                            cand = np.cross(avg_n, v_norm)
+                            len_cand = np.linalg.norm(cand)
+                            if len_cand > 1e-3:
+                                in_plane_candidate = cand / len_cand
+
+                # 2. Camera-plane perpendicular (billboard fallback for edge-on views or isolated bonds)
+                cam_perp = np.cross(v_norm, up_cam)
+                if np.linalg.norm(cam_perp) < 1e-3:
+                    cam_perp = np.cross(v_norm, right_cam)
+                len_cp = np.linalg.norm(cam_perp)
+                cam_perp = (cam_perp / len_cp) if len_cp > 1e-4 else np.array([0.0, 1.0, 0.0])
+
+                if in_plane_candidate is not None:
+                    # Check how clearly the in-plane vector is visible from current camera angle:
+                    # Project onto screen plane (perpendicular to view line of sight)
+                    proj = in_plane_candidate - np.dot(in_plane_candidate, view_cam) * view_cam
+                    proj_mag = np.linalg.norm(proj)
+                    if proj_mag > 0.35:
+                        # Clear view: use in-plane molecular orientation so double bonds lie flat with atoms
+                        perp = in_plane_candidate
+                    else:
+                        # Edge-on view: blend smoothly to billboarded camera perp so double bonds don't eclipse/vanish
+                        alpha = float(np.clip((proj_mag - 0.10) / 0.25, 0.0, 1.0))
+                        blended = alpha * in_plane_candidate + (1.0 - alpha) * cam_perp
+                        len_b = np.linalg.norm(blended)
+                        perp = (blended / len_b) if len_b > 1e-4 else cam_perp
                 else:
-                    perp = np.array([0.0, 1.0, 0.0])
+                    perp = cam_perp
 
                 # Each offset is (displacement, length_scale)
                 if b_key in deloc:
@@ -967,19 +1146,20 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     inward = deloc[b_key]
                     side = inward if inward is not None else perp
                     # Rings: the second line sits inside the ring; otherwise beside the bond
-                    offsets = [(np.zeros(3), 1.0), (side * 0.30, 0.6)]
-                    cyl_rad = self.cylinder_radius * 0.8
+                    offsets = [(np.zeros(3), 1.0), (side * 0.18, 0.72)]
+                    cyl_rad = self.cylinder_radius * 0.78
                 elif order == 1:
                     offsets = [(np.zeros(3), 1.0)]
                     cyl_rad = self.cylinder_radius
                 elif order == 2:
-                    shift = 0.22
+                    # GaussView / Avogadro 2 style: twin parallel cylinders separated by 0.11 A with refined radius
+                    shift = 0.10
                     offsets = [(perp * shift, 1.0), (-perp * shift, 1.0)]
-                    cyl_rad = self.cylinder_radius * 0.85
+                    cyl_rad = self.cylinder_radius * 0.70
                 else:  # order >= 3
-                    shift = 0.30
+                    shift = 0.13
                     offsets = [(np.zeros(3), 1.0), (perp * shift, 1.0), (-perp * shift, 1.0)]
-                    cyl_rad = self.cylinder_radius * 0.75
+                    cyl_rad = self.cylinder_radius * 0.60
 
                 # Apply representation style modifiers
                 if self.style_mode == "Licorice / Tube":
@@ -1100,6 +1280,55 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m_dash.normalMatrix().data())
                     glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
 
+        # 1c. Render Non-Covalent Interactions (NCI / Halogen Bonds & Pi-Pi Stacking)
+        if getattr(self, "show_nci", False) and len(self.symbols) > 3 and len(render_coords) == len(self.symbols):
+            ncis = self._detect_non_covalent_interactions(render_coords)
+            glUniform1i(loc_hl, 0)
+            cyl_rad_nci = 0.030
+
+            for nci_type, p1, p2, dist_nci in ncis:
+                v_nci = p2 - p1
+                dist = float(np.linalg.norm(v_nci))
+                if dist < 1e-4:
+                    continue
+                u_nci = v_nci / dist
+
+                # Colors: Orange for Halogen, Purple for Pi-Pi Stacking
+                if "Halogen" in nci_type:
+                    glUniform3f(loc_color, 0.98, 0.55, 0.15)  # Orange
+                else:
+                    glUniform3f(loc_color, 0.75, 0.35, 0.95)  # Purple
+
+                z_axis = np.array([0.0, 0.0, 1.0])
+                axis = np.cross(z_axis, u_nci)
+                axis_len = np.linalg.norm(axis)
+                angle_deg = 0.0
+                if axis_len > 1e-6:
+                    axis = axis / axis_len
+                    angle_deg = math.degrees(math.acos(np.clip(np.dot(z_axis, u_nci), -1.0, 1.0)))
+                elif np.dot(z_axis, u_nci) < 0:
+                    axis = np.array([1.0, 0.0, 0.0])
+                    angle_deg = 180.0
+                else:
+                    axis = np.array([0.0, 1.0, 0.0])
+                    angle_deg = 0.0
+
+                n_dashes = max(3, int(dist / 0.42))
+                dash_len = (dist / n_dashes) * 0.50
+                step_len = dist / n_dashes
+
+                for step_i in range(n_dashes):
+                    dash_start = p1 + u_nci * (step_i * step_len + 0.1 * step_len)
+                    m_dash = QtGui.QMatrix4x4()
+                    m_dash.translate(float(dash_start[0]), float(dash_start[1]), float(dash_start[2]))
+                    if angle_deg != 0:
+                        m_dash.rotate(angle_deg, float(axis[0]), float(axis[1]), float(axis[2]))
+                    m_dash.scale(cyl_rad_nci, cyl_rad_nci, float(dash_len))
+
+                    glUniformMatrix4fv(loc_model, 1, GL_FALSE, m_dash.data())
+                    glUniformMatrix3fv(loc_norm, 1, GL_FALSE, m_dash.normalMatrix().data())
+                    glDrawElements(GL_TRIANGLES, self.cyl_indices_count, GL_UNSIGNED_INT, None)
+
         # 2. Render Atoms (Spheres) via GPU Instancing (single draw call for all spheres)
         charges_arr = self._charges_and_dipole()[0] if getattr(self, 'show_charges', False) else None
         clean_export = getattr(self, "export_clean_mode", False)
@@ -1151,6 +1380,44 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 glUniform1i(loc_use_inst, 1)
 
                 glDrawElementsInstanced(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None, n_atoms)
+
+                # 2b. Optional: Render Translucent Periodic Boundary Ghost Atoms (VESTA / Mercury packing style)
+                if (
+                    getattr(self, "show_ghost_atoms", False)
+                    and getattr(self, "show_unit_cell", True)
+                    and getattr(self, "unit_cell", None) is not None
+                    and not clean_export
+                ):
+                    uc = self.unit_cell
+                    M = uc.lattice_vectors
+                    # Shifts along unit cell faces ([-1, 0, 1] offsets)
+                    face_shifts = []
+                    for sx in (-1, 0, 1):
+                        for sy in (-1, 0, 1):
+                            for sz in (-1, 0, 1):
+                                if sx == 0 and sy == 0 and sz == 0:
+                                    continue
+                                face_shifts.append(sx * M[0] + sy * M[1] + sz * M[2])
+
+                    ghost_instances = []
+                    for shift_vec in face_shifts:
+                        for i, (sym, pos) in enumerate(zip(self.symbols, render_coords)):
+                            cov_r = get_cov_radius(sym)
+                            ghost_pos = pos + shift_vec
+                            c = get_color(sym, bg_mode="white" if is_white_bg else "dark")
+                            ghost_instances.append([
+                                float(ghost_pos[0]), float(ghost_pos[1]), float(ghost_pos[2]),
+                                float(max(0.18, cov_r * self.sphere_scale * 0.85)),
+                                float(c[0] * 0.75 + 0.25), float(c[1] * 0.75 + 0.25), float(c[2] * 0.75 + 0.25),
+                                0.0
+                            ])
+
+                    if ghost_instances:
+                        ghost_arr = np.array(ghost_instances, dtype=np.float32)
+                        glBindBuffer(GL_ARRAY_BUFFER, self.sphere_inst_vbo)
+                        glBufferData(GL_ARRAY_BUFFER, ghost_arr.nbytes, ghost_arr, GL_DYNAMIC_DRAW)
+                        glDrawElementsInstanced(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None, len(ghost_instances))
+
                 glUniform1i(loc_use_inst, 0)
                 glBindVertexArray(0)
 
@@ -1898,42 +2165,51 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
 
             # Render GaussView-style 3D floating measurement overlays (Distance, Angle, Dihedral)
-            if self.show_measurements and len(self.multi_selected) >= 2 and len(render_coords) == len(self.symbols):
-                k_sel = len(self.multi_selected)
-                sel_valid = all(0 <= idx < len(render_coords) for idx in self.multi_selected)
-                if sel_valid:
-                    def _proj_pos(pos_arr):
-                        p4 = mvp * QtGui.QVector4D(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]), 1.0)
-                        if p4.w() <= 0.05:
-                            return None
-                        ndc = p4 / p4.w()
-                        vp_w = float(self.width())
-                        vp_h = float(self.height())
-                        return int((ndc.x() * 0.5 + 0.5) * vp_w), int((-ndc.y() * 0.5 + 0.5) * vp_h)
+            active_measurements = []
+            if self.show_measurements and len(self.multi_selected) >= 2:
+                active_measurements.append(list(self.multi_selected))
+            for pm in getattr(self, "pinned_measurements", []):
+                if pm not in active_measurements:
+                    active_measurements.append(pm)
 
-                    def _draw_badge(sx, sy, text, border_col_hex, bg_alpha=230):
-                        b_font = QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold)
-                        painter.setFont(b_font)
-                        b_fm = painter.fontMetrics()
-                        tw = b_fm.horizontalAdvance(text)
-                        th = b_fm.height()
-                        bx = sx - tw // 2 - 6
-                        by = sy - th // 2 - 3
-                        b_rect = QtCore.QRect(bx, by, tw + 12, th + 6)
-                        if is_white_vp:
-                            painter.setBrush(QtGui.QColor(248, 250, 252, 240))
-                            painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
-                            painter.drawRoundedRect(b_rect, 5, 5)
-                            painter.setPen(QtGui.QColor("#0f172a"))
-                        else:
-                            painter.setBrush(QtGui.QColor(15, 23, 42, bg_alpha))
-                            painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
-                            painter.drawRoundedRect(b_rect, 5, 5)
-                            painter.setPen(QtGui.QColor("#ffffff"))
-                        painter.drawText(bx + 6, by + th - 2, text)
+            if active_measurements and len(render_coords) == len(self.symbols):
+                def _proj_pos(pos_arr):
+                    p4 = mvp * QtGui.QVector4D(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]), 1.0)
+                    if p4.w() <= 0.05:
+                        return None
+                    ndc = p4 / p4.w()
+                    vp_w = float(self.width())
+                    vp_h = float(self.height())
+                    return int((ndc.x() * 0.5 + 0.5) * vp_w), int((-ndc.y() * 0.5 + 0.5) * vp_h)
+
+                def _draw_badge(sx, sy, text, border_col_hex, bg_alpha=230):
+                    b_font = QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold)
+                    painter.setFont(b_font)
+                    b_fm = painter.fontMetrics()
+                    tw = b_fm.horizontalAdvance(text)
+                    th = b_fm.height()
+                    bx = sx - tw // 2 - 6
+                    by = sy - th // 2 - 3
+                    b_rect = QtCore.QRect(bx, by, tw + 12, th + 6)
+                    if is_white_vp:
+                        painter.setBrush(QtGui.QColor(248, 250, 252, 240))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
+                        painter.drawRoundedRect(b_rect, 5, 5)
+                        painter.setPen(QtGui.QColor("#0f172a"))
+                    else:
+                        painter.setBrush(QtGui.QColor(15, 23, 42, bg_alpha))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(border_col_hex), 1.5))
+                        painter.drawRoundedRect(b_rect, 5, 5)
+                        painter.setPen(QtGui.QColor("#ffffff"))
+                    painter.drawText(bx + 6, by + th - 2, text)
+
+                for meas in active_measurements:
+                    k_sel = len(meas)
+                    if not all(0 <= idx < len(render_coords) for idx in meas):
+                        continue
 
                     if k_sel == 2:
-                        a, b = self.multi_selected[0], self.multi_selected[1]
+                        a, b = meas[0], meas[1]
                         pa, pb = render_coords[a], render_coords[b]
                         dist = float(np.linalg.norm(pa - pb))
                         s_a = _proj_pos(pa)
@@ -1952,7 +2228,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                                 _draw_badge(s_mid[0], s_mid[1], f"{dist:.3f} Å", badge_col)
 
                     elif k_sel == 3:
-                        a, b, c = self.multi_selected[0], self.multi_selected[1], self.multi_selected[2]
+                        a, b, c = meas[0], meas[1], meas[2]
                         pa, pb, pc = render_coords[a], render_coords[b], render_coords[c]
                         v1 = pa - pb
                         v2 = pc - pb
@@ -1980,7 +2256,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             _draw_badge(s_badge[0], s_badge[1], f"θ = {deg:.1f}°{ref_txt}", "#c026d3")
 
                     elif k_sel >= 4:
-                        a, b, c, d = self.multi_selected[:4]
+                        a, b, c, d = meas[:4]
                         pa, pb, pc, pd = render_coords[a], render_coords[b], render_coords[c], render_coords[d]
                         b0 = -1.0 * (pb - pa)
                         b1 = pc - pb

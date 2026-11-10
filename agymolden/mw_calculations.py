@@ -1299,6 +1299,23 @@ class CalculationsMixin:
         dlg.structure_selected.connect(_on_structure_selected)
         dlg.exec()
 
+    def _on_open_reaction_thermo_dialog(self):
+        """Open Reaction Thermochemistry & Eyring Kinetics Workbench (Alt+Shift+R)."""
+        from .dialog_reaction_thermo import ReactionThermoDialog
+
+        dlg = ReactionThermoDialog(parent=self)
+        last_log = getattr(self, "_last_loaded_qm_log_path", None)
+        if last_log and os.path.isfile(last_log):
+            from .thermochemistry import extract_species_from_log_file
+            try:
+                sp = extract_species_from_log_file(last_log, role="reactant")
+                dlg.species.append(sp)
+                dlg._refresh_table()
+                dlg._recalculate()
+            except Exception:
+                pass
+        dlg.exec()
+
     def _on_open_nbo_dialog(self):
         """Open NBO Donor-Acceptor Perturbation Visualizer (Ctrl+Shift+N)."""
         from .dialog_nbo import NBODonorAcceptorDialog

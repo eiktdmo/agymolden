@@ -11,7 +11,13 @@ import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .elements import get_mass
-from .pbc import UnitCell, create_box_from_molecule, replicate_supercell
+from .pbc import (
+    UnitCell,
+    create_box_from_molecule,
+    replicate_supercell,
+    analyze_spacegroup,
+    build_surface_slab,
+)
 
 
 class PBCDialog(QtWidgets.QDialog):
@@ -66,12 +72,20 @@ class PBCDialog(QtWidgets.QDialog):
         top_bar.addWidget(self.lbl_summary)
         top_bar.addStretch()
 
-        self.chk_show_box = QtWidgets.QCheckBox("Show Unit Cell in 3D Viewport")
+        self.chk_show_box = QtWidgets.QCheckBox("Show Unit Cell")
         self.chk_show_box.setChecked(True)
         if self.viewer is not None:
             self.chk_show_box.setChecked(getattr(self.viewer, "show_unit_cell", True))
         self.chk_show_box.toggled.connect(self._on_toggle_show_box)
         top_bar.addWidget(self.chk_show_box)
+
+        self.chk_ghost = QtWidgets.QCheckBox("Ghost Neighbors (Pack Cell)")
+        self.chk_ghost.setToolTip("Renders boundary neighbor atoms across unit cell faces (VESTA / Mercury packing style).")
+        self.chk_ghost.setChecked(False)
+        if self.viewer is not None:
+            self.chk_ghost.setChecked(getattr(self.viewer, "show_ghost_atoms", False))
+        self.chk_ghost.toggled.connect(self._on_toggle_ghost_atoms)
+        top_bar.addWidget(self.chk_ghost)
 
         main_layout.addLayout(top_bar)
 
@@ -79,6 +93,7 @@ class PBCDialog(QtWidgets.QDialog):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_cell_tab(), "Unit Cell Parameters")
         self.tabs.addTab(self._build_supercell_tab(), "Supercell Replication")
+        self.tabs.addTab(self._build_surface_slab_tab(), "Surface Slab Generator")
         self.tabs.addTab(self._build_fractional_tab(), "Fractional Coordinates")
         main_layout.addWidget(self.tabs, stretch=1)
 
@@ -158,6 +173,10 @@ class PBCDialog(QtWidgets.QDialog):
         metrics_lay.addWidget(self.lbl_volume)
         metrics_lay.addWidget(self.lbl_density)
         metrics_lay.addWidget(self.lbl_vectors)
+
+        # Space Group info line
+        self.lbl_spacegroup = QtWidgets.QLabel("<b>Space Group:</b> —")
+        metrics_lay.addWidget(self.lbl_spacegroup)
         layout.addWidget(metrics_grp)
 
         # Operations
@@ -248,6 +267,111 @@ class PBCDialog(QtWidgets.QDialog):
         return w
 
     # ---------------------------------------------------------------------
+    # Tab: Surface Slab Generator (ASE-powered)
+    # ---------------------------------------------------------------------
+    def _build_surface_slab_tab(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(w)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        slab_grp = QtWidgets.QGroupBox("Miller Indices (h, k, l) & Slab Properties")
+        grid = QtWidgets.QGridLayout(slab_grp)
+        grid.setHorizontalSpacing(15)
+
+        grid.addWidget(QtWidgets.QLabel("<b>Miller h:</b>"), 0, 0)
+        self.spin_h = QtWidgets.QSpinBox()
+        self.spin_h.setRange(-20, 20)
+        self.spin_h.setValue(1)
+        grid.addWidget(self.spin_h, 0, 1)
+
+        grid.addWidget(QtWidgets.QLabel("<b>Miller k:</b>"), 0, 2)
+        self.spin_k = QtWidgets.QSpinBox()
+        self.spin_k.setRange(-20, 20)
+        self.spin_k.setValue(1)
+        grid.addWidget(self.spin_k, 0, 3)
+
+        grid.addWidget(QtWidgets.QLabel("<b>Miller l:</b>"), 0, 4)
+        self.spin_l = QtWidgets.QSpinBox()
+        self.spin_l.setRange(-20, 20)
+        self.spin_l.setValue(1)
+        grid.addWidget(self.spin_l, 0, 5)
+
+        grid.addWidget(QtWidgets.QLabel("<b>Layers:</b>"), 1, 0)
+        self.spin_slab_layers = QtWidgets.QSpinBox()
+        self.spin_slab_layers.setRange(1, 50)
+        self.spin_slab_layers.setValue(4)
+        grid.addWidget(self.spin_slab_layers, 1, 1)
+
+        grid.addWidget(QtWidgets.QLabel("<b>Vacuum (Å):</b>"), 1, 2)
+        self.spin_slab_vacuum = QtWidgets.QDoubleSpinBox()
+        self.spin_slab_vacuum.setRange(0.0, 100.0)
+        self.spin_slab_vacuum.setValue(12.0)
+        self.spin_slab_vacuum.setSingleStep(1.0)
+        grid.addWidget(self.spin_slab_vacuum, 1, 3)
+
+        layout.addWidget(slab_grp)
+
+        self.lbl_slab_info = QtWidgets.QLabel(
+            "Cuts a surface oriented along the (hkl) plane from the bulk unit cell and adds vacuum in the perpendicular direction."
+        )
+        self.lbl_slab_info.setStyleSheet("color: #64748b; font-size: 12px; margin: 6px 0;")
+        layout.addWidget(self.lbl_slab_info)
+
+        action_bar = QtWidgets.QHBoxLayout()
+        btn_apply_slab = QtWidgets.QPushButton("Cut & Apply Surface Slab")
+        btn_apply_slab.setStyleSheet("background-color: #0d9488; color: #fff; font-weight: bold; padding: 6px 16px;")
+        btn_apply_slab.clicked.connect(self._on_apply_slab)
+        action_bar.addWidget(btn_apply_slab)
+        action_bar.addStretch()
+        layout.addLayout(action_bar)
+
+        layout.addStretch()
+        return w
+
+    def _on_apply_slab(self):
+        h = self.spin_h.value()
+        k = self.spin_k.value()
+        l = self.spin_l.value()
+        if h == 0 and k == 0 and l == 0:
+            QtWidgets.QMessageBox.warning(self, "Invalid Indices", "Miller indices (h, k, l) cannot all be zero.")
+            return
+
+        layers = self.spin_slab_layers.value()
+        vacuum = self.spin_slab_vacuum.value()
+
+        try:
+            slab_syms, slab_coords, new_uc = build_surface_slab(
+                self.symbols, self.coords, self.unit_cell, hkl=(h, k, l), layers=layers, vacuum=vacuum
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Surface Slab Error", f"Failed to build surface slab: {e}")
+            return
+
+        self.symbols = slab_syms
+        self.coords = slab_coords
+        self.unit_cell = new_uc
+
+        self._populate_fields()
+        self._update_calculated_labels()
+        self._populate_fractional_table()
+        self._update_supercell_preview()
+
+        self.lbl_summary.setText(f"<b>Structure:</b> {len(self.symbols)} atoms loaded.")
+        if self.viewer is not None:
+            self.viewer.symbols = list(self.symbols)
+            self.viewer.coords = np.array(self.coords, copy=True)
+            self.viewer.unit_cell = self.unit_cell
+            self.viewer.compute_bonds()
+            self.viewer.auto_center()
+            self.viewer.update()
+
+        self.supercellApplied.emit(self.symbols, self.coords, self.unit_cell)
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            QtWidgets.QMessageBox.information(
+                self, "Slab Generated", f"Successfully cut ({h} {k} {l}) slab with {layers} layers ({len(slab_syms)} atoms)."
+            )
+
+    # ---------------------------------------------------------------------
     # Tab 3: Fractional Coordinates
     # ---------------------------------------------------------------------
     def _build_fractional_tab(self) -> QtWidgets.QWidget:
@@ -323,6 +447,18 @@ class PBCDialog(QtWidgets.QDialog):
             f"c = [{M[2, 0]:8.4f}, {M[2, 1]:8.4f}, {M[2, 2]:8.4f}] Å"
         )
 
+        # Detect space group using spglib if available
+        if hasattr(self, "lbl_spacegroup"):
+            sg_res = analyze_spacegroup(self.symbols, self.coords, self.unit_cell)
+            if sg_res.get("available"):
+                self.lbl_spacegroup.setText(
+                    f"<b>Space Group:</b> <span style='color: #0284c7; font-weight: bold;'>{sg_res['spacegroup_str']}</span> "
+                    f"(Point Group: {sg_res.get('pointgroup', '—')})"
+                )
+            else:
+                err = sg_res.get("error", "Not detected")
+                self.lbl_spacegroup.setText(f"<b>Space Group:</b> <span style='color: #64748b;'>{err}</span>")
+
     def _populate_fractional_table(self):
         if len(self.coords) == 0:
             self.tbl_frac.setRowCount(0)
@@ -344,6 +480,11 @@ class PBCDialog(QtWidgets.QDialog):
         if self.viewer is not None:
             self.viewer.show_unit_cell = checked
             self.viewer.unit_cell = self.unit_cell if checked else None
+            self.viewer.update()
+
+    def _on_toggle_ghost_atoms(self, checked: bool):
+        if self.viewer is not None:
+            self.viewer.show_ghost_atoms = checked
             self.viewer.update()
 
     def _notify_viewer(self):

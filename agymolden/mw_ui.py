@@ -537,55 +537,65 @@ class UIMixin(UIInspectorTabsMixin):
 
         traj_box_layout.addLayout(row1_layout)
 
-        # Row 2: Step Energy & Analysis Tools
-        row2_layout = QtWidgets.QHBoxLayout()
+        # Row 2: Step Energy & Analysis Tools (Scrollable so buttons are always clearly readable)
+        row2_scroll = QtWidgets.QScrollArea()
+        row2_scroll.setWidgetResizable(True)
+        row2_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        row2_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        row2_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        row2_scroll.setFixedHeight(36)
+
+        row2_container = QtWidgets.QWidget()
+        row2_layout = QtWidgets.QHBoxLayout(row2_container)
+        row2_layout.setContentsMargins(0, 0, 0, 0)
         row2_layout.setSpacing(6)
 
         self.lbl_trajectory_energy = QtWidgets.QLabel("")
-        self.lbl_trajectory_energy.setStyleSheet("color: #a7f3d0; font-family: monospace;")
+        self.lbl_trajectory_energy.setStyleSheet("color: #a7f3d0; font-family: monospace; font-size: 11px; white-space: nowrap;")
         row2_layout.addWidget(self.lbl_trajectory_energy)
 
         row2_layout.addStretch()
 
         self.btn_adopt_traj_frame = QtWidgets.QPushButton("📌 Adopt Frame")
-        self.btn_adopt_traj_frame.setStyleSheet("background-color: #059669; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_adopt_traj_frame.setStyleSheet("background-color: #059669; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_adopt_traj_frame.setToolTip(
             "Chemcraft style: Adopt the currently displayed trajectory/IRC/conformer frame into the editable Z-Matrix table (with Undo)"
         )
         self.btn_adopt_traj_frame.clicked.connect(self._on_adopt_trajectory_frame)
         row2_layout.addWidget(self.btn_adopt_traj_frame)
 
-        self.btn_export_traj_movie = QtWidgets.QPushButton("🎬 Export Movie...")
-        self.btn_export_traj_movie.setStyleSheet("background-color: #7c3aed; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_export_traj_movie = QtWidgets.QPushButton("🎬 Movie...")
+        self.btn_export_traj_movie.setStyleSheet("background-color: #7c3aed; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_export_traj_movie.setToolTip("Export molecular optimization or MD trajectory as an animated GIF or MP4/WebM video")
         self.btn_export_traj_movie.clicked.connect(self._on_export_trajectory_movie)
         row2_layout.addWidget(self.btn_export_traj_movie)
 
-        self.btn_pes_plot = QtWidgets.QPushButton("📈 Energy Curve...")
-        self.btn_pes_plot.setStyleSheet("background-color: #0284c7; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_pes_plot = QtWidgets.QPushButton("📈 Energy...")
+        self.btn_pes_plot.setStyleSheet("background-color: #0284c7; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_pes_plot.setToolTip("GaussView / newBRORSEN style: Open interactive Potential Energy Surface (PES) Scan & Morse Fit plot")
         self.btn_pes_plot.clicked.connect(self._on_open_pes_plot)
         row2_layout.addWidget(self.btn_pes_plot)
 
-        self.btn_crest_explorer = QtWidgets.QPushButton("🧬 CREST Ensemble...")
-        self.btn_crest_explorer.setStyleSheet("background-color: #0d9488; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_crest_explorer = QtWidgets.QPushButton("🧬 Ensemble...")
+        self.btn_crest_explorer.setStyleSheet("background-color: #0d9488; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_crest_explorer.setToolTip("Open CREST & Conformer Ensemble Explorer (Boltzmann populations, RMSDs, duplicate pruning) (Ctrl+Shift+E)")
         self.btn_crest_explorer.clicked.connect(self._on_open_crest_explorer)
         row2_layout.addWidget(self.btn_crest_explorer)
 
-        self.btn_irc_sweeper = QtWidgets.QPushButton("⚛️ IRC Sweeper...")
-        self.btn_irc_sweeper.setStyleSheet("background-color: #6366f1; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_irc_sweeper = QtWidgets.QPushButton("⚛️ IRC...")
+        self.btn_irc_sweeper.setStyleSheet("background-color: #6366f1; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_irc_sweeper.setToolTip("Open Interactive IRC Reaction Sweeper & Energy Profile (MEP, activation barriers, landmark jumps) (Ctrl+Shift+I)")
         self.btn_irc_sweeper.clicked.connect(self._on_open_irc_sweeper)
         row2_layout.addWidget(self.btn_irc_sweeper)
 
-        self.btn_view_loaded_log = QtWidgets.QPushButton("📄 View Log...")
-        self.btn_view_loaded_log.setStyleSheet("background-color: #334155; color: #ffffff; padding: 2px 8px; font-weight: bold;")
+        self.btn_view_loaded_log = QtWidgets.QPushButton("📄 Log...")
+        self.btn_view_loaded_log.setStyleSheet("background-color: #334155; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_view_loaded_log.setToolTip("Open full calculation output log with search and section indexing (F2)")
         self.btn_view_loaded_log.clicked.connect(self._on_view_qm_output_file)
         row2_layout.addWidget(self.btn_view_loaded_log)
 
-        traj_box_layout.addLayout(row2_layout)
+        row2_scroll.setWidget(row2_container)
+        traj_box_layout.addWidget(row2_scroll)
 
         self.grp_trajectory.setVisible(False)
         left_layout.addWidget(self.grp_trajectory)
@@ -1332,6 +1342,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_open_smiles.triggered.connect(self._on_prompt_smiles_or_inchi)
         menu_file.addAction(act_open_smiles)
 
+        act_2d_sketcher = QtGui.QAction("✏️ 2D &Molecular Bond-Line Sketcher (ChemDraw / Marvin Style)...", self)
+        act_2d_sketcher.setShortcut("Ctrl+Shift+K")
+        act_2d_sketcher.setToolTip("Sketch 2D chemical bond-line formulas (rings, heteroatoms, multiple bonds) and convert automatically to 3D (Ctrl+Shift+K)")
+        act_2d_sketcher.triggered.connect(self._on_open_2d_sketcher)
+        menu_file.addAction(act_2d_sketcher)
+
         act_open_qm_log = QtGui.QAction("Import &QM Log / Output File (newBRORSEN, Gaussian, ORCA)...", self)
         act_open_qm_log.setToolTip("Open output file from newBRORSEN (.out), Gaussian, ORCA, Q-Chem, or xTB to view structures, optimization steps and frequencies")
         act_open_qm_log.triggered.connect(self._on_import_qm_log)
@@ -1638,6 +1654,13 @@ class UIMixin(UIInspectorTabsMixin):
         act_opt.triggered.connect(self._on_optimize_geometry)
         menu_edit.addAction(act_opt)
 
+        self.act_tweezers = QtGui.QAction("🧲 Interactive Molecular Tweezers (Live UFF Drag)", self)
+        self.act_tweezers.setCheckable(True)
+        self.act_tweezers.setChecked(False)
+        self.act_tweezers.setToolTip("When checked, dragging an atom with Ctrl+Drag dynamically relaxes connected atoms in real-time via UFF force field")
+        self.act_tweezers.toggled.connect(self._on_toggle_tweezers)
+        menu_edit.addAction(self.act_tweezers)
+
         act_conf = QtGui.QAction("🔄 &Conformational Search (Find Lowest-Energy Rotamer)...", self)
         act_conf.setToolTip("Sample rotatable bonds, minimize candidate rotamers, and rank conformers by energy")
         act_conf.triggered.connect(self._on_conformer_search)
@@ -1786,6 +1809,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_benchmark.triggered.connect(self._on_open_benchmark_dialog)
         menu_tools.addAction(act_benchmark)
 
+        act_thermo = QtGui.QAction("⚗️ Reaction &Thermochemistry && Eyring Kinetics (ΔG‡, ΔGrxn, Keq)...", self)
+        act_thermo.setShortcut("Alt+Shift+R")
+        act_thermo.setToolTip("Compute reaction free energies (ΔGrxn), activation barriers (ΔG‡), equilibrium constant (Keq), and Eyring rate constants k(T) from QM logs (Alt+Shift+R)")
+        act_thermo.triggered.connect(self._on_open_reaction_thermo_dialog)
+        menu_tools.addAction(act_thermo)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
@@ -1916,6 +1945,35 @@ class UIMixin(UIInspectorTabsMixin):
         act_toggle_measure.triggered.connect(_toggle_meas)
         menu_view.addAction(act_toggle_measure)
 
+        act_pin_measure = QtGui.QAction("📌 &Pin Current Measurement to 3D View", self)
+        act_pin_measure.setShortcut("Alt+P")
+        act_pin_measure.setToolTip("Pins the currently measured distance/angle/dihedral permanently to the 3D model for publication figures (Alt+P)")
+        def _pin_meas():
+            if len(self.viewer.multi_selected) >= 2:
+                sel = list(self.viewer.multi_selected)
+                if not hasattr(self.viewer, "pinned_measurements"):
+                    self.viewer.pinned_measurements = []
+                if sel not in self.viewer.pinned_measurements:
+                    self.viewer.pinned_measurements.append(sel)
+                    self.statusBar().showMessage(f"Pinned measurement for atoms {sel} to 3D view.", 3500)
+                else:
+                    self.viewer.pinned_measurements.remove(sel)
+                    self.statusBar().showMessage(f"Unpinned measurement for atoms {sel}.", 3500)
+                self.viewer.update()
+            else:
+                self.statusBar().showMessage("Select 2, 3, or 4 atoms first to pin a measurement.", 3500)
+        act_pin_measure.triggered.connect(_pin_meas)
+        menu_view.addAction(act_pin_measure)
+
+        act_clear_pinned = QtGui.QAction("🧹 Clear All &Pinned Measurements", self)
+        act_clear_pinned.setToolTip("Clears all pinned distance, angle, and dihedral measurements from the 3D canvas.")
+        def _clear_pinned():
+            self.viewer.pinned_measurements = []
+            self.viewer.update()
+            self.statusBar().showMessage("Cleared all pinned measurements.", 3000)
+        act_clear_pinned.triggered.connect(_clear_pinned)
+        menu_view.addAction(act_clear_pinned)
+
         self.act_all_bond_lengths = QtGui.QAction("📐 Show All &Bond Lengths (Chemcraft Style)", self)
         self.act_all_bond_lengths.setCheckable(True)
         self.act_all_bond_lengths.setChecked(False)
@@ -1944,6 +2002,14 @@ class UIMixin(UIInspectorTabsMixin):
             self.viewer.update()
         act_pub_outlines.triggered.connect(_toggle_pub_out)
         menu_view.addAction(act_pub_outlines)
+
+        act_toggle_nci = QtGui.QAction("🌐 Show &Non-Covalent Interactions (π-π Stacking, Halogen Bonds)", self)
+        act_toggle_nci.setCheckable(True)
+        act_toggle_nci.setChecked(False)
+        act_toggle_nci.setShortcut("Alt+Shift+N")
+        act_toggle_nci.setToolTip("Detects and renders 3D non-covalent interactions (π-π ring stacking in purple, halogen bonds in orange) (Alt+Shift+N)")
+        act_toggle_nci.triggered.connect(self._on_toggle_nci)
+        menu_view.addAction(act_toggle_nci)
 
         menu_view.addSeparator()
 
@@ -1978,6 +2044,13 @@ class UIMixin(UIInspectorTabsMixin):
         act_pdark.setToolTip("Presentation preset: deep slate background with vibrant emissive atom colors (Ctrl+Alt+5)")
         act_pdark.triggered.connect(lambda: self.apply_journal_preset("dark"))
         menu_journal.addAction(act_pdark)
+
+        act_lighting_studio = QtGui.QAction("💡 &Lighting, Shaders && Figure Studio...", self)
+        act_lighting_studio.setToolTip("Open interactive 3D Lighting, Shading models, and Colorblind-safe palettes studio")
+        act_lighting_studio.triggered.connect(self._on_open_lighting_studio)
+        menu_journal.addSeparator()
+        menu_journal.addAction(act_lighting_studio)
+        menu_view.addAction(act_lighting_studio)
 
         # Camera Projections Submenu
         menu_projections = menu_view.addMenu("📷 &Camera Projections && Alignments...")
@@ -2014,8 +2087,8 @@ class UIMixin(UIInspectorTabsMixin):
         menu_projections.addAction(act_cam_flip)
 
         act_cam_ortho = QtGui.QAction("Toggle &Perspective / Orthographic Projection", self)
-        act_cam_ortho.setShortcut("Alt+P")
-        act_cam_ortho.setToolTip("Switch between perspective and orthographic (parallel) projection (Alt+P)")
+        act_cam_ortho.setShortcut("Alt+Shift+O")
+        act_cam_ortho.setToolTip("Switch between perspective and orthographic (parallel) projection (Alt+Shift+O)")
         act_cam_ortho.triggered.connect(self.viewer.toggle_orthographic)
         menu_projections.addAction(act_cam_ortho)
 
@@ -2123,6 +2196,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_manual.triggered.connect(self._on_open_manual)
         menu_help.addAction(act_manual)
 
+        menu_help.addSeparator()
+        act_desktop_icon = QtGui.QAction("🖥️ Create &Desktop / App Shortcut...", self)
+        act_desktop_icon.setToolTip("Create a convenient 1-click desktop icon for launching AgyMolden on your operating system.")
+        act_desktop_icon.triggered.connect(self._on_create_desktop_shortcut)
+        menu_help.addAction(act_desktop_icon)
+
     def _create_toolbar(self):
         toolbar = QtWidgets.QToolBar("File & Editing")
         toolbar.setObjectName("MainControlsToolbar")
@@ -2191,6 +2270,28 @@ class UIMixin(UIInspectorTabsMixin):
         btn_opt.setToolTip("Optimize geometry using force field / xTB (Ctrl+M)")
         btn_opt.clicked.connect(self._on_optimize_geometry)
         toolbar.addWidget(btn_opt)
+
+        self.btn_tb_tweezers = QtWidgets.QToolButton()
+        self.btn_tb_tweezers.setText("🧲 Tweezers")
+        self.btn_tb_tweezers.setCheckable(True)
+        self.btn_tb_tweezers.setChecked(False)
+        self.btn_tb_tweezers.setToolTip("🧲 Interactive Molecular Tweezers: Click to toggle. When active, hold Ctrl and drag any atom in the 3D viewport to dynamically relax the molecule in real time!")
+        self.btn_tb_tweezers.setStyleSheet("""
+            QToolButton:checked {
+                background-color: #0284c7;
+                color: #ffffff;
+                font-weight: bold;
+                border: 2px solid #38bdf8;
+                border-radius: 4px;
+                padding: 2px 6px;
+            }
+            QToolButton:hover {
+                border: 1px solid #0284c7;
+            }
+        """)
+        self.btn_tb_tweezers.toggled.connect(self.act_tweezers.setChecked)
+        self.act_tweezers.toggled.connect(self.btn_tb_tweezers.setChecked)
+        toolbar.addWidget(self.btn_tb_tweezers)
 
         toolbar_qm = QtWidgets.QToolBar("Calculations & Surfaces")
         toolbar_qm.setObjectName("QMAndSurfacesToolbar")
@@ -2268,6 +2369,30 @@ class UIMixin(UIInspectorTabsMixin):
         btn_cmd_palette.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold; padding: 2px 8px; border: 1px solid #334155; border-radius: 4px;")
         btn_cmd_palette.clicked.connect(self._on_open_command_palette)
         toolbar_qm.addWidget(btn_cmd_palette)
+
+        toolbar_qm.addSeparator()
+
+        # Workspace Mode Switcher (Action 2: Modern Build / Calculate / Analyze workflows)
+        lbl_mode = QtWidgets.QLabel("Mode:")
+        lbl_mode.setStyleSheet("font-size: 11px; font-weight: bold; color: #94a3b8; margin-left: 4px;")
+        toolbar_qm.addWidget(lbl_mode)
+
+        self.combo_workspace_mode = QtWidgets.QComboBox()
+        self.combo_workspace_mode.addItem("🔨 Build & Edit", "build")
+        self.combo_workspace_mode.addItem("⚛️ Calculate (QM)", "calculate")
+        self.combo_workspace_mode.addItem("📊 Analyze Results", "analyze")
+        self.combo_workspace_mode.setToolTip(
+            "Workspace Perspective Switcher:\n"
+            "• Build & Edit: Focuses on molecular assembly, Z-matrix, 3D builder, and geometry editing.\n"
+            "• Calculate (QM): Focuses on ORCA, Gaussian, multiwfn, PBC, and pre-flight checks.\n"
+            "• Analyze Results: Focuses on Vibrations, Spectra (IR/UV/NMR/DOS), and Molecular Orbitals."
+        )
+        self.combo_workspace_mode.setStyleSheet(
+            "QComboBox { background-color: #0f172a; color: #38bdf8; font-weight: bold; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; }"
+            "QComboBox::drop-down { border: none; }"
+        )
+        self.combo_workspace_mode.currentIndexChanged.connect(self._on_workspace_mode_changed)
+        toolbar_qm.addWidget(self.combo_workspace_mode)
 
         # Permanent Chemical Summary Label on Status Bar
         self.lbl_chem_summary = QtWidgets.QLabel("Empty Molecule")
@@ -2375,5 +2500,47 @@ class UIMixin(UIInspectorTabsMixin):
         _populate()
         search_edit.setFocus()
         dlg.exec()
+
+    def _on_workspace_mode_changed(self, index: int):
+        """Switches active workspace perspective (Build, Calculate, Analyze) for streamlined workflows."""
+        mode_data = self.combo_workspace_mode.currentData()
+        if not hasattr(self, "tabs"):
+            return
+
+        # Target tabs for each mode
+        if mode_data == "build":
+            # Show builder tab or Z-matrix
+            builder_idx = getattr(self, "tab_builder", None)
+            if builder_idx is not None:
+                idx = self.tabs.indexOf(builder_idx)
+                if idx >= 0:
+                    self.tabs.setCurrentIndex(idx)
+            else:
+                self.tabs.setCurrentIndex(0)
+            self.statusBar().showMessage("Workspace switched to: Build & Edit (Z-Matrix, 3D Builder)", 3500)
+
+        elif mode_data == "calculate":
+            # Focus on calculation or symmetry
+            sym_tab = getattr(self, "tab_symmetry", None)
+            if sym_tab is not None:
+                idx = self.tabs.indexOf(sym_tab)
+                if idx >= 0:
+                    self.tabs.setCurrentIndex(idx)
+            self.statusBar().showMessage("Workspace switched to: Calculate (QM Setup, ORCA, Pre-flight)", 3500)
+
+        elif mode_data == "analyze":
+            # Focus on vibrations or MOs
+            vib_tab = getattr(self, "tab_vibrations", None)
+            mo_tab = getattr(self, "tab_orbitals", None)
+            if vib_tab is not None:
+                idx = self.tabs.indexOf(vib_tab)
+                if idx >= 0:
+                    self.tabs.setCurrentIndex(idx)
+            elif mo_tab is not None:
+                idx = self.tabs.indexOf(mo_tab)
+                if idx >= 0:
+                    self.tabs.setCurrentIndex(idx)
+            self.statusBar().showMessage("Workspace switched to: Analyze (Vibrations, Spectra, Orbitals)", 3500)
+
 
     # Core logic

@@ -65,6 +65,7 @@ from .alignment import (
     capture_rigid_frame,
     apply_rigid_frame,
 )
+from .molecule_model import MoleculeModel
 
 
 
@@ -88,6 +89,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.setStyleSheet(DARK_THEME_QSS)
 
         # Core molecule state
+        self.model = MoleculeModel(self)
         self.zatoms: List[ZAtom] = []
         self.coords: np.ndarray = np.empty((0, 3), dtype=np.float64)
         self.variables: Dict[str, float] = {}
@@ -334,6 +336,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.viewer.strict_bonds = self.strict_topology
         self.viewer.set_molecule(symbols, self.coords, user_bonds=ub)
         self.table_widget.load_zatoms(zatoms)
+        if hasattr(self, "model") and self.model is not None:
+            self.model.zatoms = list(zatoms)
+            self.model.coords = np.copy(self.coords)
+            self.model.variables = dict(getattr(self, "variables", {}))
+            self.model.cross_bonds = set(getattr(self, "cross_bonds", set()))
+            self.model.strict_topology = bool(getattr(self, "strict_topology", False))
+            self.model.structure_changed.emit()
+            self.model.topology_changed.emit()
         self._sync_raw_text()
         self._update_adjust_panel()
         self._update_chemical_summary()
@@ -457,6 +467,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.viewer.set_molecule(symbols, self.coords, user_bonds=user_bonds)
 
         self.table_widget.load_zatoms(zatoms)
+        if hasattr(self, "model") and self.model is not None:
+            self.model.zatoms = list(zatoms)
+            self.model.coords = np.copy(self.coords)
+            self.model.variables = dict(getattr(self, "variables", {}))
+            self.model.cross_bonds = set(getattr(self, "cross_bonds", set()))
+            self.model.strict_topology = bool(getattr(self, "strict_topology", False))
+            self.model.structure_changed.emit()
+            self.model.topology_changed.emit()
         self._sync_raw_text()
         self._update_adjust_panel()
         self._update_chemical_summary()
@@ -607,7 +625,8 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Fast steric clash detection (atoms closer than 58% of covalent radii sum or < 0.70 A)
         from .spatial_index import find_steric_clashes
         symbols_all = [a.symbol for a in self.zatoms]
-        raw_clashes = find_steric_clashes(symbols_all, self.coords, bonds=None, threshold_ratio=0.58, min_absolute_dist=0.70)
+        active_bonds = set(self._current_explicit_bonds()) if hasattr(self, "_current_explicit_bonds") else None
+        raw_clashes = find_steric_clashes(symbols_all, self.coords, bonds=active_bonds, threshold_ratio=0.58, min_absolute_dist=0.70)
         clashes = [(c[0], c[1], c[2], c[3], c[4]) for c in raw_clashes]
 
         clash_str = ""
@@ -1854,6 +1873,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
     def _on_toggle_hbonds(self, enabled: bool):
         self.viewer.show_hbonds = enabled
         self.viewer.update()
+
+    def _on_toggle_nci(self, enabled: bool):
+        self.viewer.show_nci = enabled
+        self.viewer.update()
+        state_str = "Enabled" if enabled else "Disabled"
+        self.statusBar().showMessage(f"Non-Covalent Interactions (π-π, Halogen Bonds): {state_str}", 3000)
 
     def _on_toggle_forces(self, enabled: bool):
         self.viewer.show_forces = enabled

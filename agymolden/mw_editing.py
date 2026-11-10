@@ -127,6 +127,19 @@ class EditingMixin:
         self.pending_new_element = elem
         self.pending_picks_needed = min(n, 3)
         self.picked_references = []
+        self.viewer.picking_active = True
+        self.viewer.picked_references = []
+
+        if self.pending_picks_needed == 1:
+            banner = f"Adding {elem}: Click atom in 3D viewport to define Bond (or click/drag canvas)."
+        elif self.pending_picks_needed == 2:
+            banner = f"Adding {elem}: Click 1st atom for Bond, then 2nd for Angle (or click/drag canvas)."
+        else:
+            banner = f"Adding {elem}: Click 1st atom for Bond, 2nd for Angle, 3rd for Dihedral (or click/drag canvas)."
+
+        self.viewer.picking_banner = banner
+        self.statusBar().showMessage(banner, 10000)
+        self.viewer.update()
 
     def _on_quick_stamp_fragment(self, frag_name: str):
         """1-Click stamp functional group or ring onto selected atom or spawn in space."""
@@ -158,24 +171,6 @@ class EditingMixin:
                 all_coords = np.vstack([self.coords, pts_offset])
                 self.set_molecule_from_cartesian(all_syms, all_coords)
                 self.statusBar().showMessage(f"Added {frag_name} fragment to viewport", 3500)
-
-        # Activate Molden interactive reference picking (ref1 for bond, ref2 for angle, ref3 for dihedral)
-        self.pending_new_element = elem
-        self.pending_picks_needed = min(n, 3)
-        self.picked_references = []
-        self.viewer.picking_active = True
-        self.viewer.picked_references = []
-
-        if self.pending_picks_needed == 1:
-            banner = f"Adding {elem}: Click atom in 3D viewport to define Bond (or click/drag canvas)."
-        elif self.pending_picks_needed == 2:
-            banner = f"Adding {elem}: Click 1st atom for Bond, then 2nd for Angle (or click/drag canvas)."
-        else:
-            banner = f"Adding {elem}: Click 1st atom for Bond, 2nd for Angle, 3rd for Dihedral (or click/drag canvas)."
-
-        self.viewer.picking_banner = banner
-        self.statusBar().showMessage(banner, 10000)
-        self.viewer.update()
 
     def _on_atom_picked_for_connectivity(self, atom_idx: int):
         if not self.viewer.picking_active or not self.pending_new_element:
@@ -871,16 +866,91 @@ class EditingMixin:
         self.statusBar().showMessage(msg + ".", 5000)
 
     def _on_atom_moved_by_drag(self, atom_idx: int, new_x: float, new_y: float, new_z: float):
-        """Real-time coordinate update while translating an existing atom with Ctrl + Left-Click Drag."""
-        self.coords[atom_idx] = np.array([new_x, new_y, new_z], dtype=np.float64)
-        sym = self.zatoms[atom_idx].symbol
-        self.statusBar().showMessage(
-            f"Moving {sym}{atom_idx+1} to ({new_x:.3f}, {new_y:.3f}, {new_z:.3f}) Å", 1000
-        )
+        """Real-time coordinate update while translating an existing atom with Ctrl + Left-Click Drag.
+        If Live Molecular Tweezers relaxation is enabled, relaxes connected atoms concurrently."""
+        if hasattr(self, "viewer") and hasattr(self.viewer, "coords") and len(self.viewer.coords) == len(self.coords):
+            self.coords = np.array(self.viewer.coords, copy=True)
+        if 0 <= atom_idx < len(self.coords):
+            self.coords[atom_idx] = np.array([new_x, new_y, new_z], dtype=np.float64)
+            if hasattr(self, "viewer") and hasattr(self.viewer, "coords") and 0 <= atom_idx < len(self.viewer.coords):
+                self.viewer.coords[atom_idx] = self.coords[atom_idx]
+
+        sym = self.zatoms[atom_idx].symbol if 0 <= atom_idx < len(self.zatoms) else ""
+
+        # Molecular Tweezers (Live UFF relaxation during drag)
+        if getattr(self, "live_tweezers_enabled", False) and len(self.zatoms) > 2:
+            try:
+                symbols = [a.symbol for a in self.zatoms]
+                drag_indices = set(getattr(self.viewer, "atom_move_drag_indices", [atom_idx]) or [atom_idx])
+
+                # Pin dragged atom(s) at mouse pointer, allow remaining atoms to relax via UFF analytical gradients
+                if len(drag_indices) < len(symbols):
+                    user_bonds = list(getattr(self.viewer, "bonds", []))
+                    opt_c, e_val = optimize_geometry_force_field(
+                        symbols, self.coords, user_bonds=user_bonds, max_iter=8, frozen_indices=drag_indices
+                    )
+                    self.coords = np.array(opt_c, copy=True)
+                    self.viewer.coords = np.array(opt_c, copy=True)
+                    self.viewer.compute_bonds()
+                    self.viewer.update()
+                    self.statusBar().showMessage(
+                        f"🧲 Tweezers: Dragging {sym}{atom_idx+1} at ({new_x:.2f}, {new_y:.2f}, {new_z:.2f}) Å | UFF: {e_val:.1f} kcal/mol", 1000
+                    )
+                else:
+                    self.statusBar().showMessage(
+                        f"🧲 Tweezers: Translating selected {len(drag_indices)} atom(s)", 1000
+                    )
+            except Exception:
+                self.statusBar().showMessage(
+                    f"Moving {sym}{atom_idx+1} to ({new_x:.3f}, {new_y:.3f}, {new_z:.3f}) Å", 1000
+                )
+        else:
+            self.statusBar().showMessage(
+                f"Moving {sym}{atom_idx+1} to ({new_x:.3f}, {new_y:.3f}, {new_z:.3f}) Å", 1000
+            )
+
+        # Real-time live geometry updates:
+        # 1. Update Adjust Panel sliders/spinners for active distance/angle/dihedral
+        self._update_adjust_panel()
+
+        # 2. Live update table cell distances for the moving atoms
+        drag_indices = set(getattr(self.viewer, "atom_move_drag_indices", [atom_idx]) or [atom_idx])
+        if hasattr(self, "table_widget") and len(self.zatoms) == len(self.coords):
+            for i, a in enumerate(self.zatoms):
+                if a.ref1 is not None and 0 <= a.ref1 < len(self.coords):
+                    if i in drag_indices or a.ref1 in drag_indices:
+                        d = float(np.linalg.norm(self.coords[i] - self.coords[a.ref1]))
+                        item = self.table_widget.item(i, self.table_widget.COL_DIST)
+                        if item is not None:
+                            item.setText(f"{d:.4f}")
+
+        # 3. Live Cartesian XYZ text streaming (when on Cartesian XYZ tab)
+        if hasattr(self, "text_raw_xyz") and hasattr(self, "tabs") and self.tabs.tabText(self.tabs.currentIndex()) == "Cartesian XYZ":
+            from .chem_identifiers import format_xyz_string
+            symbols = [a.symbol for a in self.zatoms]
+            xyz_txt = format_xyz_string(symbols, self.coords, comment="AgyMolden structure")
+            self.text_raw_xyz.blockSignals(True)
+            self.text_raw_xyz.setPlainText(xyz_txt)
+            self.text_raw_xyz.blockSignals(False)
+
+    def _on_toggle_tweezers(self, checked: bool):
+        """Toggle interactive live force field relaxation during atom drag."""
+        self.live_tweezers_enabled = checked
+        if hasattr(self, "viewer"):
+            self.viewer.tweezers_active = checked
+            # Set crosshair cursor when tweezers are active to show tool readiness
+            if checked:
+                self.viewer.setCursor(QtCore.Qt.CursorShape.CrossCursor)
+            else:
+                self.viewer.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+        status = "enabled (Left-click & drag any atom to relax live)" if checked else "disabled"
+        self.statusBar().showMessage(f"🧲 Molecular Tweezers: {status}", 4000)
 
     def _on_atom_drag_finished(self, atom_idx: int):
         """Called when mouse release completes atom dragging. Reconstructs canonical Z-matrix."""
         from .alignment import capture_rigid_frame
+        if hasattr(self, "viewer") and hasattr(self.viewer, "coords") and len(self.viewer.coords) == len(self.coords):
+            self.coords = np.array(self.viewer.coords, copy=True)
         symbols = [a.symbol for a in self.zatoms]
         if self.strict_topology:
             new_zatoms = cartesian_to_zmatrix(symbols, self.coords, existing_zatoms=self.zatoms)
@@ -891,7 +961,7 @@ class EditingMixin:
         self.table_widget.load_zatoms(self.zatoms)
         self._sync_raw_text()
         self._update_adjust_panel()
-        sym = symbols[atom_idx] if atom_idx < len(symbols) else ""
+        sym = symbols[atom_idx] if 0 <= atom_idx < len(symbols) else ""
         self.statusBar().showMessage(
             f"Moved atom {sym}{atom_idx+1}. Updated Z-matrix geometry.", 4000
         )
@@ -900,6 +970,8 @@ class EditingMixin:
         """Called when mouse release completes rotating a selected region of atoms."""
         from .alignment import capture_rigid_frame
         self._push_undo_state()
+        if hasattr(self, "viewer") and hasattr(self.viewer, "coords") and len(self.viewer.coords) == len(self.coords):
+            self.coords = np.array(self.viewer.coords, copy=True)
         symbols = [a.symbol for a in self.zatoms]
         if self.strict_topology:
             new_zatoms = cartesian_to_zmatrix(symbols, self.coords, existing_zatoms=self.zatoms)
@@ -1704,6 +1776,9 @@ class EditingMixin:
         act_vol = menu.addAction("🌐 Volumetric Studio & MOs (Ctrl+Alt+O)...")
         act_vol.triggered.connect(self._on_open_volumetric_dialog)
 
+        act_light = menu.addAction("💡 3D Lighting & Figure Studio...")
+        act_light.triggered.connect(self._on_open_lighting_studio)
+
         if getattr(self.viewer, "active_isosurfaces", None):
             act_clear_surf = menu.addAction("✖ Clear 3D Orbital / Isosurface (Esc)")
             act_clear_surf.triggered.connect(self._on_clear_orbital_surface)
@@ -1717,6 +1792,12 @@ class EditingMixin:
         act_desel.triggered.connect(lambda: setattr(self.viewer, 'multi_selected', []) or setattr(self.viewer, 'selected_atom_idx', None) or self.viewer.update())
 
         menu.exec(global_pos)
+
+    def _on_open_lighting_studio(self):
+        """Open 3D Lighting, Shaders & Publication Studio."""
+        from .dialog_lighting import LightingStudioDialog
+        dlg = LightingStudioDialog(self.viewer, parent=self)
+        dlg.exec()
 
     def _mutate_atom_element(self, atom_idx: int, new_element: str):
         """Mutate an atom's element symbol cleanly (and across its symmetry orbit if Impose Symmetry is enabled)."""

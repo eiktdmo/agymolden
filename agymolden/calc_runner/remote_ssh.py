@@ -74,7 +74,7 @@ def parse_ssh_config_hosts() -> List[RemoteHostConfig]:
                     current_host = RemoteHostConfig(
                         alias=val,
                         hostname=val,
-                        user=os.environ.get("USER", "andres"),
+                        user=os.environ.get("USER", ""),
                     )
                 elif current_host:
                     if key == "hostname":
@@ -98,8 +98,10 @@ def parse_ssh_config_hosts() -> List[RemoteHostConfig]:
 
 
 def parse_history_remote_connections() -> List[RemoteHostConfig]:
-    """Inspect bash history for recent user@host and ssh key connections (e.g. echamorro@192.168.2.106)."""
+    """Inspect bash history for recent user@host connections if enabled via AGYMOLDEN_SCAN_HISTORY=1."""
     learned = []
+    if os.environ.get("AGYMOLDEN_SCAN_HISTORY", "0") != "1":
+        return learned
     hist_path = os.path.expanduser("~/.bash_history")
     if not os.path.isfile(hist_path):
         return learned
@@ -109,13 +111,11 @@ def parse_history_remote_connections() -> List[RemoteHostConfig]:
         with open(hist_path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
 
-        # Iterate in reverse to capture most recent entries first
         for line in reversed(lines):
             line = line.strip()
             if not any(line.startswith(cmd) for cmd in ("ssh ", "scp ", "sftp ")):
                 continue
 
-            # Look for user@host
             m_uh = re.search(r"([a-zA-Z0-9_\.\-]+)@([a-zA-Z0-9_\.\-]+)", line)
             if not m_uh:
                 continue
@@ -125,21 +125,15 @@ def parse_history_remote_connections() -> List[RemoteHostConfig]:
                 continue
             seen.add(key_tag)
 
-            # Check for -i identity_file
             m_key = re.search(r"-i\s+([^\s]+)", line)
             ident = os.path.expanduser(m_key.group(1)) if m_key else ""
-            if not ident:
-                # Check default identity files if they match
-                cand_key = os.path.expanduser("~/.ssh/id_rsa_totalcmd.pem")
-                if os.path.isfile(cand_key) and "192.168.2.106" in h:
-                    ident = cand_key
 
             learned.append(RemoteHostConfig(
-                alias=f"{u}@{h} (Learned from session history)",
+                alias=f"{u}@{h} (Discovered from command history)",
                 hostname=h,
                 user=u,
                 identity_file=ident,
-                remote_workdir=f"/home/{u}/pruebareyes",
+                remote_workdir=f"~/calc_scratch",
             ))
     except Exception as e:
         log.warning(f"Error reading bash history: {e}")

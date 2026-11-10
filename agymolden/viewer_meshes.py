@@ -166,8 +166,8 @@ uniform int u_depth_cue;
 out vec4 frag_color;
 
 void main() {
-    vec3 base_col = (u_use_instancing == 1) ? v_inst_color : u_color;
-    int hl_flag = (u_use_instancing == 1) ? v_inst_hl : u_is_highlighted;
+    vec3 base_col = (u_use_instancing >= 1) ? v_inst_color : u_color;
+    int hl_flag = (u_use_instancing >= 1) ? v_inst_hl : u_is_highlighted;
 
     vec3 norm = normalize(v_normal);
     vec3 light_dir = normalize(u_light_pos - v_frag_pos);

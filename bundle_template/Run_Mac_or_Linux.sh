@@ -36,7 +36,7 @@ echo "========================================================"
 
 # 2. Detect Python 3
 PY_CMD=""
-for cand in python3 python python3.13 python3.12 python3.11 python3.10 python3.9; do
+for cand in python3 python python3.14 python3.13 python3.12 python3.11 python3.10 python3.9; do
     if command -v "$cand" &>/dev/null; then
         # Check if version is 3.x
         VER=$("$cand" -c "import sys; print(sys.version_info[0])" 2>/dev/null || true)

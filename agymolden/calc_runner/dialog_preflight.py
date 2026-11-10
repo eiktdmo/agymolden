@@ -112,6 +112,19 @@ class PreflightValidationDialog(QtWidgets.QDialog):
 
         # Action Buttons
         btn_bar = QtWidgets.QHBoxLayout()
+
+        # If clashes exist, add 1-click Auto-Relax button
+        has_clash = any("clash" in issue.title.lower() or "clash" in issue.message.lower() for issue in self.report.issues)
+        if has_clash and hasattr(self.parent(), "_on_optimize_geometry"):
+            btn_relax = QtWidgets.QPushButton("⚡ Auto-Relax Clashes (Force Field)")
+            btn_relax.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 6px 14px;")
+            btn_relax.setToolTip("Runs quick universal force field (UFF) minimization to resolve steric collisions.")
+            def _do_relax():
+                self.accept()
+                QtCore.QTimer.singleShot(50, self.parent()._on_optimize_geometry)
+            btn_relax.clicked.connect(_do_relax)
+            btn_bar.addWidget(btn_relax)
+
         btn_bar.addStretch()
 
         if self.report.has_errors:

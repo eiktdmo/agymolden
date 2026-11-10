@@ -23,6 +23,27 @@ class ViewerInteractionMixin:
 
         # Left-Click
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            # Check if user clicked on an empty-canvas Welcome Card interactive hotspot
+            if len(self.coords) == 0 and hasattr(self, "_welcome_hotspots"):
+                for rect, action_key in getattr(self, "_welcome_hotspots", []):
+                    if rect.contains(event.pos()):
+                        mw = self.window()
+                        if action_key == "open_file" and hasattr(mw, "_on_open_universal_file"):
+                            QtCore.QTimer.singleShot(0, mw._on_open_universal_file)
+                            return
+                        elif action_key == "build_name" and hasattr(mw, "_on_prompt_smiles_or_inchi"):
+                            QtCore.QTimer.singleShot(0, mw._on_prompt_smiles_or_inchi)
+                            return
+                        elif action_key == "open_gallery" and hasattr(mw, "_on_open_example_gallery"):
+                            QtCore.QTimer.singleShot(0, mw._on_open_example_gallery)
+                            return
+                        elif action_key == "quick_orca" and hasattr(mw, "_on_quick_run_orca"):
+                            QtCore.QTimer.singleShot(0, mw._on_quick_run_orca)
+                            return
+                        elif action_key == "cmd_palette" and hasattr(mw, "_on_open_command_palette"):
+                            QtCore.QTimer.singleShot(0, mw._on_open_command_palette)
+                            return
+
             # Check if user clicked on the in-viewport "Clear 3D Surface" HUD button
             clear_rect = getattr(self, "clear_surface_rect", None)
             if clear_rect is not None and getattr(self, "active_isosurfaces", None) and clear_rect.contains(event.pos()):
@@ -69,7 +90,8 @@ class ViewerInteractionMixin:
 
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
-            clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
+            is_tweezers = bool(getattr(self, "tweezers_active", False))
+            clicked_atom = self._pick_atom(event.pos(), tolerance_px=48.0 if is_tweezers else 32.0)
 
             if clicked_atom is not None:
                 self.empty_press_pos = None
@@ -94,13 +116,14 @@ class ViewerInteractionMixin:
                     (app_mods & QtCore.Qt.KeyboardModifier.ControlModifier)
                 )
 
-                if is_ctrl_down:
+                is_tweezers = bool(getattr(self, "tweezers_active", False))
+                if is_ctrl_down or is_tweezers:
                     self.highlighted_feature_atoms = {}
                     # Filter any out-of-bounds indices in multi_selected
                     n_coords = len(self.coords)
                     self.multi_selected = [i for i in self.multi_selected if 0 <= i < n_coords]
 
-                    # Ctrl + Left-Click: Multi-select/toggle atoms and prepare to drag if moved >= 6 px
+                    # Left-Click with Tweezers or Ctrl: Prepare to drag atom
                     was_already_sel = clicked_atom in self.multi_selected
                     self._ctrl_press_atom = clicked_atom
                     self._ctrl_press_was_selected = was_already_sel
@@ -111,7 +134,10 @@ class ViewerInteractionMixin:
 
                     self.atom_move_drag_active = True
                     self.atom_move_drag_idx = clicked_atom
-                    self.atom_move_drag_indices = [idx for idx in self.multi_selected if 0 <= idx < n_coords] or [clicked_atom]
+                    if was_already_sel and len(self.multi_selected) > 1:
+                        self.atom_move_drag_indices = [idx for idx in self.multi_selected if 0 <= idx < n_coords]
+                    else:
+                        self.atom_move_drag_indices = [clicked_atom]
                     self.atom_move_drag_start_screen = event.pos()
                     self.atom_move_drag_start_coord = np.copy(self.coords[clicked_atom])
                     self.atom_move_drag_start_coords = {idx: np.copy(self.coords[idx]) for idx in self.atom_move_drag_indices if 0 <= idx < n_coords}
@@ -279,12 +305,14 @@ class ViewerInteractionMixin:
                 self.bond_torsion_dragged.emit(u, v, delta_deg)
             return
 
-        # Handle active Ctrl + Left-Click drag to move existing atom or selected group in 3D camera plane
+        # Handle active Left-Click Tweezers / Ctrl drag to move existing atom in 3D camera plane
         if self.atom_move_drag_active and self.atom_move_drag_idx is not None:
             dx = float(event.pos().x() - self.atom_move_drag_start_screen.x())
             dy = float(event.pos().y() - self.atom_move_drag_start_screen.y())
+            is_tweezers = bool(getattr(self, "tweezers_active", False))
             if not getattr(self, "_ctrl_drag_started_emitted", False):
-                if abs(dx) + abs(dy) < 6.0:
+                # When Tweezers tool is active, respond immediately without requiring a 6px drag deadzone
+                if not is_tweezers and (abs(dx) + abs(dy) < 6.0):
                     return
                 self._ctrl_drag_started_emitted = True
                 self.atom_drag_started.emit(self.atom_move_drag_idx)
@@ -293,16 +321,17 @@ class ViewerInteractionMixin:
             scale = (self.zoom * 0.8) / h
             delta_3d = (dx * scale) * right_w - (dy * scale) * up_w
 
-            # Translate all atoms in the active drag group
+            # Translate dragged atom(s)
             indices = self.atom_move_drag_indices or [self.atom_move_drag_idx]
             for idx in indices:
                 orig_pos = self.atom_move_drag_start_coords.get(idx, self.coords[idx])
                 self.coords[idx] = orig_pos + delta_3d
 
-            self.compute_bonds()
-            self.update()
             new_c = self.coords[self.atom_move_drag_idx]
             self.atom_moved_by_drag.emit(self.atom_move_drag_idx, float(new_c[0]), float(new_c[1]), float(new_c[2]))
+            self.compute_bonds()
+            self._update_measurement_info()
+            self.update()
             return
 
         # Handle active Left-Click drag from an atom (elastic line to add atom)
@@ -570,7 +599,8 @@ class ViewerInteractionMixin:
 
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
-            clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
+            is_tweezers = bool(getattr(self, "tweezers_active", False))
+            clicked_atom = self._pick_atom(event.pos(), tolerance_px=48.0 if is_tweezers else 32.0)
 
             if clicked_atom is not None:
                 self.atom_double_clicked.emit(clicked_atom)

@@ -124,7 +124,7 @@ def test_pbc_dialog_and_supercell_flow(qapp):
         [0.0, -0.75, 0.58],
     ])
     dlg = PBCDialog(None, symbols=symbols, coords=coords)
-    assert dlg.tabs.count() == 3
+    assert dlg.tabs.count() == 4
     assert dlg.tbl_frac.rowCount() == 3
 
     # Change parameters

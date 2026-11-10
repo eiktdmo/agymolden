@@ -252,6 +252,51 @@ class FileIOMixin:
             except Exception as e:
                 dialog_service.error(self, "Chemical Name / Identifier Error", str(e), exc=e)
 
+    def _on_open_2d_sketcher(self):
+        """Open 2D Molecular Bond-Line Sketcher (Ctrl+Shift+K)."""
+        from .dialog_2d_sketcher import MoleculeSketcher2DDialog
+        from .zmatrix import cartesian_to_zmatrix, ZAtom
+
+        dlg = MoleculeSketcher2DDialog(self)
+
+        def _on_structure_generated(syms, coords, bonds, bo):
+            self._push_undo_state()
+            self.variables = {}
+            try:
+                zatoms = cartesian_to_zmatrix(syms, coords, user_bonds=bonds, strict_bonds=bool(bonds))
+                tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+                self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+                self.strict_topology = bool(bonds)
+                self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+            except Exception as e:
+                # Direct fallback into MoleculeViewer and table
+                fallback_zatoms = [ZAtom(sym) for sym in syms]
+                self.cross_bonds = {norm_bond(u, v) for u, v in bonds}
+                self.strict_topology = bool(bonds)
+                self.zatoms = fallback_zatoms
+                self.coords = np.copy(coords)
+                self.viewer.set_molecule(syms, coords, user_bonds=bonds)
+                if hasattr(self, "table_widget"):
+                    self.table_widget.load_zatoms(fallback_zatoms)
+                if hasattr(self, "model") and self.model is not None:
+                    self.model.zatoms = list(fallback_zatoms)
+                    self.model.coords = np.copy(coords)
+                    self.model.cross_bonds = set(self.cross_bonds)
+                    self.model.strict_topology = self.strict_topology
+                    self.model.structure_changed.emit()
+                    self.model.topology_changed.emit()
+                self._sync_raw_text()
+                self._update_chemical_summary()
+
+            if hasattr(self.viewer, "bond_orders"):
+                self.viewer.bond_orders = bo
+            self.viewer.auto_center()
+            self.viewer.update()
+            self.statusBar().showMessage(f"Converted 2D sketch to 3D structure ({len(syms)} atoms).", 4000)
+
+        dlg.structure_generated.connect(_on_structure_generated)
+        dlg.exec()
+
     def _on_open_esp_2d_dialog(self):
         """Open 2D Electrostatic Potential (ESP) Contour Slicer Dialog."""
         from .dialog_esp_2d import ESP2DContourDialog
@@ -1990,4 +2035,69 @@ class FileIOMixin:
             "<li>Molden / Gaussian Z-matrix and XYZ Cartesian file import & export</li>"
             "</ul>"
         )
+
+    def _on_create_desktop_shortcut(self):
+        """Create a native Desktop or Application Menu shortcut for AgyMolden without standalone binaries."""
+        import sys
+        import stat
+
+        py_exe = sys.executable
+        home = os.path.expanduser("~")
+        desktop_dir = os.path.join(home, "Desktop")
+        if not os.path.isdir(desktop_dir):
+            desktop_dir = home
+
+        # 1. Linux: .desktop file
+        if sys.platform.startswith("linux"):
+            desktop_file = os.path.join(desktop_dir, "AgyMolden.desktop")
+            content = f"""[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AgyMolden
+Comment=Quantum Chemistry & Molecular Builder Workbench
+Exec="{py_exe}" -m agymolden
+Icon=applications-science
+Terminal=false
+Categories=Science;Chemistry;Education;
+"""
+            try:
+                with open(desktop_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.chmod(desktop_file, os.stat(desktop_file).st_mode | stat.S_IEXEC)
+                QtWidgets.QMessageBox.information(
+                    self, "Desktop Shortcut Created",
+                    f"Successfully created shortcut:\n{desktop_file}\n\nYou can now launch AgyMolden directly from your Desktop."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(self, "Shortcut Error", f"Could not write desktop shortcut: {e}")
+
+        # 2. Windows: .bat or VBScript shortcut
+        elif sys.platform.startswith("win"):
+            bat_file = os.path.join(desktop_dir, "AgyMolden.bat")
+            try:
+                with open(bat_file, "w", encoding="utf-8") as f:
+                    f.write(f'@echo off\nstart "" "{py_exe}" -m agymolden %*\n')
+                QtWidgets.QMessageBox.information(
+                    self, "Desktop Shortcut Created",
+                    f"Successfully created shortcut:\n{bat_file}\n\nYou can now double-click it on your Desktop."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(self, "Shortcut Error", f"Could not write desktop shortcut: {e}")
+
+        # 3. macOS: .command shell shortcut
+        elif sys.platform == "darwin":
+            cmd_file = os.path.join(desktop_dir, "AgyMolden.command")
+            try:
+                with open(cmd_file, "w", encoding="utf-8") as f:
+                    f.write(f'#!/bin/bash\nexec "{py_exe}" -m agymolden "$@"\n')
+                os.chmod(cmd_file, os.stat(cmd_file).st_mode | stat.S_IEXEC)
+                QtWidgets.QMessageBox.information(
+                    self, "Desktop Shortcut Created",
+                    f"Successfully created shortcut:\n{cmd_file}\n\nYou can now double-click it on your Desktop."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(self, "Shortcut Error", f"Could not write desktop shortcut: {e}")
+        else:
+            QtWidgets.QMessageBox.information(self, "Desktop Shortcut", f"Platform {sys.platform} not supported.")
+
 

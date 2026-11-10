@@ -291,3 +291,138 @@ def replicate_supercell(
     )
 
     return rep_symbols, all_coords, new_cell
+
+
+def analyze_spacegroup(
+    symbols: List[str],
+    coords: np.ndarray,
+    unit_cell: UnitCell,
+    symprec: float = 1e-3,
+) -> Dict[str, Any]:
+    """
+    Analyzes crystallographic symmetry and space group using spglib if available.
+    Returns a dict with:
+      - available: bool
+      - spacegroup_str: str (e.g. "Fm-3m (225)")
+      - number: int (1-230)
+      - international: str (e.g. "Fm-3m")
+      - hall: str
+      - pointgroup: str
+      - error: Optional[str]
+    """
+    if len(symbols) == 0 or len(coords) == 0:
+        return {"available": False, "error": "No coordinates provided"}
+
+    try:
+        import spglib
+        from .elements import get_atomic_number
+    except ImportError as e:
+        return {"available": False, "error": f"spglib not installed: {e}"}
+
+    try:
+        lattice = unit_cell.lattice_vectors
+        if np.linalg.det(lattice) <= 1e-6:
+            return {"available": False, "error": "Invalid or zero unit cell volume"}
+
+        # Fractional coordinates
+        frac_coords = coords @ np.linalg.inv(lattice)
+        frac_coords = frac_coords % 1.0  # wrap to [0, 1)
+
+        numbers = [get_atomic_number(s) for s in symbols]
+        cell_tuple = (lattice, frac_coords, numbers)
+
+        sg_str = spglib.get_spacegroup(cell_tuple, symprec=symprec)
+        dataset = spglib.get_symmetry_dataset(cell_tuple, symprec=symprec)
+
+        if dataset is None:
+            return {
+                "available": True,
+                "spacegroup_str": sg_str or "P1 (1)",
+                "number": 1,
+                "international": "P1",
+                "hall": "",
+                "pointgroup": "1",
+                "error": None,
+            }
+
+        return {
+            "available": True,
+            "spacegroup_str": f"{dataset.international} ({dataset.number})",
+            "number": int(dataset.number),
+            "international": str(dataset.international).strip(),
+            "hall": str(getattr(dataset, "hall", "")).strip(),
+            "pointgroup": str(getattr(dataset, "pointgroup", "")).strip(),
+            "wyckoffs": list(getattr(dataset, "wyckoffs", [])),
+            "error": None,
+        }
+    except Exception as ex:
+        return {"available": False, "error": str(ex)}
+
+
+def build_surface_slab(
+    symbols: List[str],
+    coords: np.ndarray,
+    unit_cell: UnitCell,
+    hkl: Tuple[int, int, int] = (1, 1, 1),
+    layers: int = 4,
+    vacuum: float = 10.0,
+) -> Tuple[List[str], np.ndarray, UnitCell]:
+    """
+    Constructs an (h, k, l) surface slab with specified layers and vacuum using ASE.
+    Safeguarded against zero-volume cells and invalid Miller indices.
+    """
+    if len(symbols) == 0 or len(coords) == 0:
+        raise ValueError("Cannot build surface slab from empty structure.")
+    if all(idx == 0 for idx in hkl):
+        raise ValueError("Miller indices (h, k, l) cannot all be zero.")
+    if layers < 1:
+        raise ValueError("Slab must have at least 1 layer.")
+    if vacuum < 0.0:
+        raise ValueError("Vacuum thickness cannot be negative.")
+
+    try:
+        from ase import Atoms
+        from ase.build import surface
+    except ImportError as e:
+        raise RuntimeError(f"ASE is required for surface slab building: {e}")
+
+    cell_matrix = unit_cell.lattice_vectors
+    if np.linalg.det(cell_matrix) <= 1e-6:
+        raise ValueError("Lattice vectors form a degenerate or zero-volume cell.")
+
+    atoms = Atoms(symbols=symbols, positions=coords, cell=cell_matrix, pbc=True)
+    slab = surface(atoms, indices=hkl, layers=layers, vacuum=vacuum)
+
+    slab_syms = slab.get_chemical_symbols()
+    slab_coords = slab.get_positions()
+    slab_cell = slab.get_cell()
+
+    # Reconstruct standard UnitCell parameters from slab cell vectors
+    a_vec = slab_cell[0]
+    b_vec = slab_cell[1]
+    c_vec = slab_cell[2]
+
+    a_len = float(np.linalg.norm(a_vec))
+    b_len = float(np.linalg.norm(b_vec))
+    c_len = float(np.linalg.norm(c_vec))
+
+    cos_alpha = np.dot(b_vec, c_vec) / (b_len * c_len) if (b_len * c_len) > 1e-12 else 0.0
+    cos_beta = np.dot(a_vec, c_vec) / (a_len * c_len) if (a_len * c_len) > 1e-12 else 0.0
+    cos_gamma = np.dot(a_vec, b_vec) / (a_len * b_len) if (a_len * b_len) > 1e-12 else 0.0
+
+    alpha = float(np.degrees(np.arccos(np.clip(cos_alpha, -1.0, 1.0))))
+    beta = float(np.degrees(np.arccos(np.clip(cos_beta, -1.0, 1.0))))
+    gamma = float(np.degrees(np.arccos(np.clip(cos_gamma, -1.0, 1.0))))
+
+    new_uc = UnitCell(
+        a=a_len,
+        b=b_len,
+        c=c_len,
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+        origin=(0.0, 0.0, 0.0),
+    )
+
+    return slab_syms, slab_coords, new_uc
+

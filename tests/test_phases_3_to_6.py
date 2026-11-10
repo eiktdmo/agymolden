@@ -517,16 +517,18 @@ def test_choose_lower_and_higher_symmetry_subgroups_and_supergroups(qapp):
         assert avail_dict[sub][1] == "lower"
 
     # Verify clicking the toolbar '🔮 Symmetry' button and '🔮 Detect Point Group Symmetry' button
-    # emits clicked(False) and properly switches to the Symmetry tab (index 4)
+    # emits clicked(False) and properly switches to the Symmetry tab
+    sym_tab_idx = win.tabs.indexOf(win.tab_symmetry)
+    assert sym_tab_idx >= 0
     win.tabs.setCurrentIndex(0)
     assert win.tabs.currentIndex() == 0
     win.btn_toolbar_sym.click()
-    assert win.tabs.currentIndex() == 4
+    assert win.tabs.currentIndex() == sym_tab_idx
     assert win._current_sym_res.symbol == "Oh"
 
     win.tabs.setCurrentIndex(0)
     win.btn_detect_symmetry.click()
-    assert win.tabs.currentIndex() == 4
+    assert win.tabs.currentIndex() == sym_tab_idx
     assert win._current_sym_res.symbol == "Oh"
 
     # Check combo box in UI is populated with all available groups

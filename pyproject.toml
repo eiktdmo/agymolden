@@ -32,6 +32,8 @@ dependencies = [
     "matplotlib>=3.5",
     "scikit-image>=0.19",
     "cclib>=1.7",
+    "spglib>=2.0",
+    "ase>=3.22",
 ]
 
 [project.optional-dependencies]
