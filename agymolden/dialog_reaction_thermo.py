@@ -128,6 +128,12 @@ class ReactionThermoDialog(QtWidgets.QDialog):
         btn_plot.clicked.connect(self._on_plot_energy_profile)
         bottom_bar.addWidget(btn_plot)
 
+        btn_arrhenius = QtWidgets.QPushButton("⚡ Arrhenius & Eyring Kinetics T-Scan...")
+        btn_arrhenius.setStyleSheet("background-color: #7c3aed; color: white; font-weight: bold; padding: 4px 12px;")
+        btn_arrhenius.setToolTip("Compute and plot temperature-dependent rate constants k(T) and Keq over 200 K – 1000 K")
+        btn_arrhenius.clicked.connect(self._on_plot_arrhenius_kinetics)
+        bottom_bar.addWidget(btn_arrhenius)
+
         bottom_bar.addStretch()
 
         btn_close = QtWidgets.QPushButton("Close")
@@ -404,3 +410,91 @@ class ReactionThermoDialog(QtWidgets.QDialog):
         dlg_lay.addLayout(btn_box)
 
         dlg.exec()
+
+    def _on_plot_arrhenius_kinetics(self):
+        """Generates temperature-dependent Arrhenius and Eyring rate constant curves k(T) and Keq(T)."""
+        try:
+            res_base = calculate_reaction_thermochemistry(self.species, temperature_k=298.15)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Kinetics Warning", f"Cannot calculate kinetics: {e}")
+            return
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("⚡ Arrhenius & Eyring Temperature Sensitivity Workbench")
+        dlg.resize(750, 560)
+        dlg_lay = QtWidgets.QVBoxLayout(dlg)
+
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+
+        fig = Figure(figsize=(7.0, 5.0), dpi=100, facecolor="#1e293b")
+        canvas = FigureCanvasQTAgg(fig)
+        dlg_lay.addWidget(canvas, stretch=1)
+
+        # Compute over T = 200 K to 1000 K
+        temps = np.linspace(200.0, 1000.0, 80)
+        inv_t = 1000.0 / temps  # 1000/T [K^-1]
+        log_k_fwd = []
+        log_k_rev = []
+        keq_vals = []
+
+        for T in temps:
+            try:
+                res_t = calculate_reaction_thermochemistry(self.species, temperature_k=T)
+                # Forward rate
+                kf = res_t.rate_constant_forward
+                kr = res_t.rate_constant_reverse
+                log_k_fwd.append(math.log10(max(1e-300, kf)) if kf is not None else float("nan"))
+                log_k_rev.append(math.log10(max(1e-300, kr)) if kr is not None else float("nan"))
+                keq_vals.append(math.log10(max(1e-300, res_t.k_eq)) if res_t.k_eq not in (float("inf"), 0.0) else float("nan"))
+            except Exception:
+                log_k_fwd.append(float("nan"))
+                log_k_rev.append(float("nan"))
+                keq_vals.append(float("nan"))
+
+        ax1 = fig.add_subplot(121)
+        ax1.set_facecolor("#0f172a")
+        if res_base.has_ts and not all(np.isnan(log_k_fwd)):
+            ax1.plot(inv_t, log_k_fwd, color="#38bdf8", linewidth=2.5, label="log₁₀ k_fwd (s⁻¹)")
+            if not all(np.isnan(log_k_rev)):
+                ax1.plot(inv_t, log_k_rev, color="#f43f5e", linewidth=2.2, linestyle="--", label="log₁₀ k_rev (s⁻¹)")
+            ax1.set_xlabel("1000 / T (K⁻¹)", color="#e2e8f0", fontweight="bold")
+            ax1.set_ylabel("log₁₀ k (s⁻¹)", color="#e2e8f0", fontweight="bold")
+            ax1.set_title("Eyring Rate Constants k(T)", color="#f8fafc", fontweight="bold", fontsize=11)
+            ax1.legend(loc="best")
+            ax1.grid(color="#334155", linestyle=":", alpha=0.6)
+            ax1.tick_params(colors="#94a3b8")
+        else:
+            ax1.text(0.5, 0.5, "No Transition State (TS)\nspecified in species list",
+                     color="#94a3b8", ha="center", va="center")
+
+        ax2 = fig.add_subplot(122)
+        ax2.set_facecolor("#0f172a")
+        ax2.plot(temps, keq_vals, color="#10b981", linewidth=2.5, label="log₁₀ K_eq")
+        ax2.set_xlabel("Temperature T (K)", color="#e2e8f0", fontweight="bold")
+        ax2.set_ylabel("log₁₀ K_eq", color="#e2e8f0", fontweight="bold")
+        ax2.set_title("Equilibrium Constant K_eq(T)", color="#f8fafc", fontweight="bold", fontsize=11)
+        ax2.grid(color="#334155", linestyle=":", alpha=0.6)
+        ax2.tick_params(colors="#94a3b8")
+
+        fig.tight_layout()
+        canvas.draw()
+
+        b_box = QtWidgets.QHBoxLayout()
+        btn_save = QtWidgets.QPushButton("💾 Save Kinetics Plot (SVG/PNG)...")
+        def _save_kin():
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(dlg, "Save Kinetics Plot", "kinetics_arrhenius.svg", "SVG (*.svg);;PNG (*.png)")
+            if path:
+                fig.savefig(path, dpi=300, bbox_inches="tight")
+                QtWidgets.QMessageBox.information(dlg, "Saved", f"Plot saved to:\n{path}")
+        btn_save.clicked.connect(_save_kin)
+        b_box.addWidget(btn_save)
+        b_box.addStretch()
+
+        btn_c = QtWidgets.QPushButton("Close")
+        btn_c.clicked.connect(dlg.accept)
+        b_box.addWidget(btn_c)
+        dlg_lay.addLayout(b_box)
+
+        dlg.exec()
+

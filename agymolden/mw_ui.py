@@ -1887,6 +1887,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_crest_explorer.triggered.connect(self._on_open_crest_explorer)
         menu_tools.addAction(act_crest_explorer)
 
+        act_ramachandran = QtGui.QAction("🗺️ &2D Dihedral Conformational Landscape (Ramachandran PES)...", self)
+        act_ramachandran.setToolTip("Generate 2D conformational energy contour surfaces E(φ, ψ) across two rotatable dihedral angles")
+        act_ramachandran.triggered.connect(self._on_open_ramachandran_2d)
+        menu_tools.addAction(act_ramachandran)
+
         act_irc_sweeper = QtGui.QAction("⚛️ Interactive &IRC Reaction Sweeper & Energy Profile (MEP)...", self)
         act_irc_sweeper.setShortcut("Ctrl+Shift+I")
         act_irc_sweeper.setToolTip("Explore, scrub, and analyze Intrinsic Reaction Coordinate (IRC) Minimum Energy Pathways (MEP) with activation barriers, landmark jumps, and live 3D sync (Ctrl+Shift+I)")

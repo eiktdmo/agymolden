@@ -1559,6 +1559,23 @@ class CalculationsMixin:
         dlg.apply_dual_descriptor_to_viewer.connect(_on_apply_dual)
         dlg.exec()
 
+    def _on_open_ramachandran_2d(self):
+        """Open 2D Dihedral Conformational Landscape (Ramachandran PES) dialog."""
+        from .dialog_ramachandran_2d import Ramachandran2DScanDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        bonds = getattr(self.viewer, "bonds", [])
+
+        dlg = Ramachandran2DScanDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            bonds=bonds,
+        )
+        dlg.exec()
+
+
 
 
 
