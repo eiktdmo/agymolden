@@ -368,7 +368,26 @@ def compute_grid_difference(grid_a: VolumetricData, grid_b: VolumetricData, oper
 
 def parse_molden_file(path: str) -> MoldenFileData:
     """Parse standard .molden / .molf format file containing geometry, orbitals and frequencies."""
-    with open(path, "r") as f:
+    # Automatic conversion if Gaussian FCHK file is passed
+    if path.lower().endswith((".fchk", ".fch")):
+        stem = os.path.splitext(os.path.abspath(path))[0]
+        cand_m = f"{stem}.fchk.molden"
+        if not (os.path.isfile(cand_m) and os.path.getmtime(cand_m) >= os.path.getmtime(path) - 2.0):
+            try:
+                import cclib
+                p_cclib = cclib.io.ccopen(path)
+                data_cclib = p_cclib.parse()
+                if data_cclib is not None:
+                    m_str = cclib.io.moldenwriter.MOLDEN(data_cclib).generate_repr()
+                    if m_str and len(m_str) > 50:
+                        with open(cand_m, "w", encoding="utf-8") as f_fchk:
+                            f_fchk.write(m_str)
+            except Exception as e_fchk:
+                log.debug("Auto-generation of Molden from FCHK in parse_molden_file skipped: %s", e_fchk)
+        if os.path.isfile(cand_m):
+            path = cand_m
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
 
     lines = content.splitlines()

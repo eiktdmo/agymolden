@@ -682,6 +682,26 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return
         self.load_molden_path(selected[0])
 
+    def _convert_fchk_to_molden(self, fchk_path: str) -> Optional[str]:
+        """Convert Gaussian Formatted Checkpoint (.fchk / .fch) to .molden via cclib if available."""
+        stem = os.path.splitext(os.path.abspath(fchk_path))[0]
+        molden_cand = f"{stem}.fchk.molden"
+        if os.path.isfile(molden_cand) and os.path.getmtime(molden_cand) >= os.path.getmtime(fchk_path) - 2.0:
+            return molden_cand
+        try:
+            import cclib
+            p = cclib.io.ccopen(fchk_path)
+            data = p.parse()
+            if data is not None:
+                m_str = cclib.io.moldenwriter.MOLDEN(data).generate_repr()
+                if m_str and len(m_str) > 50:
+                    with open(molden_cand, "w", encoding="utf-8") as f:
+                        f.write(m_str)
+                    return molden_cand
+        except Exception as e:
+            log.debug("cclib fchk conversion to Molden skipped: %s", e)
+        return None
+
     def _convert_gbw_to_molden(self, gbw_path: str) -> Optional[str]:
         """Convert an ORCA .gbw file to .molden.input using orca_2mkl (or return existing .molden.input if newer)."""
         import shutil
@@ -729,8 +749,13 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         return None
 
     def load_molden_path(self, path: str):
+        # If user opened an .fchk file, attempt automatic conversion to .molden
+        if path.lower().endswith((".fchk", ".fch")):
+            converted_fchk = self._convert_fchk_to_molden(path)
+            if converted_fchk:
+                path = converted_fchk
         # If the user selected an ORCA binary wavefunction (.gbw), convert it on the fly via orca_2mkl
-        if path.lower().endswith(".gbw"):
+        elif path.lower().endswith(".gbw"):
             converted = self._convert_gbw_to_molden(path)
             if not converted:
                 return
