@@ -879,31 +879,8 @@ class EditingMixin:
 
         # Molecular Tweezers (Live UFF relaxation during drag)
         if getattr(self, "live_tweezers_enabled", False) and len(self.zatoms) > 2:
-            try:
-                symbols = [a.symbol for a in self.zatoms]
-                drag_indices = set(getattr(self.viewer, "atom_move_drag_indices", [atom_idx]) or [atom_idx])
-
-                # Pin dragged atom(s) at mouse pointer, allow remaining atoms to relax via UFF analytical gradients
-                if len(drag_indices) < len(symbols):
-                    user_bonds = list(getattr(self.viewer, "bonds", []))
-                    opt_c, e_val = optimize_geometry_force_field(
-                        symbols, self.coords, user_bonds=user_bonds, max_iter=8, frozen_indices=drag_indices
-                    )
-                    self.coords = np.array(opt_c, copy=True)
-                    self.viewer.coords = np.array(opt_c, copy=True)
-                    self.viewer.compute_bonds()
-                    self.viewer.update()
-                    self.statusBar().showMessage(
-                        f"🧲 Tweezers: Dragging {sym}{atom_idx+1} at ({new_x:.2f}, {new_y:.2f}, {new_z:.2f}) Å | UFF: {e_val:.1f} kcal/mol", 1000
-                    )
-                else:
-                    self.statusBar().showMessage(
-                        f"🧲 Tweezers: Translating selected {len(drag_indices)} atom(s)", 1000
-                    )
-            except Exception:
-                self.statusBar().showMessage(
-                    f"Moving {sym}{atom_idx+1} to ({new_x:.3f}, {new_y:.3f}, {new_z:.3f}) Å", 1000
-                )
+            from .controllers import TweezersController
+            TweezersController(self).handle_atom_drag(atom_idx, new_x, new_y, new_z)
         else:
             self.statusBar().showMessage(
                 f"Moving {sym}{atom_idx+1} to ({new_x:.3f}, {new_y:.3f}, {new_z:.3f}) Å", 1000
@@ -935,36 +912,13 @@ class EditingMixin:
 
     def _on_toggle_tweezers(self, checked: bool):
         """Toggle interactive live force field relaxation during atom drag."""
-        self.live_tweezers_enabled = checked
-        if hasattr(self, "viewer"):
-            self.viewer.tweezers_active = checked
-            # Set crosshair cursor when tweezers are active to show tool readiness
-            if checked:
-                self.viewer.setCursor(QtCore.Qt.CursorShape.CrossCursor)
-            else:
-                self.viewer.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-        status = "enabled (Left-click & drag any atom to relax live)" if checked else "disabled"
-        self.statusBar().showMessage(f"🧲 Molecular Tweezers: {status}", 4000)
+        from .controllers import TweezersController
+        TweezersController(self).toggle_tweezers(checked)
 
     def _on_atom_drag_finished(self, atom_idx: int):
         """Called when mouse release completes atom dragging. Reconstructs canonical Z-matrix."""
-        from .alignment import capture_rigid_frame
-        if hasattr(self, "viewer") and hasattr(self.viewer, "coords") and len(self.viewer.coords) == len(self.coords):
-            self.coords = np.array(self.viewer.coords, copy=True)
-        symbols = [a.symbol for a in self.zatoms]
-        if self.strict_topology:
-            new_zatoms = cartesian_to_zmatrix(symbols, self.coords, existing_zatoms=self.zatoms)
-        else:
-            new_zatoms = cartesian_to_zmatrix(symbols, self.coords)
-        self.zatoms = new_zatoms
-        self._rigid_frame = capture_rigid_frame(self.zatoms, self.coords)
-        self.table_widget.load_zatoms(self.zatoms)
-        self._sync_raw_text()
-        self._update_adjust_panel()
-        sym = symbols[atom_idx] if 0 <= atom_idx < len(symbols) else ""
-        self.statusBar().showMessage(
-            f"Moved atom {sym}{atom_idx+1}. Updated Z-matrix geometry.", 4000
-        )
+        from .controllers import TweezersController
+        TweezersController(self).finish_atom_drag(atom_idx)
 
     def _on_region_rotation_finished(self):
         """Called when mouse release completes rotating a selected region of atoms."""

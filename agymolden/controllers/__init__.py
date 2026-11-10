@@ -12,6 +12,7 @@ from .ring_controller import RingController
 from .job_controller import JobController
 from .fragment_controller import FragmentController
 from .import_controller import ImportController
+from .tweezers_controller import TweezersController
 
 __all__ = [
     "ExportController",
@@ -22,4 +23,5 @@ __all__ = [
     "JobController",
     "FragmentController",
     "ImportController",
+    "TweezersController",
 ]
