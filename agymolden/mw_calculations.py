@@ -1382,6 +1382,70 @@ class CalculationsMixin:
         dlg.interaction_highlighted.connect(_on_interaction_highlighted)
         dlg.exec()
 
+    def _on_quick_in_memory_pyscf_dft(self, method: str = "b3lyp", basis: str = "def2-svp"):
+        """Fast in-process PySCF DFT / HF calculation directly in RAM with zero temporary file pollution."""
+        if len(self.zatoms) == 0:
+            QtWidgets.QMessageBox.information(self, "Quick DFT (PySCF)", "Please build or load a molecule first.")
+            return
+
+        try:
+            import pyscf
+            from pyscf import gto, dft, scf
+            from pyscf.tools import molden
+        except ImportError:
+            QtWidgets.QMessageBox.warning(
+                self, "PySCF Missing", "PySCF is not installed in the active environment.\nRun: pip install pyscf"
+            )
+            return
+
+        symbols = [a.symbol for a in self.zatoms]
+        coords = np.array(self.coords, copy=True)
+        atom_spec = "; ".join(f"{s} {c[0]} {c[1]} {c[2]}" for s, c in zip(symbols, coords))
+
+        import tempfile
+        from .async_task import run_in_background
+
+        def _worker():
+            mol = gto.M(atom=atom_spec, basis=basis, verbose=0)
+            if method.lower() == "hf":
+                mf = scf.RHF(mol).run()
+            else:
+                mf = dft.RKS(mol, xc=method).run()
+            
+            with tempfile.NamedTemporaryFile("w", suffix=".molden", delete=False) as f:
+                molden.from_scf(mf, f.name)
+                mpath = f.name
+            
+            from .volumetric import parse_molden_file
+            mdata = parse_molden_file(mpath)
+            try:
+                os.unlink(mpath)
+            except Exception:
+                pass
+            return mf, mdata
+
+        def _on_done(result):
+            mf, mdata = result
+            if mdata and mdata.orbitals:
+                self.set_orbitals_from_data(mdata, auto_render=True, source_label=f"In-Memory PySCF ({method.upper()}/{basis})")
+                e_ha = float(mf.e_tot)
+                self.statusBar().showMessage(
+                    f"✔ PySCF {method.upper()}/{basis} complete! E = {e_ha:.8f} Ha | Converged: {mf.converged}",
+                    6000,
+                )
+
+        def _on_error(err):
+            QtWidgets.QMessageBox.critical(self, "PySCF DFT Error", f"In-memory DFT calculation failed:\n{err}")
+
+        run_in_background(
+            self,
+            "Quick PySCF DFT",
+            f"Solving {method.upper()}/{basis} in-process ({len(symbols)} atoms)...",
+            _worker,
+            _on_done,
+            _on_error,
+        )
+
     def _on_open_script_runner(self):
         """Open custom Python Script and Plugin Runner dialog (Ctrl+Shift+Y)."""
         from .plugins import PythonScriptRunnerDialog

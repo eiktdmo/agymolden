@@ -1831,6 +1831,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_pbc.triggered.connect(self._on_open_pbc_dialog)
         menu_tools.addAction(act_pbc)
 
+        act_quick_pyscf = QtGui.QAction("⚡ Quick In-Memory DFT / HF (PySCF)...", self)
+        act_quick_pyscf.setToolTip("Solve B3LYP / def2-SVP directly in RAM within seconds (no external binaries or files required)")
+        act_quick_pyscf.triggered.connect(lambda: self._on_quick_in_memory_pyscf_dft())
+        menu_tools.addAction(act_quick_pyscf)
+
         act_overlay = QtGui.QAction("🔬 &Compare & Align Structures (RMSD Overlay)...", self)
         act_overlay.setShortcut("Ctrl+Shift+A")
         act_overlay.setToolTip("Superimpose two structures with Kabsch SVD alignment and calculate all-atom/heavy-atom RMSD")

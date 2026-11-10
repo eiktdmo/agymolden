@@ -1985,6 +1985,44 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     is_froz = (i in frozen_set)
                     if not (is_prim or is_multi or is_froz):
                         continue
+                    pos = render_coords[i]
+                    p4 = mvp * QtGui.QVector4D(float(pos[0]), float(pos[1]), float(pos[2]), 1.0)
+                    if p4.w() <= 0.05:
+                        continue
+                    ndc = p4 / p4.w()
+                    sx = int((ndc.x() * 0.5 + 0.5) * w)
+                    sy = int((-ndc.y() * 0.5 + 0.5) * h)
+                    cov_r = get_cov_radius(self.symbols[i])
+                    r_px = max(13.0, (cov_r / max(self.zoom, 1.0)) * h * 0.45)
+
+                    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                    if is_froz:
+                        # Frozen atom constraint halo (dashed icy blue-violet ring)
+                        froz_pen = QtGui.QPen(QtGui.QColor(99, 102, 241, 215), 2.2, QtCore.Qt.PenStyle.DashLine)
+                        painter.setPen(froz_pen)
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 9), int(r_px + 9))
+                    if is_prim:
+                        # Primary: bright radiant gold ring + 4 tick marks
+                        painter.setPen(QtGui.QPen(QtGui.QColor(250, 204, 21, 55), 7))
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 7), int(r_px + 7))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(254, 240, 138), 2.5))
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 5), int(r_px + 5))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(234, 179, 8), 2.0))
+                        d_in = r_px + 3
+                        d_out = r_px + 9
+                        for ang in (45, 135, 225, 315):
+                            rad = math.radians(ang)
+                            x1 = int(sx + d_in * math.cos(rad))
+                            y1 = int(sy + d_in * math.sin(rad))
+                            x2 = int(sx + d_out * math.cos(rad))
+                            y2 = int(sy + d_out * math.sin(rad))
+                            painter.drawLine(x1, y1, x2, y2)
+                    elif is_multi:
+                        # Secondary: vibrant cyan ring
+                        painter.setPen(QtGui.QPen(QtGui.QColor(56, 189, 248, 55), 5))
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 6), int(r_px + 6))
+                        painter.setPen(QtGui.QPen(QtGui.QColor(186, 230, 253), 2.0))
+                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 4), int(r_px + 4))
 
             # Render 3D Elastic Strain Tether & Spring Line while dragging in Tweezers mode
             if (
@@ -2038,44 +2076,6 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             painter.drawRoundedRect(b_rect, 4, 4)
                             painter.setPen(QtGui.QColor("#ffffff"))
                             painter.drawText(b_rect, QtCore.Qt.AlignmentFlag.AlignCenter, badge_txt)
-                    pos = render_coords[i]
-                    p4 = mvp * QtGui.QVector4D(float(pos[0]), float(pos[1]), float(pos[2]), 1.0)
-                    if p4.w() <= 0.05:
-                        continue
-                    ndc = p4 / p4.w()
-                    sx = int((ndc.x() * 0.5 + 0.5) * w)
-                    sy = int((-ndc.y() * 0.5 + 0.5) * h)
-                    cov_r = get_cov_radius(self.symbols[i])
-                    r_px = max(13.0, (cov_r / max(self.zoom, 1.0)) * h * 0.45)
-
-                    painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-                    if is_froz:
-                        # Frozen atom constraint halo (dashed icy blue-violet ring)
-                        froz_pen = QtGui.QPen(QtGui.QColor(99, 102, 241, 215), 2.2, QtCore.Qt.PenStyle.DashLine)
-                        painter.setPen(froz_pen)
-                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 9), int(r_px + 9))
-                    if is_prim:
-                        # Primary: bright radiant gold ring + 4 tick marks
-                        painter.setPen(QtGui.QPen(QtGui.QColor(250, 204, 21, 55), 7))
-                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 7), int(r_px + 7))
-                        painter.setPen(QtGui.QPen(QtGui.QColor(254, 240, 138), 2.5))
-                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 5), int(r_px + 5))
-                        painter.setPen(QtGui.QPen(QtGui.QColor(234, 179, 8), 2.0))
-                        d_in = r_px + 3
-                        d_out = r_px + 9
-                        for ang in (45, 135, 225, 315):
-                            rad = math.radians(ang)
-                            x1 = int(sx + d_in * math.cos(rad))
-                            y1 = int(sy + d_in * math.sin(rad))
-                            x2 = int(sx + d_out * math.cos(rad))
-                            y2 = int(sy + d_out * math.sin(rad))
-                            painter.drawLine(x1, y1, x2, y2)
-                    elif is_multi:
-                        # Secondary: vibrant cyan ring
-                        painter.setPen(QtGui.QPen(QtGui.QColor(56, 189, 248, 55), 5))
-                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 6), int(r_px + 6))
-                        painter.setPen(QtGui.QPen(QtGui.QColor(186, 230, 253), 2.0))
-                        painter.drawEllipse(QtCore.QPoint(sx, sy), int(r_px + 4), int(r_px + 4))
 
             if self.show_labels or self.show_indices or self.show_charges or bool(frozen_set):
                 for i, (sym, pos) in enumerate(zip(self.symbols, render_coords)):
