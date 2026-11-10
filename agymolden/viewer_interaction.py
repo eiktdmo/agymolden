@@ -138,7 +138,11 @@ class ViewerInteractionMixin:
 
                     self.atom_move_drag_active = True
                     self.atom_move_drag_idx = clicked_atom
-                    if was_already_sel and len(self.multi_selected) > 1:
+                    if is_tweezers:
+                        # In Tweezers mode, always drag strictly the single clicked atom to relax the rest of the molecule!
+                        self.atom_move_drag_indices = [clicked_atom]
+                        self.multi_selected = [clicked_atom]
+                    elif was_already_sel and len(self.multi_selected) > 1:
                         self.atom_move_drag_indices = [idx for idx in self.multi_selected if 0 <= idx < n_coords]
                     else:
                         self.atom_move_drag_indices = [clicked_atom]
