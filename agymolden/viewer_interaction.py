@@ -91,11 +91,11 @@ class ViewerInteractionMixin:
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
             is_tweezers = bool(getattr(self, "tweezers_active", False))
-            clicked_atom = self._pick_atom(event.pos(), tolerance_px=60.0 if is_tweezers else 32.0)
-
-            # When tweezers are active and user clicked empty canvas, automatically pick closest atom if nearby
-            if clicked_atom is None and is_tweezers and len(self.coords) > 0:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=100.0)
+            # When tweezers are active, always pick the closest atom across the entire viewport
+            if is_tweezers and len(self.coords) > 0:
+                clicked_atom = self._pick_atom(event.pos(), tolerance_px=300.0)
+            else:
+                clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
 
             if clicked_atom is not None:
                 self.empty_press_pos = None
@@ -608,11 +608,11 @@ class ViewerInteractionMixin:
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
             is_tweezers = bool(getattr(self, "tweezers_active", False))
-            clicked_atom = self._pick_atom(event.pos(), tolerance_px=60.0 if is_tweezers else 32.0)
-
-            # When tweezers are active and user clicked empty canvas, automatically pick closest atom if nearby
-            if clicked_atom is None and is_tweezers and len(self.coords) > 0:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=100.0)
+            # When tweezers are active, always pick the closest atom across the entire viewport
+            if is_tweezers and len(self.coords) > 0:
+                clicked_atom = self._pick_atom(event.pos(), tolerance_px=300.0)
+            else:
+                clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
 
             if clicked_atom is not None:
                 self.atom_double_clicked.emit(clicked_atom)

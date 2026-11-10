@@ -134,6 +134,29 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_mode_toggle.toggled.connect(self._on_toggle_interaction_mode)
         view_ctrls.addWidget(self.btn_mode_toggle)
 
+        # Molecular Tweezers toggle button right in the viewport quick controls ribbon!
+        self.btn_ribbon_tweezers = QtWidgets.QPushButton("🧲 Tweezers")
+        self.btn_ribbon_tweezers.setCheckable(True)
+        self.btn_ribbon_tweezers.setChecked(False)
+        self.btn_ribbon_tweezers.setStyleSheet("""
+            QPushButton {
+                background-color: #334155;
+                color: #e2e8f0;
+                font-weight: bold;
+                padding: 2px 8px;
+                border: 1px solid #475569;
+                border-radius: 3px;
+            }
+            QPushButton:checked {
+                background-color: #0284c7;
+                color: #ffffff;
+                border: 1.5px solid #38bdf8;
+            }
+        """)
+        self.btn_ribbon_tweezers.setToolTip("🧲 Molecular Tweezers (Live Drag & Relax): Click to activate. Once active, simply Left-Click and drag any atom in the 3D viewport to stretch and relax connected bonds in real time!")
+        self.btn_ribbon_tweezers.toggled.connect(self._on_toggle_tweezers)
+        view_ctrls.addWidget(self.btn_ribbon_tweezers)
+
         # Quick Element Brush Palette (Avogadro / GaussView style)
         self.btn_group_elements = QtWidgets.QButtonGroup(self)
         self.btn_group_elements.setExclusive(True)
@@ -1661,6 +1684,9 @@ class UIMixin(UIInspectorTabsMixin):
         self.act_tweezers.setChecked(False)
         self.act_tweezers.setToolTip("When checked, dragging an atom with Ctrl+Drag dynamically relaxes connected atoms in real-time via UFF force field")
         self.act_tweezers.toggled.connect(self._on_toggle_tweezers)
+        if hasattr(self, "btn_ribbon_tweezers"):
+            self.act_tweezers.toggled.connect(self.btn_ribbon_tweezers.setChecked)
+            self.btn_ribbon_tweezers.toggled.connect(self.act_tweezers.setChecked)
         menu_edit.addAction(self.act_tweezers)
 
         act_conf = QtGui.QAction("🔄 &Conformational Search (Find Lowest-Energy Rotamer)...", self)
