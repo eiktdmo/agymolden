@@ -1913,6 +1913,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             or self.reordering_active
             or self.picking_active
             or surface_extrema
+            or bool(getattr(self, "tweezers_active", False))
         ):
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -2470,6 +2471,21 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     painter.drawRoundedRect(badge_rect, 5, 5)
                     painter.setPen(QtGui.QColor("#fef08a"))
                 painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, sel_str)
+
+            # Active Tweezers HUD Mode Pill (Bottom Center-Left)
+            if getattr(self, "tweezers_active", False) and len(self.symbols) > 0:
+                twz_txt = "🧲 Tweezers Active: Left-Click & Drag any atom to move & relax"
+                painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                twz_fm = painter.fontMetrics()
+                twz_tw = twz_fm.horizontalAdvance(twz_txt)
+                twz_th = twz_fm.height()
+                twz_rect = QtCore.QRect(12, 12, twz_tw + 20, twz_th + 10)
+                painter.setBrush(QtGui.QColor(2, 132, 199, 235))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), 1.8))
+                painter.drawRoundedRect(twz_rect, 6, 6)
+                painter.setPen(QtGui.QColor("#ffffff"))
+                painter.drawText(twz_rect, QtCore.Qt.AlignmentFlag.AlignCenter, twz_txt)
+                painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
 
             # Top-right HUD badge: Clear 3D Orbital / Surface Pill (when active_isosurfaces is non-empty)
             if active_surfaces:
