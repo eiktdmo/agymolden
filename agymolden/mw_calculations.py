@@ -1520,6 +1520,46 @@ class CalculationsMixin:
         dlg = CitationDialog(self)
         dlg.exec()
 
+    def _on_open_cdft_workbench(self):
+        """Open Conceptual DFT (CDFT) & Fukui Reactivity Workbench (Ctrl+Shift+F)."""
+        from .dialog_cdft import CDFTWorkbenchDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+
+        homo_val = -6.20
+        lumo_val = -1.40
+        res = getattr(self, "_last_qm_res", None) or getattr(self, "_last_qm_result", None)
+        if res:
+            if getattr(res, "homo_ev", None) is not None:
+                homo_val = float(res.homo_ev)
+            if getattr(res, "lumo_ev", None) is not None:
+                lumo_val = float(res.lumo_ev)
+
+        dlg = CDFTWorkbenchDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            homo_ev=homo_val,
+            lumo_ev=lumo_val,
+        )
+
+        def _on_apply_dual(syms, dual_vals):
+            # Map dual descriptor values into custom_charges for viewport rendering
+            if hasattr(self, "viewer"):
+                self.viewer.custom_charges = np.array(dual_vals, copy=True)
+                self.viewer.show_charges = True
+                self.viewer.update()
+                if hasattr(self, "chk_charges"):
+                    self.chk_charges.blockSignals(True)
+                    self.chk_charges.setChecked(True)
+                    self.chk_charges.blockSignals(False)
+            self.statusBar().showMessage("Applied CDFT Dual Descriptor (Δf) to 3D Viewport", 4000)
+
+        dlg.apply_dual_descriptor_to_viewer.connect(_on_apply_dual)
+        dlg.exec()
+
+
 
 
 

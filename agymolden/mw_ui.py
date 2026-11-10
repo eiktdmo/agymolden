@@ -1857,6 +1857,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_fmo_align.triggered.connect(self._on_open_fmo_alignment)
         menu_tools.addAction(act_fmo_align)
 
+        act_cdft = QtGui.QAction("⚛️ &Conceptual DFT (CDFT) & Fukui Reactivity Workbench...", self)
+        act_cdft.setShortcut("Ctrl+Shift+F")
+        act_cdft.setToolTip("Evaluate global CDFT indices (μ, η, ω, N_Nu) and atomic Fukui functions (f+, f-, Δf) with 3D color mapping (Ctrl+Shift+F)")
+        act_cdft.triggered.connect(self._on_open_cdft_workbench)
+        menu_tools.addAction(act_cdft)
+
         act_benchmark = QtGui.QAction("⚖️ Cross-Engine &Benchmark & Result Comparison...", self)
         act_benchmark.setShortcut("Ctrl+Shift+M")
         act_benchmark.setToolTip("Compare multiple calculation logs side-by-side across Gaussian, ORCA, PySCF, and xTB (energetics, ΔE, frontier gap, and Kabsch SVD RMSD matrix) (Ctrl+Shift+M)")
