@@ -1,0 +1,23 @@
+! SP_ENERGY HF POSITRON DF Angs
+%jobname Pos_C2H6O_SP_HF_cc-pvdz_PSX-TZ
+%charge 0
+%mult 1
+%nprocs 4
+%memory 4000
+%verbose 4
+%basis cc-pvdz
+%n_pos 1
+%pos_basis PSX-TZ
+%molden true
+
+* xyz 0 1
+C       1.264935    -0.239611     0.000000
+C      -0.009100     0.577590    -0.000000
+O      -1.098019    -0.307675     0.000000
+H      -1.903625     0.185992     0.000000
+H       1.305705    -0.878529    -0.884072
+H       2.141246     0.412621     0.000000
+H       1.305705    -0.878529     0.884072
+H      -0.036578     1.226602     0.883400
+H      -0.036578     1.226602    -0.883400
+*
