@@ -958,6 +958,9 @@ class FileIOMixin:
                 e_diff_kcal = (e_val - self.trajectory_energies[0]) * 23.0605  # eV to kcal/mol
                 self.lbl_trajectory_energy.setText(f"E = {e_ha:.6f} Ha (ΔE: {e_diff_kcal:+.2f} kcal/mol)")
 
+        if hasattr(self, "sparkline_trajectory"):
+            self.sparkline_trajectory.set_active_step(step)
+
         self.coords = np.array(coords, dtype=np.float64, copy=True)
         self.viewer.set_molecule(
             symbols=[a.symbol for a in self.zatoms],

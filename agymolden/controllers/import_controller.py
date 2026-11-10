@@ -124,8 +124,12 @@ class ImportController:
                     if res.trajectory_energies and len(res.trajectory_energies) == n_steps:
                         e_val = res.trajectory_energies[init_step]
                         self.mw.lbl_trajectory_energy.setText(f"E = {e_val:.6f} eV")
+                        if hasattr(self.mw, "sparkline_trajectory"):
+                            self.mw.sparkline_trajectory.set_data(res.trajectory_energies, active_step=init_step)
                     else:
                         self.mw.lbl_trajectory_energy.setText("")
+                        if hasattr(self.mw, "sparkline_trajectory"):
+                            self.mw.sparkline_trajectory.set_data([])
                 else:
                     self.mw.grp_trajectory.setVisible(False)
 

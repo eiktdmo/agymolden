@@ -560,6 +560,12 @@ class UIMixin(UIInspectorTabsMixin):
 
         traj_box_layout.addLayout(row1_layout)
 
+        # Interactive Mini Energy Trajectory Profile Curve (Sparkline)
+        from .widget_sparkline import SparklinePlot
+        self.sparkline_trajectory = SparklinePlot(self)
+        self.sparkline_trajectory.step_clicked.connect(lambda s: self.slider_trajectory.setValue(s))
+        traj_box_layout.addWidget(self.sparkline_trajectory)
+
         # Row 2: Step Energy & Analysis Tools (Scrollable so buttons are always clearly readable)
         row2_scroll = QtWidgets.QScrollArea()
         row2_scroll.setWidgetResizable(True)

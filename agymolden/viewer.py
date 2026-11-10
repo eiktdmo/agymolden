@@ -1914,6 +1914,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             or self.picking_active
             or surface_extrema
             or bool(getattr(self, "tweezers_active", False))
+            or bool(getattr(self, "atom_move_drag_active", False))
         ):
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -1984,6 +1985,59 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     is_froz = (i in frozen_set)
                     if not (is_prim or is_multi or is_froz):
                         continue
+
+            # Render 3D Elastic Strain Tether & Spring Line while dragging in Tweezers mode
+            if (
+                getattr(self, "atom_move_drag_active", False)
+                and getattr(self, "atom_move_drag_idx", None) is not None
+                and hasattr(self, "atom_move_drag_start_coord")
+                and len(render_coords) == len(self.symbols)
+            ):
+                drag_i = self.atom_move_drag_idx
+                if 0 <= drag_i < len(render_coords):
+                    curr_pt = render_coords[drag_i]
+                    orig_pt = self.atom_move_drag_start_coord
+                    p4_curr = mvp * QtGui.QVector4D(float(curr_pt[0]), float(curr_pt[1]), float(curr_pt[2]), 1.0)
+                    p4_orig = mvp * QtGui.QVector4D(float(orig_pt[0]), float(orig_pt[1]), float(orig_pt[2]), 1.0)
+                    if p4_curr.w() > 0.05 and p4_orig.w() > 0.05:
+                        ndc_c = p4_curr / p4_curr.w()
+                        ndc_o = p4_orig / p4_orig.w()
+                        sc_x = int((ndc_c.x() * 0.5 + 0.5) * w)
+                        sc_y = int((-ndc_c.y() * 0.5 + 0.5) * h)
+                        so_x = int((ndc_o.x() * 0.5 + 0.5) * w)
+                        so_y = int((-ndc_o.y() * 0.5 + 0.5) * h)
+
+                        dist_ang = float(np.linalg.norm(curr_pt - orig_pt))
+                        if dist_ang > 0.05:
+                            # Dynamic color: Green (0 Å) -> Yellow (0.8 Å) -> Red (> 1.5 Å)
+                            t_strain = min(1.0, max(0.0, dist_ang / 1.6))
+                            red = int(min(255, t_strain * 2.0 * 255))
+                            green = int(min(255, (1.0 - max(0.0, t_strain - 0.5) * 2.0) * 255))
+                            strain_col = QtGui.QColor(red, green, 40)
+
+                            # Draw tether dashed line
+                            pen_tether = QtGui.QPen(strain_col, 2.4, QtCore.Qt.PenStyle.DashLine)
+                            painter.setPen(pen_tether)
+                            painter.drawLine(so_x, so_y, sc_x, sc_y)
+
+                            # Draw origin anchor ring
+                            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                            painter.setPen(QtGui.QPen(QtGui.QColor(strain_col.red(), strain_col.green(), strain_col.blue(), 180), 1.5))
+                            painter.drawEllipse(QtCore.QPoint(so_x, so_y), 6, 6)
+
+                            # Strain badge at midpoint
+                            mid_x = (sc_x + so_x) // 2
+                            mid_y = (sc_y + so_y) // 2
+                            badge_txt = f"Δr = {dist_ang:.2f} Å"
+                            painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                            bw = painter.fontMetrics().horizontalAdvance(badge_txt) + 8
+                            bh = painter.fontMetrics().height() + 4
+                            b_rect = QtCore.QRect(mid_x - bw // 2, mid_y - bh // 2, bw, bh)
+                            painter.setBrush(QtGui.QColor(15, 23, 42, 220))
+                            painter.setPen(QtGui.QPen(strain_col, 1.2))
+                            painter.drawRoundedRect(b_rect, 4, 4)
+                            painter.setPen(QtGui.QColor("#ffffff"))
+                            painter.drawText(b_rect, QtCore.Qt.AlignmentFlag.AlignCenter, badge_txt)
                     pos = render_coords[i]
                     p4 = mvp * QtGui.QVector4D(float(pos[0]), float(pos[1]), float(pos[2]), 1.0)
                     if p4.w() <= 0.05:
