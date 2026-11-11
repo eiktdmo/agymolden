@@ -82,9 +82,10 @@ def test_mecp_seam_interpolation():
 
     # Check ORCA deck generation
     deck = generate_orca_mecp_input(["Fe", "O"], c1, mult_1=1, mult_2=3)
-    assert "SurfCross" in deck
-    assert "State1 0 1" in deck
-    assert "State2 0 3" in deck
+    # Syntax verified against ORCA 4.2.1 (see test_orca_accepts_generated_decks)
+    assert "SurfCrossOpt" in deck
+    assert "%mecp" in deck and "Mult 3" in deck
+    assert "State1" not in deck
 
 
 def test_eda_sapt_parser():
@@ -122,9 +123,10 @@ def test_pes_2d_scan_generator():
 
     # ORCA test
     orca_deck = generate_orca_2d_scan_input(symbols, coords, scan1, scan2)
-    assert "%geom" in orca_deck
-    assert "Scan B 0 1 = 1.200, 1.800, 6" in orca_deck
-    assert "Scan D 2 0 1 3 = 0.000, 180.000, 12" in orca_deck
+    assert "%geom\nScan\n" in orca_deck
+    assert "  B 0 1 = 1.200, 1.800, 6" in orca_deck
+    assert "  D 2 0 1 3 = 0.000, 180.000, 12" in orca_deck
+    assert orca_deck.count("end") >= 2  # inner Scan block and %geom block both closed
 
     # Gaussian test
     gau_deck = generate_gaussian_2d_scan_input(symbols, coords, scan1, scan2)
@@ -132,3 +134,41 @@ def test_pes_2d_scan_generator():
     # Gaussian uses 1-based indexing
     assert "B 1 2 S 6" in gau_deck
     assert "D 3 1 2 4 S 12" in gau_deck
+
+
+# ---------------------------------------------------------------------------
+# Real-ORCA syntax check: generated decks must be accepted by an actual ORCA binary.
+# Skipped unless AGYMOLDEN_ORCA_BIN points at an ORCA executable.
+# ---------------------------------------------------------------------------
+import os
+import subprocess
+import tempfile
+
+
+def _run_orca_input_check(deck: str, must_contain: str, tmp_name: str) -> str:
+    orca = os.environ["AGYMOLDEN_ORCA_BIN"]
+    env = dict(os.environ, LD_LIBRARY_PATH=os.path.dirname(orca) + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
+    with tempfile.TemporaryDirectory() as d:
+        inp = os.path.join(d, tmp_name)
+        with open(inp, "w") as f:
+            f.write(deck)
+        try:
+            out = subprocess.run([orca, inp], cwd=d, env=env, capture_output=True, text=True, timeout=20).stdout
+        except subprocess.TimeoutExpired as e:  # input was accepted and the calculation started
+            out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+    assert "INPUT ERROR" not in out and "check syntax" not in out, out[-600:]
+    assert must_contain in out, out[-600:]
+    return out
+
+
+@pytest.mark.skipif("AGYMOLDEN_ORCA_BIN" not in os.environ, reason="set AGYMOLDEN_ORCA_BIN to run")
+def test_orca_accepts_generated_decks():
+    water = ["O", "H", "H"]
+    xyz = np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]])
+    s1 = ScanCoordinateDef("distance", (0, 1), 0.90, 1.10, 2)
+    s2 = ScanCoordinateDef("distance", (0, 2), 0.90, 1.10, 2)
+    deck = generate_orca_2d_scan_input(water, xyz, s1, s2, functional="HF", basis="STO-3G")
+    _run_orca_input_check(deck, "2 parameter to be scanned", "scan2d.inp")
+
+    deck = generate_orca_mecp_input(water, xyz, mult_1=1, mult_2=3, functional="HF", basis="STO-3G")
+    _run_orca_input_check(deck, "Surface Crossing Optimization", "mecp.inp")

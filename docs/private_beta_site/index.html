@@ -341,7 +341,7 @@
         <h3>Replacing Avogadro & Molden</h3>
         <p>Build, sketch, pre-optimize, and export production QM decks in seconds without syntax errors.</p>
         <ul class="feature-list">
-          <li><b>Multi-Engine Deck Generator (Ctrl+Shift+I):</b> Gaussian, ORCA, Q-Chem, PySCF, openLOWDIN, newBRORSEN, xTB, and Multiwfn.</li>
+          <li><b>Multi-Engine Input Generator (Ctrl+G):</b> Gaussian, ORCA, Psi4, Q-Chem, PySCF, openLOWDIN and xTB (plus the newBRORSEN input builder).</li>
           <li><b>2D Bond-Line Sketcher (Ctrl+Shift+K):</b> ChemDraw-style sketching to clean 3D force-field coordinates.</li>
           <li><b>Interactive 🧲 Tweezers:</b> Pull and stretch any atom with live UFF physics relaxation without freezing.</li>
           <li><b>Transition State Guess (IDPP / QST2):</b> Collision-free reaction path interpolator with direct ORCA NEB-TS / Gaussian QST3 export.</li>
@@ -356,7 +356,7 @@
         <p>Execute calculations locally or remotely on university HPC clusters without leaving the GUI.</p>
         <ul class="feature-list">
           <li><b>In-App Universal Runner:</b> Run ORCA, PySCF, and xTB directly with live log streaming.</li>
-          <li><b>Universal Foundation ML Potentials:</b> Integrated MACE-MP-0 (89 elements) and GFN2-xTB for instant zero-cost geometries.</li>
+          <li><b>Universal Foundation ML Potentials:</b> Optional add-ons (installed from the in-app Add-on Manager): MACE-MP-0 (89 elements) and GFN2-xTB for fast pre-optimisation.</li>
           <li><b>Pre-Flight Chemistry Checker:</b> Auto-detects invalid spin multiplicities, radical valence errors, and unphysical steric clashes before launch.</li>
           <li><b>HPC Cluster Queue Manager:</b> Built-in Slurm / PBS job script generator and SSH file transfer.</li>
           <li><b>QC Doctor:</b> Scans failing logs and recommends exact convergence keywords (tight SCF, SOSCF, grid adjustments).</li>
@@ -369,7 +369,7 @@
         <h3>Replacing GaussView & Chemcraft</h3>
         <p>Publication-grade workbenches for physical, organic, and quantum chemistry analysis.</p>
         <ul class="feature-list">
-          <li><b>Interactive Hückel Workbench (Ctrl+Shift+H):</b> Live secular determinants, Frost circles, Aufbau spin arrows, and 3D LCAO lobes.</li>
+          <li><b>Interactive Hückel Workbench (Ctrl+Alt+H):</b> Live secular determinants, Frost circles, Aufbau spin arrows, and 3D LCAO lobes.</li>
           <li><b>Eyring Reaction Kinetics & Tunneling:</b> Free energy profiles (ΔG‡, ΔGrxn) with Wigner & Eckart quantum tunneling.</li>
           <li><b>Marcus Photoredox Kinetics:</b> Inner/outer-sphere reorganization (λ) and diabatic PES parabolas.</li>
           <li><b>Catalysis Sterics:</b> Buried Volume (%V_bur), SambVca-style 2D topographic maps, and Sterimol (L, B1, B5).</li>
@@ -405,8 +405,8 @@
             <td class="check-no">X11 / Fortran binary</td>
           </tr>
           <tr>
-            <td><b>Multi-Engine Deck Generation (ORCA/Gau/PySCF/QChem/xTB)</b></td>
-            <td class="highlight check-yes">Yes (All 8 Engines)</td>
+            <td><b>Multi-Engine Input Generation (Gaussian/ORCA/Psi4/QChem/PySCF/xTB)</b></td>
+            <td class="highlight check-yes">Yes (7 engines)</td>
             <td class="check-partial">Partial (Basic)</td>
             <td class="check-partial">Yes (Legacy)</td>
             <td class="check-partial">Gaussian Only</td>
@@ -488,11 +488,11 @@
       </p>
 
       <div class="task-item">
-        <b>Task 1 (Building & Inputs):</b> Sketch or load a conjugated molecule (e.g. <i>Butadiene</i> or <i>Pyridine</i> via <code>Ctrl+Shift+B</code>). Use the 🧲 <b>Tweezers</b> tool to pull an atom. Verify that connected bonds stretch smoothly. Then open <b>QM Calculation Input Generator</b> (<code>Ctrl+Shift+I</code>) and export an ORCA or Gaussian input file.
+        <b>Task 1 (Building & Inputs):</b> Sketch or load a conjugated molecule (e.g. <i>Butadiene</i> or <i>Pyridine</i> via <code>Ctrl+Shift+B</code>). Use the 🧲 <b>Tweezers</b> tool to pull an atom. Verify that connected bonds stretch smoothly. Then open <b>QM Calculation Input Generator</b> (<code>Ctrl+G</code>) and export an ORCA or Gaussian input file.
       </div>
 
       <div class="task-item">
-        <b>Task 2 (Hückel Theory & Aromaticity):</b> Open <b>Tools → 🎓 Hückel Theory Workbench</b> (<code>Ctrl+Shift+H</code>). Load <i>Cyclobutadiene</i> (antiaromatic 4π) vs. <i>Benzene</i> (aromatic 6π). Check the Frost circle, secular determinant, and project LCAO orbital lobes onto the 3D molecule.
+        <b>Task 2 (Hückel Theory & Aromaticity):</b> Open <b>Tools → 🎓 Hückel Theory Workbench</b> (<code>Ctrl+Alt+H</code>). Load <i>Cyclobutadiene</i> (antiaromatic 4π) vs. <i>Benzene</i> (aromatic 6π). Check the Frost circle, secular determinant, and project LCAO orbital lobes onto the 3D molecule.
       </div>
 
       <div class="task-item">

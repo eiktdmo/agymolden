@@ -313,12 +313,26 @@ def solve_huckel_system(
         free_valence[loc] = max(0.0, sqrt3 - sum_p)
 
     # 6. Aromaticity Rule Check
-    # Check if cyclic
+    # Topology: monocycle (every pi-atom has exactly 2 pi-neighbours and #bonds == #atoms),
+    # polycyclic (cycle rank >= 2, e.g. naphthalene, azulene) or acyclic.
     degrees = [0] * n_pi
+    parent = list(range(n_pi))
+
+    def _find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
     for u, v in pi_bonds:
-        degrees[idx_to_local[u]] += 1
-        degrees[idx_to_local[v]] += 1
-    is_cyclic_ring = (n_pi >= 3 and all(d == 2 for d in degrees))
+        lu, lv = idx_to_local[u], idx_to_local[v]
+        degrees[lu] += 1
+        degrees[lv] += 1
+        parent[_find(lu)] = _find(lv)
+    n_components = len({_find(i) for i in range(n_pi)})
+    cycle_rank = len(pi_bonds) - n_pi + n_components
+    is_cyclic_ring = (n_pi >= 3 and cycle_rank == 1 and n_components == 1 and all(d == 2 for d in degrees))
+    is_polycyclic = cycle_rank >= 2
 
     if is_cyclic_ring:
         if (num_electrons - 2) % 4 == 0 and num_electrons >= 2:
@@ -327,6 +341,8 @@ def solve_huckel_system(
             arom = f"Antiaromatic ({num_electrons}π = 4n Hückel Rule)"
         else:
             arom = f"Open-Shell / Radical ({num_electrons}π)"
+    elif is_polycyclic:
+        arom = f"Polycyclic conjugated system ({num_electrons}π electrons; 4n+2 rule applies to the periphery)"
     else:
         arom = f"Acyclic Polyene ({num_electrons}π electrons)"
 
@@ -361,7 +377,7 @@ def solve_huckel_system(
         uv_vis_transition_nm=uv_nm,
         predicted_color_rgb=rgb,
         is_cyclic=is_cyclic_ring,
-        frost_polygon_n=n_pi if is_cyclic_ring else None,
+        frost_polygon_n=n_pi if (is_cyclic_ring and len(set(local_symbols)) == 1) else None,
     )
 
 

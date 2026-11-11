@@ -116,3 +116,27 @@ def test_huckel_cyclobutadiene_antiaromaticity():
     # Total energy = 2*(2.0) + 1*(0.0) + 1*(0.0) = 4.0 beta
     # Delocalization Energy DE = 4.0 - 4.0 = 0.0 beta (Zero stabilization!)
     assert pytest.approx(res.delocalization_energy_beta, abs=1e-4) == 0.0
+
+
+def test_huckel_fused_rings_match_literature():
+    """Naphthalene (DE = 3.683 beta) and azulene (DE = 3.364 beta) are textbook HMO values."""
+    from agymolden.dialog_huckel import _AZULENE, _NAPHTHALENE
+
+    nap = solve_huckel_system(_NAPHTHALENE[0], list(range(10)), _NAPHTHALENE[2], custom_electrons=10)
+    assert [round(o.m_beta, 3) for o in nap.orbitals[:5]] == [2.303, 1.618, 1.303, 1.0, 0.618]
+    assert pytest.approx(nap.delocalization_energy_beta, abs=2e-3) == 3.683
+    assert "Polycyclic" in nap.aromaticity_status          # not mislabelled "Acyclic"
+    assert nap.frost_polygon_n is None                      # Frost circle only valid for monocycles
+
+    azu = solve_huckel_system(_AZULENE[0], list(range(10)), _AZULENE[2], custom_electrons=10)
+    assert pytest.approx(azu.delocalization_energy_beta, abs=2e-3) == 3.364
+    assert len(_AZULENE[2]) == 11                           # 5+7 fused: 10 atoms, 11 bonds
+    # azulene's non-alternant topology makes it polar
+    assert max(abs(azu.pi_charges)) > 0.1
+
+
+def test_huckel_heterocycle_has_no_frost_circle():
+    pyr = solve_huckel_system(["N", "C", "C", "C", "C", "C"], list(range(6)),
+                              [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)], custom_electrons=6)
+    assert "Aromatic" in pyr.aromaticity_status
+    assert pyr.frost_polygon_n is None                      # heteroatom perturbs levels off the circle

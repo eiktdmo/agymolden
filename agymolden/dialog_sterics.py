@@ -6,6 +6,7 @@ import os
 from typing import List, Optional
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
+import matplotlib.patches
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 

@@ -29,6 +29,38 @@ from .huckel_engine import (
     HuckelMO,
 )
 
+def _fused_bicyclic(n_left: int, n_right: int):
+    """Planar fused bicyclic pi-system sharing one C-C bond (naphthalene 6+6, azulene 5+7).
+
+    Atoms 0/1 are the top/bottom fusion carbons; the right ring's remaining atoms follow
+    (top to bottom), then the left ring's.
+    """
+    side = 1.40
+    coords = [(0.0, side / 2.0), (0.0, -side / 2.0)]
+    bonds = [(0, 1)]
+
+    def _ring(n: int, sign: float) -> None:
+        apothem = side / (2.0 * math.tan(math.pi / n))
+        radius = side / (2.0 * math.sin(math.pi / n))
+        first_idx = len(coords)
+        chain = [0]
+        for k in range(1, n - 1):
+            theta = math.pi - math.pi / n - k * 2.0 * math.pi / n
+            coords.append((sign * (apothem + radius * math.cos(theta)), radius * math.sin(theta)))
+            chain.append(first_idx + k - 1)
+        chain.append(1)
+        bonds.extend(zip(chain[:-1], chain[1:]))
+
+    _ring(n_right, +1.0)
+    _ring(n_left, -1.0)
+    arr = np.array([[x, y, 0.0] for x, y in coords])
+    return ["C"] * len(coords), arr, sorted((min(a, b), max(a, b)) for a, b in bonds)
+
+
+_AZULENE = _fused_bicyclic(5, 7)
+_NAPHTHALENE = _fused_bicyclic(6, 6)
+
+
 # Classic Classroom Presets (Symbols, Coords, Pi Bonds)
 HUCKEL_PRESETS: Dict[str, Tuple[List[str], np.ndarray, List[Tuple[int, int]], int]] = {
     "Ethylene (C2H4)": (
@@ -82,16 +114,8 @@ HUCKEL_PRESETS: Dict[str, Tuple[List[str], np.ndarray, List[Tuple[int, int]], in
         [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 0)],
         6,
     ),
-    "Azulene (C10H8) [Non-Alternant]": (
-        ["C"] * 10,
-        np.array([
-            # 7-membered ring + 5-membered ring fused
-            [0.0, 1.2, 0.0], [1.1, 1.7, 0.0], [2.1, 0.9, 0.0], [2.1, -0.9, 0.0], [1.1, -1.7, 0.0],
-            [0.0, -1.2, 0.0], [-1.2, -1.0, 0.0], [-1.9, 0.0, 0.0], [-1.2, 1.0, 0.0], [0.0, 0.0, 0.0]
-        ]),
-        [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 9), (9, 0), (5, 6), (6, 7), (7, 8), (8, 0)],
-        10,
-    ),
+    "Naphthalene (C10H8) [Fused 10π]": (_NAPHTHALENE[0], _NAPHTHALENE[1], _NAPHTHALENE[2], 10),
+    "Azulene (C10H8) [Non-Alternant 5+7]": (_AZULENE[0], _AZULENE[1], _AZULENE[2], 10),
     "Pyridine (C5H5N) [Heterocycle]": (
         ["N", "C", "C", "C", "C", "C"],
         np.array([
@@ -331,7 +355,7 @@ class HuckelTeachingDialog(QtWidgets.QDialog):
     def _render_plots(self, res: HuckelResult):
         self.fig.clear()
 
-        if res.is_cyclic:
+        if res.frost_polygon_n is not None:
             # 2 Subplots: Left = Frost-Musulin Circle, Right = MO Aufbau Ladder
             ax_frost = self.fig.add_subplot(121)
             ax_ladder = self.fig.add_subplot(122)
