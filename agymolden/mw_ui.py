@@ -1698,7 +1698,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.act_tweezers = QtGui.QAction("🧲 Interactive Molecular Tweezers (Live UFF Drag)", self)
         self.act_tweezers.setCheckable(True)
         self.act_tweezers.setChecked(False)
-        self.act_tweezers.setToolTip("When checked, dragging an atom with Ctrl+Drag dynamically relaxes connected atoms in real-time via UFF force field")
+        self.act_tweezers.setToolTip("When checked, simply Left-Click and drag any atom in the 3D viewport to dynamically relax connected atoms in real-time via UFF force field")
         self.act_tweezers.toggled.connect(self._on_toggle_tweezers)
         if hasattr(self, "btn_ribbon_tweezers"):
             self.act_tweezers.toggled.connect(self.btn_ribbon_tweezers.setChecked)
@@ -2375,7 +2375,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_tb_tweezers.setText("🧲 Tweezers")
         self.btn_tb_tweezers.setCheckable(True)
         self.btn_tb_tweezers.setChecked(False)
-        self.btn_tb_tweezers.setToolTip("🧲 Interactive Molecular Tweezers: Click to toggle. When active, hold Ctrl and drag any atom in the 3D viewport to dynamically relax the molecule in real time!")
+        self.btn_tb_tweezers.setToolTip("🧲 Interactive Molecular Tweezers: Click to toggle. When active, simply Left-Click and drag any atom in the 3D viewport to dynamically relax connected atoms in real time!")
         self.btn_tb_tweezers.setStyleSheet("""
             QToolButton:checked {
                 background-color: #0284c7;

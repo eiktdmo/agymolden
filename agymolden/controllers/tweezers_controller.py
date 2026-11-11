@@ -46,17 +46,25 @@ class TweezersController:
             sym = symbols[atom_idx] if 0 <= atom_idx < len(symbols) else ""
 
             if len(drag_indices) < len(symbols):
-                user_bonds = list(getattr(self.mw.viewer, "bonds", []))
+                # Use intact initial bonds snapshot captured when drag began, or current bonds
+                user_bonds = getattr(self.mw.viewer, "_tweezers_initial_bonds", None)
+                if not user_bonds:
+                    user_bonds = list(getattr(self.mw.viewer, "bonds", []))
                 opt_c, e_val = optimize_geometry_force_field(
                     symbols,
                     self.mw.coords,
                     user_bonds=user_bonds,
-                    max_iter=8,
+                    strict_bonds=True,
+                    max_iter=15,
                     frozen_indices=drag_indices,
                 )
                 self.mw.coords = np.array(opt_c, copy=True)
                 self.mw.viewer.coords = np.array(opt_c, copy=True)
-                self.mw.viewer.compute_bonds()
+                # Keep active bond visualization rendered with stretched bond during drag
+                if user_bonds:
+                    self.mw.viewer.bonds = list(user_bonds)
+                else:
+                    self.mw.viewer.compute_bonds()
                 self.mw.viewer.update()
                 self.mw.statusBar().showMessage(
                     f"🧲 Tweezers: Dragging {sym}{atom_idx+1} at ({new_x:.2f}, {new_y:.2f}, {new_z:.2f}) Å | UFF: {e_val:.1f} kcal/mol",
@@ -73,6 +81,10 @@ class TweezersController:
         """Called when mouse release completes atom dragging. Reconstructs canonical Z-matrix."""
         if hasattr(self.mw, "viewer") and hasattr(self.mw.viewer, "coords") and len(self.mw.viewer.coords) == len(self.mw.coords):
             self.mw.coords = np.array(self.mw.viewer.coords, copy=True)
+            if hasattr(self.mw.viewer, "_tweezers_initial_bonds"):
+                self.mw.viewer._tweezers_initial_bonds = None
+            self.mw.viewer.compute_bonds()
+            self.mw.viewer.update()
         symbols = [a.symbol for a in self.mw.zatoms]
         if self.mw.strict_topology:
             new_zatoms = cartesian_to_zmatrix(symbols, self.mw.coords, existing_zatoms=self.mw.zatoms)
