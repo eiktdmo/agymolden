@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgyMolden — Quantum Chemistry Private Course Beta</title>
+  <title>AgyMolden — Next-Gen Quantum Chemistry Workbench</title>
   <style>
     :root {
       --bg: #090d16;
@@ -12,8 +12,9 @@
       --accent: #38bdf8;
       --accent-hover: #0284c7;
       --green: #22c55e;
-      --purple: #a855f7;
+      --purple: #c084fc;
       --amber: #f59e0b;
+      --rose: #f43f5e;
       --text: #f8fafc;
       --text-muted: #94a3b8;
     }
@@ -30,9 +31,9 @@
       padding-bottom: 60px;
     }
     header {
-      background: linear-gradient(180deg, #0f172a 0%, #090d16 100%);
+      background: radial-gradient(circle at 50% 20%, #1e293b 0%, #090d16 80%);
       border-bottom: 1px solid var(--card-border);
-      padding: 48px 24px;
+      padding: 56px 20px 40px 20px;
       text-align: center;
     }
     .badge {
@@ -41,7 +42,7 @@
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 1.2px;
       border-radius: 999px;
       background: rgba(56, 189, 248, 0.15);
       color: var(--accent);
@@ -49,32 +50,30 @@
       margin-bottom: 16px;
     }
     h1 {
-      font-size: 38px;
+      font-size: 42px;
       font-weight: 800;
-      margin-bottom: 12px;
-      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
     }
     .subtitle {
-      font-size: 17px;
+      font-size: 18px;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .subdesc {
+      font-size: 15px;
       color: var(--text-muted);
-      max-width: 680px;
-      margin: 0 auto 24px auto;
+      max-width: 760px;
+      margin: 0 auto 28px auto;
     }
     .container {
-      max-width: 980px;
+      max-width: 1040px;
       margin: 0 auto;
       padding: 0 20px;
-    }
-    .download-card {
-      background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      border-radius: 12px;
-      padding: 32px;
-      margin: -24px auto 36px auto;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-      text-align: center;
     }
     .btn-download {
       display: inline-block;
@@ -82,36 +81,44 @@
       color: #ffffff;
       font-size: 16px;
       font-weight: 700;
-      padding: 14px 32px;
+      padding: 14px 34px;
       border-radius: 8px;
       text-decoration: none;
       transition: all 0.2s ease;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
-      margin: 12px 8px;
+      box-shadow: 0 4px 16px rgba(2, 132, 199, 0.4);
     }
     .btn-download:hover {
       background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5);
+      box-shadow: 0 6px 22px rgba(56, 189, 248, 0.5);
+    }
+    .download-card {
+      background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      padding: 30px;
+      margin: -24px auto 40px auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      text-align: center;
     }
     .os-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
-      margin-top: 24px;
+      margin-top: 20px;
       text-align: left;
     }
     .os-box {
-      background: rgba(15, 23, 42, 0.8);
+      background: rgba(15, 23, 42, 0.85);
       border: 1px solid var(--card-border);
       border-radius: 8px;
       padding: 16px;
     }
     .os-title {
       font-weight: 700;
-      font-size: 15px;
+      font-size: 14px;
       color: var(--accent);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .code-snippet {
       background: #000000;
@@ -123,36 +130,108 @@
       display: block;
       margin-top: 6px;
     }
+
+    /* Comparison Table */
     .section-title {
       font-size: 24px;
-      font-weight: 700;
-      margin: 40px 0 16px 0;
+      font-weight: 800;
+      margin: 44px 0 16px 0;
       border-bottom: 2px solid var(--card-border);
       padding-bottom: 8px;
-    }
-    .grid-2 {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 20px;
-    }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 24px;
-    }
-    .card h3 {
-      font-size: 18px;
-      color: var(--accent);
-      margin-bottom: 12px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
-    .card p {
+    .comp-table-container {
+      overflow-x: auto;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: var(--card-bg);
+      margin-bottom: 30px;
+    }
+    table.comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    table.comp-table th {
+      background: #111827;
       color: var(--text-muted);
-      font-size: 14px;
+      padding: 12px 16px;
+      font-weight: 700;
+      border-bottom: 2px solid var(--card-border);
+    }
+    table.comp-table th.highlight {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      border-left: 2px solid var(--accent);
+      border-right: 2px solid var(--accent);
+    }
+    table.comp-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #cbd5e1;
+    }
+    table.comp-table td.highlight {
+      background: rgba(56, 189, 248, 0.04);
+      border-left: 2px solid var(--accent);
+      border-right: 2px solid var(--accent);
+      font-weight: 600;
+      color: #ffffff;
+    }
+    .check-yes { color: var(--green); font-weight: bold; }
+    .check-no { color: var(--rose); font-weight: bold; }
+    .check-partial { color: var(--amber); }
+
+    /* The Big 3 Pillars */
+    .pillar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 20px;
+      margin-top: 18px;
+    }
+    .pillar-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .pillar-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+    .pillar-1::before { background: var(--accent); }
+    .pillar-2::before { background: var(--green); }
+    .pillar-3::before { background: var(--purple); }
+
+    .pillar-num {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .pillar-1 .pillar-num { color: var(--accent); }
+    .pillar-2 .pillar-num { color: var(--green); }
+    .pillar-3 .pillar-num { color: var(--purple); }
+
+    .pillar-card h3 {
+      font-size: 18px;
+      font-weight: 700;
       margin-bottom: 12px;
+      color: #ffffff;
+    }
+    .pillar-card p {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
     }
     .feature-list {
       list-style: none;
@@ -160,32 +239,44 @@
       font-size: 13px;
     }
     .feature-list li {
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       padding-left: 20px;
       position: relative;
       color: #cbd5e1;
     }
     .feature-list li::before {
-      content: "✓";
+      content: "→";
       position: absolute;
       left: 0;
-      color: var(--green);
       font-weight: bold;
+      color: var(--accent);
     }
-    .exercise-box {
+
+    /* Teaching & Student Exercises */
+    .teaching-box {
       background: #111827;
-      border-left: 4px solid var(--amber);
-      padding: 14px 18px;
-      margin-top: 14px;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 24px;
+      margin-top: 20px;
+    }
+    .teaching-box h3 {
+      color: var(--amber);
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    .task-item {
+      background: rgba(15, 23, 42, 0.7);
+      border-left: 3px solid var(--amber);
+      padding: 10px 14px;
+      margin: 10px 0;
       border-radius: 0 6px 6px 0;
       font-size: 13px;
     }
-    .exercise-box b {
-      color: var(--amber);
-    }
+
     footer {
       text-align: center;
-      margin-top: 50px;
+      margin-top: 60px;
       color: var(--text-muted);
       font-size: 13px;
       border-top: 1px solid var(--card-border);
@@ -197,11 +288,12 @@
 
   <header>
     <div class="container">
-      <span class="badge">🔒 Private Educational Beta Testing</span>
-      <h1>AgyMolden Quantum Chemistry Suite</h1>
-      <p class="subtitle">
-        Interactive Molecular Modeling, Hückel Molecular Orbital (HMO) Theory,
-        Reaction Kinetics, and Quantum Calculations Workbench.
+      <span class="badge">🔒 Confidential Pre-Release & Teaching Beta</span>
+      <h1>AgyMolden</h1>
+      <div class="subtitle">The Unified Quantum Chemistry Operating Environment</div>
+      <p class="subdesc">
+        A single, unified platform designed to replace legacy disjointed toolchains (Avogadro, Gabedit, Molden, GaussView)
+        for <b>creating inputs</b>, <b>executing calculations</b>, and <b>analyzing quantum results</b>.
       </p>
     </div>
   </header>
@@ -209,13 +301,12 @@
   <main class="container">
     <!-- Download Banner -->
     <div class="download-card">
-      <h2 style="font-size: 22px; margin-bottom: 8px;">Download AgyMolden One-Click Student Bundle</h2>
+      <h2 style="font-size: 22px; margin-bottom: 6px;">Download AgyMolden One-Click Student Bundle</h2>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-        Zero terminal installation or environment configuration required. Everything runs in 1-click.
+        Zero installation commands, zero conda configuration, zero compiler dependencies.
       </p>
 
-      <!-- REPLACE THIS LINK WITH YOUR GOOGLE DRIVE SHARED FILE LINK -->
-      <a href="AgyMolden_OneClick_Bundle.zip" class="btn-download" id="download-link">
+      <a href="AgyMolden_OneClick_Bundle.zip" class="btn-download">
         ⬇️ Download One-Click Bundle (.ZIP, ~1.5 MB)
       </a>
 
@@ -223,7 +314,7 @@
         <div class="os-box">
           <div class="os-title">🍏 macOS & 🐧 Linux</div>
           <ol style="font-size: 13px; color: #cbd5e1; padding-left: 18px;">
-            <li>Unzip <code>AgyMolden_OneClick_Bundle.zip</code></li>
+            <li>Extract <code>AgyMolden_OneClick_Bundle.zip</code></li>
             <li>Double-click: <code>Run_Mac_or_Linux.sh</code></li>
           </ol>
           <span class="code-snippet">./Run_Mac_or_Linux.sh</span>
@@ -240,86 +331,173 @@
       </div>
     </div>
 
-    <!-- Course Modules & Features -->
-    <h2 class="section-title">🎓 Interactive Quantum Chemistry Course Modules</h2>
-    <div class="grid-2">
+    <!-- The 3 Pillars Replacing Legacy Software -->
+    <h2 class="section-title">⚡ Replacing Legacy Toolchains Across All Three Stages</h2>
+    <div class="pillar-grid">
 
-      <!-- Hückel Workbench -->
-      <div class="card">
-        <h3>🎓 Hückel Molecular Orbital (HMO) Workbench</h3>
-        <p>Shortcut: <code>Ctrl + Shift + H</code> (or Tools menu)</p>
+      <!-- PILLAR 1: BUILD & INPUTS -->
+      <div class="pillar-card pillar-1">
+        <div class="pillar-num">Stage 1: Building & Inputs</div>
+        <h3>Replacing Avogadro & Molden</h3>
+        <p>Build, sketch, pre-optimize, and export production QM decks in seconds without syntax errors.</p>
         <ul class="feature-list">
-          <li><b>Secular Determinants:</b> Live <code>|H - xI| = 0</code> symbolic matrix display.</li>
-          <li><b>Frost-Musulin Circles:</b> Inscribed polygon circle mnemonic for [N]annulenes.</li>
-          <li><b>Aufbau Spin Ladder:</b> Interactive Hund's rule spin arrows (↑↓) across energy levels.</li>
-          <li><b>Coulson Bond Orders:</b> Predicted bond orders (e.g., Benzene C-C = 0.667).</li>
-          <li><b>3D LCAO Orbital Lobes:</b> 1-click projection of MO lobes and phase signs to 3D atoms.</li>
+          <li><b>Multi-Engine Deck Generator (Ctrl+Shift+I):</b> Gaussian, ORCA, Q-Chem, PySCF, openLOWDIN, newBRORSEN, xTB, and Multiwfn.</li>
+          <li><b>2D Bond-Line Sketcher (Ctrl+Shift+K):</b> ChemDraw-style sketching to clean 3D force-field coordinates.</li>
+          <li><b>Interactive 🧲 Tweezers:</b> Pull and stretch any atom with live UFF physics relaxation without freezing.</li>
+          <li><b>Transition State Guess (IDPP / QST2):</b> Collision-free reaction path interpolator with direct ORCA NEB-TS / Gaussian QST3 export.</li>
+          <li><b>2D PES Grid Scan Builder:</b> Automated 2D coordinate scan decks for ORCA and Gaussian ModRedundant.</li>
         </ul>
-        <div class="exercise-box">
-          <b>Class Exercise 1:</b> Select the <i>Cyclobutadiene</i> preset. Notice the two degenerate SOMOs at α (antiaromatic 4π diradical). Now use the N_π spinner to add 2 electrons (Cyclobutadienyl dianion, 6π) and observe the aromatic stabilization!
-        </div>
       </div>
 
-      <!-- Molecular Tweezers -->
-      <div class="card">
-        <h3>🧲 Molecular Tweezers (Live Force Field Relaxation)</h3>
-        <p>Shortcut: Click the <b>🧲 Tweezers</b> ribbon button</p>
+      <!-- PILLAR 2: RUN CALCULATIONS -->
+      <div class="pillar-card pillar-2">
+        <div class="pillar-num">Stage 2: Execution & Engines</div>
+        <h3>Replacing Gabedit & Shell Scripts</h3>
+        <p>Execute calculations locally or remotely on university HPC clusters without leaving the GUI.</p>
         <ul class="feature-list">
-          <li><b>Real-Time UFF Physics:</b> Left-click and drag any atom in the 3D viewport.</li>
-          <li><b>Dynamic Topology:</b> Connected bonds and angles stretch and relax in real time.</li>
-          <li><b>Intuitive Hand Cursors:</b> Hover displays open hand; dragging shows grab cursor.</li>
-          <li><b>Fast Geometry Pre-optimization:</b> Relax steric clashes in seconds before QM runs.</li>
+          <li><b>In-App Universal Runner:</b> Run ORCA, PySCF, and xTB directly with live log streaming.</li>
+          <li><b>Universal Foundation ML Potentials:</b> Integrated MACE-MP-0 (89 elements) and GFN2-xTB for instant zero-cost geometries.</li>
+          <li><b>Pre-Flight Chemistry Checker:</b> Auto-detects invalid spin multiplicities, radical valence errors, and unphysical steric clashes before launch.</li>
+          <li><b>HPC Cluster Queue Manager:</b> Built-in Slurm / PBS job script generator and SSH file transfer.</li>
+          <li><b>QC Doctor:</b> Scans failing logs and recommends exact convergence keywords (tight SCF, SOSCF, grid adjustments).</li>
         </ul>
-        <div class="exercise-box">
-          <b>Class Exercise 2:</b> Load <i>Ethanol</i> or <i>Water</i>. Activate Tweezers, grab a hydrogen or carbon atom, and pull it. Notice how the connected bond length and angles dynamically adapt.
-        </div>
       </div>
 
-      <!-- Reaction Kinetics -->
-      <div class="card">
-        <h3>⚡ Eyring Thermochemistry & Marcus Kinetics</h3>
-        <p>Shortcut: <code>Alt + Shift + R</code> & Tools menu</p>
+      <!-- PILLAR 3: RESULT ANALYSIS -->
+      <div class="pillar-card pillar-3">
+        <div class="pillar-num">Stage 3: Advanced Analysis</div>
+        <h3>Replacing GaussView & Chemcraft</h3>
+        <p>Publication-grade workbenches for physical, organic, and quantum chemistry analysis.</p>
         <ul class="feature-list">
-          <li><b>Reaction Barriers (ΔG‡) & Rates:</b> Eyring transition state theory k(T).</li>
-          <li><b>Quantum Tunneling:</b> Wigner and Eckart transmission coefficient κ(T).</li>
-          <li><b>Marcus Electron Transfer:</b> Inner/outer-sphere reorganization (λ_in, λ_out).</li>
-          <li><b>Normal vs. Inverted Regime:</b> Live diabatic reactant/product PES parabolas.</li>
+          <li><b>Interactive Hückel Workbench (Ctrl+Shift+H):</b> Live secular determinants, Frost circles, Aufbau spin arrows, and 3D LCAO lobes.</li>
+          <li><b>Eyring Reaction Kinetics & Tunneling:</b> Free energy profiles (ΔG‡, ΔGrxn) with Wigner & Eckart quantum tunneling.</li>
+          <li><b>Marcus Photoredox Kinetics:</b> Inner/outer-sphere reorganization (λ) and diabatic PES parabolas.</li>
+          <li><b>Catalysis Sterics:</b> Buried Volume (%V_bur), SambVca-style 2D topographic maps, and Sterimol (L, B1, B5).</li>
+          <li><b>Open-Shell & Spin Diagnostics:</b> &lt;S²&gt; contamination evaluation, Yamaguchi projection (E_AP), and Heisenberg J coupling.</li>
+          <li><b>Born-Haber Redox Workbench:</b> Standard reduction potentials E° vs SHE / SCE / Fc/Fc⁺.</li>
+          <li><b>NBO E(2) Network & EDA:</b> Natural Bond Orbital donor-acceptor chord graphs and SAPT energy decomposition.</li>
         </ul>
-        <div class="exercise-box">
-          <b>Class Exercise 3:</b> In Marcus Workbench, adjust ΔG° from -0.3 eV (Normal Activation) to -1.5 eV. Watch the product parabola shift into the famous <i>Marcus Inverted Regime</i> where reaction slows down!
-        </div>
-      </div>
-
-      <!-- Spin & Redox -->
-      <div class="card">
-        <h3>⚛️ Open-Shell Spin Diagnostics & Redox Potentials</h3>
-        <p>Shortcut: Available under the <b>Tools</b> menu</p>
-        <ul class="feature-list">
-          <li><b>&lt;S²&gt; Contamination:</b> Check deviation from ideal S(S+1).</li>
-          <li><b>Yamaguchi Projection:</b> E_AP correction for broken-symmetry singlets.</li>
-          <li><b>Exchange Coupling (J):</b> Antiferromagnetic (J &lt; 0) vs. ferromagnetic (J &gt; 0).</li>
-          <li><b>Born-Haber Redox Cycles:</b> Standard reduction potentials E° vs SHE / SCE / Fc/Fc⁺.</li>
-        </ul>
-        <div class="exercise-box">
-          <b>Class Exercise 4:</b> Inspect the Born-Haber cycle for a 1-electron reduction. See how differential continuum solvation (ΔΔG_solv) shifts the reduction potential by over 1.5 Volts.
-        </div>
       </div>
 
     </div>
 
-    <!-- Student Feedback Instructions -->
-    <h2 class="section-title">📝 Student Testing & Feedback Protocol</h2>
-    <div class="card" style="background: #111827; border-color: #334155;">
-      <p style="color: #cbd5e1; font-size: 14px;">
-        As a beta tester, your feedback is crucial before our official journal publication and public release.
-        Please test:
+    <!-- Direct Comparison Table -->
+    <h2 class="section-title">📊 Feature Comparison: AgyMolden vs. Legacy Software</h2>
+    <div class="comp-table-container">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th>Capability / Workflow Area</th>
+            <th class="highlight">AgyMolden</th>
+            <th>Avogadro (v1/v2)</th>
+            <th>Gabedit</th>
+            <th>GaussView</th>
+            <th>Molden</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Installation Model</b></td>
+            <td class="highlight check-yes">1-Click Zero Install</td>
+            <td class="check-partial">Installer / Build</td>
+            <td class="check-partial">X11 / GTK Setup</td>
+            <td class="check-no">Commercial License</td>
+            <td class="check-no">X11 / Fortran binary</td>
+          </tr>
+          <tr>
+            <td><b>Multi-Engine Deck Generation (ORCA/Gau/PySCF/QChem/xTB)</b></td>
+            <td class="highlight check-yes">Yes (All 8 Engines)</td>
+            <td class="check-partial">Partial (Basic)</td>
+            <td class="check-partial">Yes (Legacy)</td>
+            <td class="check-partial">Gaussian Only</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Interactive 🧲 Tweezers (Live UFF Drag & Relax)</b></td>
+            <td class="highlight check-yes">Yes (Real-time UFF)</td>
+            <td class="check-partial">Auto-opt freezes</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Undergraduate Hückel Theory & Frost Circles</b></td>
+            <td class="highlight check-yes">Yes (Interactive Suite)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Reaction Kinetics & Eyring Tunneling (Wigner/Eckart)</b></td>
+            <td class="highlight check-yes">Yes (ΔG‡, k(T), Arrhenius)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Marcus Electron Transfer Workbench</b></td>
+            <td class="highlight check-yes">Yes (λ_in, λ_out, Inverted PES)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Catalysis Sterics (%V_bur, SambVca 2D Maps, Sterimol)</b></td>
+            <td class="highlight check-yes">Yes (Built-in)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Open-Shell &lt;S²&gt; Diagnostics & Yamaguchi Projection</b></td>
+            <td class="highlight check-yes">Yes (E_AP, J coupling)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Born-Haber Redox Potential (E° vs. SHE/SCE)</b></td>
+            <td class="highlight check-yes">Yes (Thermodynamic cycle)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+          </tr>
+          <tr>
+            <td><b>Transition State Interpolation (IDPP / NEB-TS)</b></td>
+            <td class="highlight check-yes">Yes (Collision-free)</td>
+            <td class="check-no">No</td>
+            <td class="check-no">No</td>
+            <td class="check-partial">QST2 only</td>
+            <td class="check-no">No</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Student Testing Tasks -->
+    <div class="teaching-box">
+      <h3>🎯 Student Pre-Release Testing Assignments</h3>
+      <p style="color: #cbd5e1; font-size: 13.5px; margin-bottom: 12px;">
+        Please test the three core stages on your laptop and report your observations:
       </p>
-      <ol style="margin-left: 20px; font-size: 14px; color: #94a3b8; line-height: 1.8;">
-        <li>Does the One-Click script launch smoothly on your laptop without any errors?</li>
-        <li>In the Hückel Workbench (<code>Ctrl+Shift+H</code>), do all orbital levels and Frost circles display clearly?</li>
-        <li>Does atom dragging with the 🧲 Tweezers tool feel smooth and responsive?</li>
-        <li>If you encounter any crash, unexpected behavior, or display issue, please take a screenshot and email your professor directly.</li>
-      </ol>
+
+      <div class="task-item">
+        <b>Task 1 (Building & Inputs):</b> Sketch or load a conjugated molecule (e.g. <i>Butadiene</i> or <i>Pyridine</i> via <code>Ctrl+Shift+B</code>). Use the 🧲 <b>Tweezers</b> tool to pull an atom. Verify that connected bonds stretch smoothly. Then open <b>QM Calculation Input Generator</b> (<code>Ctrl+Shift+I</code>) and export an ORCA or Gaussian input file.
+      </div>
+
+      <div class="task-item">
+        <b>Task 2 (Hückel Theory & Aromaticity):</b> Open <b>Tools → 🎓 Hückel Theory Workbench</b> (<code>Ctrl+Shift+H</code>). Load <i>Cyclobutadiene</i> (antiaromatic 4π) vs. <i>Benzene</i> (aromatic 6π). Check the Frost circle, secular determinant, and project LCAO orbital lobes onto the 3D molecule.
+      </div>
+
+      <div class="task-item">
+        <b>Task 3 (Reaction Thermochemistry):</b> Open <b>Tools → ⚗️ Reaction Thermochemistry & Eyring Kinetics</b> (<code>Alt+Shift+R</code>). Inspect activation free energies (ΔG‡), Eyring rate constants k(T), and quantum tunneling corrections.
+      </div>
     </div>
 
     <footer>
