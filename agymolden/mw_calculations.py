@@ -1257,6 +1257,11 @@ class CalculationsMixin:
         from .controllers import OrbitalController
         OrbitalController(self).quick_view_lumo()
 
+    def _on_quick_view_homo_lumo_duality(self):
+        """1-Click Dual Frontier Overlay: Simultaneously render HOMO and LUMO in complementary colors."""
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_homo_lumo_duality()
+
     def _on_quick_view_spin_density(self):
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
         from .controllers import OrbitalController
@@ -1593,6 +1598,29 @@ class CalculationsMixin:
             bonds=bonds,
         )
         dlg.exec()
+
+    def _on_open_solvation_dialog(self):
+        """Open Continuum Solvation Free Energy (SMD / PCM / CPCM) dialog."""
+        from .dialog_solvation import SolvationDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        dipole_val = None
+        charges = getattr(self.viewer, "custom_charges", None)
+
+        res = getattr(self, "_last_qm_res", None) or getattr(self, "_last_qm_result", None)
+        if res and getattr(res, "dipole_debye", None) is not None:
+            dipole_val = float(res.dipole_debye)
+
+        dlg = SolvationDialog(
+            parent=self,
+            symbols=symbols,
+            coords=coords,
+            dipole_debye=dipole_val,
+            partial_charges=charges,
+        )
+        dlg.exec()
+
 
 
 

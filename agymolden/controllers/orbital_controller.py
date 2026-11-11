@@ -116,6 +116,51 @@ class OrbitalController:
         else:
             self.mw._on_open_volumetric_dialog()
 
+    def quick_view_homo_lumo_duality(self) -> None:
+        """1-Click Dual Frontier Overlay: Simultaneously render HOMO (blue/gold) and LUMO (purple/emerald)."""
+        if not (hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data):
+            self._populate_semiempirical_mos_if_needed()
+
+        if not (hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data):
+            self.mw._on_open_volumetric_dialog()
+            return
+
+        homo_idx = 0
+        lumo_idx = 1
+        for idx, mo in enumerate(self.mw._active_molden_data.orbitals):
+            if mo.occupancy > 0.05:
+                homo_idx = idx
+        if homo_idx + 1 < len(self.mw._active_molden_data.orbitals):
+            lumo_idx = homo_idx + 1
+
+        symbols = [a.symbol for a in self.mw.zatoms] if self.mw.zatoms else self.mw.symbols
+        coords = self.mw.coords
+        qm_props = getattr(self.mw, "_semiempirical_qm_props", None)
+
+        from ..volumetric import evaluate_semiempirical_orbital_grid, generate_orbital_surfaces
+        n_pts = 36
+        vol_h = evaluate_semiempirical_orbital_grid(symbols, coords, orbital_index=homo_idx, nx=n_pts, ny=n_pts, nz=n_pts, qm_props=qm_props)
+        vol_l = evaluate_semiempirical_orbital_grid(symbols, coords, orbital_index=lumo_idx, nx=n_pts, ny=n_pts, nz=n_pts, qm_props=qm_props)
+
+        if not vol_h or not vol_l:
+            self.mw.statusBar().showMessage("Could not evaluate HOMO/LUMO duality grids.", 3000)
+            return
+
+        iso_h = float(np.max(np.abs(vol_h.grid_data))) * 0.45
+        iso_l = float(np.max(np.abs(vol_l.grid_data))) * 0.45
+
+        # HOMO colors: Cyan & Amber
+        mesh_h = generate_orbital_surfaces(vol_h, isovalue=max(1e-4, iso_h), pos_color=(0.14, 0.70, 0.95), neg_color=(0.95, 0.65, 0.15))
+        # LUMO colors: Violet & Emerald
+        mesh_l = generate_orbital_surfaces(vol_l, isovalue=max(1e-4, iso_l), pos_color=(0.65, 0.25, 0.95), neg_color=(0.15, 0.85, 0.45))
+
+        combined_meshes = list(mesh_h) + list(mesh_l)
+        if hasattr(self.mw, "viewer"):
+            self.mw.viewer.active_isosurfaces = combined_meshes
+            self.mw.viewer.surface_opacity = 0.75
+            self.mw.viewer.update()
+            self.mw.statusBar().showMessage(f"Dual Frontier View: HOMO #{homo_idx+1} (Cyan/Amber) + LUMO #{lumo_idx+1} (Violet/Emerald)", 5000)
+
     def quick_view_spin_density(self) -> None:
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
         molden_path = getattr(self.mw, "_active_molden_path", None)

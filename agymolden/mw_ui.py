@@ -1875,6 +1875,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_thermo.triggered.connect(self._on_open_reaction_thermo_dialog)
         menu_tools.addAction(act_thermo)
 
+        act_solvation = QtGui.QAction("💧 &Continuum Solvation Free Energy (SMD / PCM / CPCM)...", self)
+        act_solvation.setToolTip("Estimate solvent effects, dielectric response (ΔG_el), and cavitation/dispersion (ΔG_cds) across 11 standard solvents")
+        act_solvation.triggered.connect(self._on_open_solvation_dialog)
+        menu_tools.addAction(act_solvation)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
@@ -1969,6 +1974,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_lumo.setToolTip("Compute and display Lowest Unoccupied Molecular Orbital (LUMO) 3D isosurface lobes")
         act_lumo.triggered.connect(self._on_quick_view_lumo)
         menu_surfaces.addAction(act_lumo)
+
+        act_dual_fmo = QtGui.QAction("✨ 1-Click Dual Frontier Overlay (HOMO + LUMO Duality)", self)
+        act_dual_fmo.setToolTip("Simultaneously render HOMO (Cyan/Amber) and LUMO (Violet/Emerald) lobes to inspect excitation pathways and donor-acceptor overlap")
+        act_dual_fmo.triggered.connect(self._on_quick_view_homo_lumo_duality)
+        menu_surfaces.addAction(act_dual_fmo)
 
         act_spin = QtGui.QAction("🌀 1-Click View Open-Shell Spin Density Lobes", self)
         act_spin.setToolTip("Compute and display alpha - beta open-shell spin density 3D isosurface lobes")
