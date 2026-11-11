@@ -1880,6 +1880,16 @@ class UIMixin(UIInspectorTabsMixin):
         act_solvation.triggered.connect(self._on_open_solvation_dialog)
         menu_tools.addAction(act_solvation)
 
+        act_sterics = QtGui.QAction("🛡️ &Catalysis Sterics: Buried Volume (%V_bur) & Sterimol (L, B1, B5)...", self)
+        act_sterics.setToolTip("Calculate ligand buried volume (%V_bur), SambVca-style 2D topographic steric altitude maps, and Verloop Sterimol descriptors (L, B1, B5)")
+        act_sterics.triggered.connect(self._on_open_sterics_dialog)
+        menu_tools.addAction(act_sterics)
+
+        act_marcus = QtGui.QAction("⚡ &Marcus Electron Transfer & Photoredox Kinetics...", self)
+        act_marcus.setToolTip("Evaluate inner/outer-sphere reorganization energies (λ_in, λ_out), Marcus activation barrier (ΔG‡), non-adiabatic rate k_ET, and diabatic PES parabolas")
+        act_marcus.triggered.connect(self._on_open_marcus_dialog)
+        menu_tools.addAction(act_marcus)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
