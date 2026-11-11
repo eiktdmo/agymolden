@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgyMolden — Quantum Chemistry Private Course Beta</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #0f172a;
+      --card-border: #1e293b;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --green: #22c55e;
+      --purple: #a855f7;
+      --amber: #f59e0b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding-bottom: 60px;
+    }
+    header {
+      background: linear-gradient(180deg, #0f172a 0%, #090d16 100%);
+      border-bottom: 1px solid var(--card-border);
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 38px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 24px auto;
+    }
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    .download-card {
+      background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      padding: 32px;
+      margin: -24px auto 36px auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      text-align: center;
+    }
+    .btn-download {
+      display: inline-block;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 14px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+      margin: 12px 8px;
+    }
+    .btn-download:hover {
+      background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5);
+    }
+    .os-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+      text-align: left;
+    }
+    .os-box {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .os-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .code-snippet {
+      background: #000000;
+      color: #38bdf8;
+      font-family: monospace;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: block;
+      margin-top: 6px;
+    }
+    .section-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 40px 0 16px 0;
+      border-bottom: 2px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .card h3 {
+      font-size: 18px;
+      color: var(--accent);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .feature-list {
+      list-style: none;
+      padding-left: 0;
+      font-size: 13px;
+    }
+    .feature-list li {
+      margin-bottom: 6px;
+      padding-left: 20px;
+      position: relative;
+      color: #cbd5e1;
+    }
+    .feature-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--green);
+      font-weight: bold;
+    }
+    .exercise-box {
+      background: #111827;
+      border-left: 4px solid var(--amber);
+      padding: 14px 18px;
+      margin-top: 14px;
+      border-radius: 0 6px 6px 0;
+      font-size: 13px;
+    }
+    .exercise-box b {
+      color: var(--amber);
+    }
+    footer {
+      text-align: center;
+      margin-top: 50px;
+      color: var(--text-muted);
+      font-size: 13px;
+      border-top: 1px solid var(--card-border);
+      padding-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container">
+      <span class="badge">🔒 Private Educational Beta Testing</span>
+      <h1>AgyMolden Quantum Chemistry Suite</h1>
+      <p class="subtitle">
+        Interactive Molecular Modeling, Hückel Molecular Orbital (HMO) Theory,
+        Reaction Kinetics, and Quantum Calculations Workbench.
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Download Banner -->
+    <div class="download-card">
+      <h2 style="font-size: 22px; margin-bottom: 8px;">Download AgyMolden One-Click Student Bundle</h2>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        Zero terminal installation or environment configuration required. Everything runs in 1-click.
+      </p>
+
+      <!-- REPLACE THIS LINK WITH YOUR GOOGLE DRIVE SHARED FILE LINK -->
+      <a href="AgyMolden_OneClick_Bundle.zip" class="btn-download" id="download-link">
+        ⬇️ Download One-Click Bundle (.ZIP, ~1.5 MB)
+      </a>
+
+      <div class="os-grid">
+        <div class="os-box">
+          <div class="os-title">🍏 macOS & 🐧 Linux</div>
+          <ol style="font-size: 13px; color: #cbd5e1; padding-left: 18px;">
+            <li>Unzip <code>AgyMolden_OneClick_Bundle.zip</code></li>
+            <li>Double-click: <code>Run_Mac_or_Linux.sh</code></li>
+          </ol>
+          <span class="code-snippet">./Run_Mac_or_Linux.sh</span>
+        </div>
+
+        <div class="os-box">
+          <div class="os-title">🪟 Windows 10 / 11</div>
+          <ol style="font-size: 13px; color: #cbd5e1; padding-left: 18px;">
+            <li>Extract all files from the .ZIP folder</li>
+            <li>Double-click: <code>Run_Windows.bat</code></li>
+          </ol>
+          <span class="code-snippet">Double-click Run_Windows.bat</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Course Modules & Features -->
+    <h2 class="section-title">🎓 Interactive Quantum Chemistry Course Modules</h2>
+    <div class="grid-2">
+
+      <!-- Hückel Workbench -->
+      <div class="card">
+        <h3>🎓 Hückel Molecular Orbital (HMO) Workbench</h3>
+        <p>Shortcut: <code>Ctrl + Shift + H</code> (or Tools menu)</p>
+        <ul class="feature-list">
+          <li><b>Secular Determinants:</b> Live <code>|H - xI| = 0</code> symbolic matrix display.</li>
+          <li><b>Frost-Musulin Circles:</b> Inscribed polygon circle mnemonic for [N]annulenes.</li>
+          <li><b>Aufbau Spin Ladder:</b> Interactive Hund's rule spin arrows (↑↓) across energy levels.</li>
+          <li><b>Coulson Bond Orders:</b> Predicted bond orders (e.g., Benzene C-C = 0.667).</li>
+          <li><b>3D LCAO Orbital Lobes:</b> 1-click projection of MO lobes and phase signs to 3D atoms.</li>
+        </ul>
+        <div class="exercise-box">
+          <b>Class Exercise 1:</b> Select the <i>Cyclobutadiene</i> preset. Notice the two degenerate SOMOs at α (antiaromatic 4π diradical). Now use the N_π spinner to add 2 electrons (Cyclobutadienyl dianion, 6π) and observe the aromatic stabilization!
+        </div>
+      </div>
+
+      <!-- Molecular Tweezers -->
+      <div class="card">
+        <h3>🧲 Molecular Tweezers (Live Force Field Relaxation)</h3>
+        <p>Shortcut: Click the <b>🧲 Tweezers</b> ribbon button</p>
+        <ul class="feature-list">
+          <li><b>Real-Time UFF Physics:</b> Left-click and drag any atom in the 3D viewport.</li>
+          <li><b>Dynamic Topology:</b> Connected bonds and angles stretch and relax in real time.</li>
+          <li><b>Intuitive Hand Cursors:</b> Hover displays open hand; dragging shows grab cursor.</li>
+          <li><b>Fast Geometry Pre-optimization:</b> Relax steric clashes in seconds before QM runs.</li>
+        </ul>
+        <div class="exercise-box">
+          <b>Class Exercise 2:</b> Load <i>Ethanol</i> or <i>Water</i>. Activate Tweezers, grab a hydrogen or carbon atom, and pull it. Notice how the connected bond length and angles dynamically adapt.
+        </div>
+      </div>
+
+      <!-- Reaction Kinetics -->
+      <div class="card">
+        <h3>⚡ Eyring Thermochemistry & Marcus Kinetics</h3>
+        <p>Shortcut: <code>Alt + Shift + R</code> & Tools menu</p>
+        <ul class="feature-list">
+          <li><b>Reaction Barriers (ΔG‡) & Rates:</b> Eyring transition state theory k(T).</li>
+          <li><b>Quantum Tunneling:</b> Wigner and Eckart transmission coefficient κ(T).</li>
+          <li><b>Marcus Electron Transfer:</b> Inner/outer-sphere reorganization (λ_in, λ_out).</li>
+          <li><b>Normal vs. Inverted Regime:</b> Live diabatic reactant/product PES parabolas.</li>
+        </ul>
+        <div class="exercise-box">
+          <b>Class Exercise 3:</b> In Marcus Workbench, adjust ΔG° from -0.3 eV (Normal Activation) to -1.5 eV. Watch the product parabola shift into the famous <i>Marcus Inverted Regime</i> where reaction slows down!
+        </div>
+      </div>
+
+      <!-- Spin & Redox -->
+      <div class="card">
+        <h3>⚛️ Open-Shell Spin Diagnostics & Redox Potentials</h3>
+        <p>Shortcut: Available under the <b>Tools</b> menu</p>
+        <ul class="feature-list">
+          <li><b>&lt;S²&gt; Contamination:</b> Check deviation from ideal S(S+1).</li>
+          <li><b>Yamaguchi Projection:</b> E_AP correction for broken-symmetry singlets.</li>
+          <li><b>Exchange Coupling (J):</b> Antiferromagnetic (J &lt; 0) vs. ferromagnetic (J &gt; 0).</li>
+          <li><b>Born-Haber Redox Cycles:</b> Standard reduction potentials E° vs SHE / SCE / Fc/Fc⁺.</li>
+        </ul>
+        <div class="exercise-box">
+          <b>Class Exercise 4:</b> Inspect the Born-Haber cycle for a 1-electron reduction. See how differential continuum solvation (ΔΔG_solv) shifts the reduction potential by over 1.5 Volts.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Student Feedback Instructions -->
+    <h2 class="section-title">📝 Student Testing & Feedback Protocol</h2>
+    <div class="card" style="background: #111827; border-color: #334155;">
+      <p style="color: #cbd5e1; font-size: 14px;">
+        As a beta tester, your feedback is crucial before our official journal publication and public release.
+        Please test:
+      </p>
+      <ol style="margin-left: 20px; font-size: 14px; color: #94a3b8; line-height: 1.8;">
+        <li>Does the One-Click script launch smoothly on your laptop without any errors?</li>
+        <li>In the Hückel Workbench (<code>Ctrl+Shift+H</code>), do all orbital levels and Frost circles display clearly?</li>
+        <li>Does atom dragging with the 🧲 Tweezers tool feel smooth and responsive?</li>
+        <li>If you encounter any crash, unexpected behavior, or display issue, please take a screenshot and email your professor directly.</li>
+      </ol>
+    </div>
+
+    <footer>
+      <p>© 2026 AgyMolden Research & Teaching Project. Confidential Educational Beta Release.</p>
+      <p style="margin-top: 4px; color: #64748b;">Restricted to registered students and invited beta testers.</p>
+    </footer>
+  </main>
+
+</body>
+</html>
