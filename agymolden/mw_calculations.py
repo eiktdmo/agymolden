@@ -1621,6 +1621,22 @@ class CalculationsMixin:
         )
         dlg.exec()
 
+    def _on_open_sterics_dialog(self):
+        """Open Catalysis Sterics: Buried Volume (%V_bur) & Sterimol dialog."""
+        from .dialog_sterics import StericsDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        dlg = StericsDialog(parent=self, symbols=symbols, coords=coords)
+        dlg.exec()
+
+    def _on_open_marcus_dialog(self):
+        """Open Marcus Theory Electron Transfer & Photoredox workbench dialog."""
+        from .dialog_marcus import MarcusElectronTransferDialog
+
+        dlg = MarcusElectronTransferDialog(parent=self)
+        dlg.exec()
+
 
 
 
