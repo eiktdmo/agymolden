@@ -1916,8 +1916,8 @@ class UIMixin(UIInspectorTabsMixin):
         menu_tools.addAction(act_pes_2d)
 
         act_huckel = QtGui.QAction("🎓 &Hückel Molecular Orbital (HMO) Theory Teaching Workbench...", self)
-        act_huckel.setShortcut("Ctrl+Shift+H")
-        act_huckel.setToolTip("Explore Hückel secular determinants |H - E·I| = 0, Frost-Musulin circles, Hund's rule Aufbau electron filling, Coulson bond orders, and LCAO orbital lobes (Ctrl+Shift+H)")
+        act_huckel.setShortcut("Ctrl+Alt+H")
+        act_huckel.setToolTip("Explore Hückel secular determinants |H - E·I| = 0, Frost-Musulin circles, Hund's rule Aufbau electron filling, Coulson bond orders, and LCAO orbital lobes (Ctrl+Alt+H)")
         act_huckel.triggered.connect(self._on_open_huckel_teaching_dialog)
         menu_tools.addAction(act_huckel)
 

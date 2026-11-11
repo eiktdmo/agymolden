@@ -106,14 +106,13 @@ def generate_orca_mecp_input(
         for s, c in zip(symbols, coords)
     )
 
-    return f"""! {functional} {basis} D3BJ Opt
-! SurfCross
+    # Syntax verified against ORCA 4.2.1: the keyword is "SurfCrossOpt" (not "SurfCross")
+    # and the second-surface multiplicity goes in a %mecp block ("Mult").
+    # Spin-state PES1 multiplicity is taken from the coordinate block.
+    return f"""! UKS {functional} {basis} D3BJ SurfCrossOpt
 
-%geom
-  SurfCross
-    State1 {charge} {mult_1}
-    State2 {charge} {mult_2}
-  end
+%mecp
+  Mult {mult_2}
 end
 
 * xyz {charge} {mult_1}

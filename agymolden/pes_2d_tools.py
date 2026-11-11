@@ -48,7 +48,7 @@ def generate_orca_2d_scan_input(
             prefix = "A"
         else:
             prefix = "D"
-        return f"    Scan {prefix} {idx_str} = {s_def.start_val:.3f}, {s_def.end_val:.3f}, {s_def.num_steps}"
+        return f"  {prefix} {idx_str} = {s_def.start_val:.3f}, {s_def.end_val:.3f}, {s_def.num_steps}"
 
     line1 = _orca_scan_line(scan1)
     line2 = _orca_scan_line(scan2)
@@ -56,8 +56,10 @@ def generate_orca_2d_scan_input(
     return f"""! {functional} {basis} Opt
 
 %geom
+Scan
 {line1}
 {line2}
+  end
 end
 
 * xyz {charge} {multiplicity}
