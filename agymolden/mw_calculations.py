@@ -1687,6 +1687,40 @@ class CalculationsMixin:
         dlg = PES2DScanBuilderDialog(parent=self, symbols=symbols, coords=coords, selected_atoms=sel)
         dlg.exec()
 
+    def _on_open_huckel_teaching_dialog(self):
+        """Open Undergraduate Hückel Molecular Orbital (HMO) Theory Teaching Workbench."""
+        from .dialog_huckel import HuckelTeachingDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        dlg = HuckelTeachingDialog(parent=self, initial_symbols=symbols, initial_coords=coords)
+
+        def _on_project_mo(syms, weights):
+            if hasattr(self, "viewer"):
+                self.viewer.custom_charges = np.array(weights, copy=True)
+                self.viewer.show_charges = True
+                self.viewer.update()
+                if hasattr(self, "chk_charges"):
+                    self.chk_charges.blockSignals(True)
+                    self.chk_charges.setChecked(True)
+                    self.chk_charges.blockSignals(False)
+            self.statusBar().showMessage("Projected Hückel LCAO π-orbital coefficients to 3D atoms.", 4000)
+
+        def _on_project_q(syms, charges):
+            if hasattr(self, "viewer"):
+                self.viewer.custom_charges = np.array(charges, copy=True)
+                self.viewer.show_charges = True
+                self.viewer.update()
+                if hasattr(self, "chk_charges"):
+                    self.chk_charges.blockSignals(True)
+                    self.chk_charges.setChecked(True)
+                    self.chk_charges.blockSignals(False)
+            self.statusBar().showMessage("Projected Hückel net π-electron charges (ζ_r) to 3D atoms.", 4000)
+
+        dlg.project_orbital_to_viewer.connect(_on_project_mo)
+        dlg.project_charges_to_viewer.connect(_on_project_q)
+        dlg.exec()
+
 
 
 

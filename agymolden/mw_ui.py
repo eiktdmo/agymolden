@@ -1915,6 +1915,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_pes_2d.triggered.connect(self._on_open_pes_2d_builder)
         menu_tools.addAction(act_pes_2d)
 
+        act_huckel = QtGui.QAction("🎓 &Hückel Molecular Orbital (HMO) Theory Teaching Workbench...", self)
+        act_huckel.setShortcut("Ctrl+Shift+H")
+        act_huckel.setToolTip("Explore Hückel secular determinants |H - E·I| = 0, Frost-Musulin circles, Hund's rule Aufbau electron filling, Coulson bond orders, and LCAO orbital lobes (Ctrl+Shift+H)")
+        act_huckel.triggered.connect(self._on_open_huckel_teaching_dialog)
+        menu_tools.addAction(act_huckel)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
