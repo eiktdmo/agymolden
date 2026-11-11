@@ -256,7 +256,8 @@ class ReactionThermoDialog(QtWidgets.QDialog):
             if res.has_ts and res.delta_g_act_kcal is not None:
                 self.lbl_delta_g_act.setText(f"ΔG‡ (Barrier): <b>{res.delta_g_act_kcal:.2f} kcal/mol</b>")
                 if res.rate_constant_k_fwd is not None:
-                    self.lbl_k_rate.setText(f"Rate k(T): <b>{res.rate_constant_k_fwd:.2e} s⁻¹</b>")
+                    tun_str = f" [κ = {res.tunneling_kappa_wigner:.2f}]" if res.tunneling_kappa_wigner and res.tunneling_kappa_wigner > 1.01 else ""
+                    self.lbl_k_rate.setText(f"Rate k(T): <b>{res.rate_constant_k_fwd:.2e} s⁻¹</b>{tun_str}")
             else:
                 self.lbl_delta_g_act.setText("ΔG‡ (Barrier): — (No TS)")
                 self.lbl_k_rate.setText("Rate k(T): —")
@@ -436,28 +437,34 @@ class ReactionThermoDialog(QtWidgets.QDialog):
         inv_t = 1000.0 / temps  # 1000/T [K^-1]
         log_k_fwd = []
         log_k_rev = []
+        log_k_tun = []
         keq_vals = []
 
         for T in temps:
             try:
                 res_t = calculate_reaction_thermochemistry(self.species, temperature_k=T)
                 # Forward rate
-                kf = res_t.rate_constant_forward
-                kr = res_t.rate_constant_reverse
+                kf = res_t.rate_constant_k_fwd
+                kr = res_t.rate_constant_k_rev
+                kf_tun = res_t.rate_constant_k_fwd_tunneled
                 log_k_fwd.append(math.log10(max(1e-300, kf)) if kf is not None else float("nan"))
                 log_k_rev.append(math.log10(max(1e-300, kr)) if kr is not None else float("nan"))
+                log_k_tun.append(math.log10(max(1e-300, kf_tun)) if kf_tun is not None else float("nan"))
                 keq_vals.append(math.log10(max(1e-300, res_t.k_eq)) if res_t.k_eq not in (float("inf"), 0.0) else float("nan"))
             except Exception:
                 log_k_fwd.append(float("nan"))
                 log_k_rev.append(float("nan"))
+                log_k_tun.append(float("nan"))
                 keq_vals.append(float("nan"))
 
         ax1 = fig.add_subplot(121)
         ax1.set_facecolor("#0f172a")
         if res_base.has_ts and not all(np.isnan(log_k_fwd)):
-            ax1.plot(inv_t, log_k_fwd, color="#38bdf8", linewidth=2.5, label="log₁₀ k_fwd (s⁻¹)")
+            ax1.plot(inv_t, log_k_fwd, color="#38bdf8", linewidth=2.5, label="log₁₀ k_fwd (Classical)")
+            if any(not np.isnan(v) for v in log_k_tun):
+                ax1.plot(inv_t, log_k_tun, color="#22c55e", linewidth=2.2, linestyle="-.", label="log₁₀ k_tun (Wigner κ)")
             if not all(np.isnan(log_k_rev)):
-                ax1.plot(inv_t, log_k_rev, color="#f43f5e", linewidth=2.2, linestyle="--", label="log₁₀ k_rev (s⁻¹)")
+                ax1.plot(inv_t, log_k_rev, color="#f43f5e", linewidth=2.0, linestyle="--", label="log₁₀ k_rev")
             ax1.set_xlabel("1000 / T (K⁻¹)", color="#e2e8f0", fontweight="bold")
             ax1.set_ylabel("log₁₀ k (s⁻¹)", color="#e2e8f0", fontweight="bold")
             ax1.set_title("Eyring Rate Constants k(T)", color="#f8fafc", fontweight="bold", fontsize=11)

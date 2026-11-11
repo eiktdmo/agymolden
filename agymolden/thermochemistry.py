@@ -32,6 +32,7 @@ class SpeciesThermo:
     zpe_ha: Optional[float] = None
     enthalpy_ha: Optional[float] = None
     gibbs_ha: Optional[float] = None
+    imaginary_freq_cm1: Optional[float] = None  # Imaginary frequency magnitude |ν‡| in cm^-1
     file_path: Optional[str] = None
 
     @property
@@ -74,6 +75,11 @@ class ReactionThermoResult:
     delta_g_rev_kcal: Optional[float] = None  # ΔG‡ rev
     rate_constant_k_fwd: Optional[float] = None  # Eyring rate constant (s^-1)
     rate_constant_k_rev: Optional[float] = None  # Eyring rate constant (s^-1)
+    # Quantum Tunneling Corrections
+    imaginary_freq_cm1: Optional[float] = None
+    tunneling_kappa_wigner: Optional[float] = None  # Wigner tunneling coefficient κ(T)
+    tunneling_kappa_eckart: Optional[float] = None  # Eckart barrier tunneling coefficient κ(T)
+    rate_constant_k_fwd_tunneled: Optional[float] = None  # Tunneling-corrected k(T)
 
 
 def calculate_reaction_thermochemistry(
@@ -170,6 +176,30 @@ def calculate_reaction_thermochemistry(
         if h_ts is not None:
             res.delta_h_act_kcal = (h_ts - h_r) * HARTREE_TO_KCAL
 
+        # Quantum tunneling corrections (Wigner & Eckart transmission)
+        nu_imag = ts.imaginary_freq_cm1
+        if nu_imag is not None and nu_imag > 10.0:
+            res.imaginary_freq_cm1 = nu_imag
+            # 1. Wigner tunneling: κ_W = 1 + (1/24) * (h*c*|ν‡| / kB*T)^2
+            # Conversion factor: (h*c / kB) in K/cm^-1 ≈ 1.438776877
+            h_nu_over_kt = (1.438776877 * nu_imag) / temperature_k
+            kappa_w = 1.0 + (1.0 / 24.0) * (h_nu_over_kt ** 2)
+            res.tunneling_kappa_wigner = kappa_w
+
+            # 2. Skodje-Truhlar / Eckart approximation for transmission
+            # Truncated expansion with smooth cutoff:
+            alpha = (2.0 * math.pi) / h_nu_over_kt if h_nu_over_kt > 1e-4 else 100.0
+            if alpha > 1.0 and res.delta_g_act_kcal:
+                # Semiclassical Eckart transmission
+                u = h_nu_over_kt
+                kappa_eckart = max(kappa_w, (u / 2.0) / math.sinh(min(50.0, u / 2.0))) if u < 40.0 else kappa_w
+            else:
+                kappa_eckart = kappa_w
+            res.tunneling_kappa_eckart = kappa_eckart
+
+            if res.rate_constant_k_fwd is not None and res.rate_constant_k_fwd != float("inf"):
+                res.rate_constant_k_fwd_tunneled = res.rate_constant_k_fwd * kappa_w
+
     return res
 
 
@@ -186,6 +216,13 @@ def extract_species_from_log_file(file_path: str, role: str = "reactant", name: 
         # Check if last step energy was extracted
         e_el = result.trajectory_energies[-1] / 27.211386245988  # eV to Ha
 
+    # Extract imaginary frequency magnitude if TS
+    imag_freq = None
+    if result.frequencies:
+        imags = [abs(f) for f in result.frequencies if f < -15.0]
+        if imags:
+            imag_freq = float(imags[0])
+
     return SpeciesThermo(
         name=base_name,
         role=role,
@@ -193,5 +230,6 @@ def extract_species_from_log_file(file_path: str, role: str = "reactant", name: 
         zpe_ha=result.zpe_ha,
         enthalpy_ha=result.enthalpy_ha,
         gibbs_ha=result.gibbs_ha,
+        imaginary_freq_cm1=imag_freq,
         file_path=file_path,
     )
