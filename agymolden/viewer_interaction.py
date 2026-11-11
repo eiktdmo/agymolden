@@ -91,11 +91,9 @@ class ViewerInteractionMixin:
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
             is_tweezers = bool(getattr(self, "tweezers_active", False))
-            # When tweezers are active, always pick the closest atom across the entire viewport
-            if is_tweezers and len(self.coords) > 0:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=300.0)
-            else:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
+            # Pick atom with appropriate tolerance: when tweezers active, use generous but sane tolerance (60px)
+            # so user can click near an atom without mispicking distant background atoms or blocking empty-space camera orbit
+            clicked_atom = self._pick_atom(event.pos(), tolerance_px=60.0 if is_tweezers else 32.0)
 
             if clicked_atom is not None:
                 self.empty_press_pos = None
@@ -142,6 +140,9 @@ class ViewerInteractionMixin:
                         # In Tweezers mode, always drag strictly the single clicked atom to relax the rest of the molecule!
                         self.atom_move_drag_indices = [clicked_atom]
                         self.multi_selected = [clicked_atom]
+                        self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+                        # Snapshot intact initial bonds before stretching to guarantee force field topology during drag
+                        self._tweezers_initial_bonds = list(getattr(self, "bonds", []))
                     elif was_already_sel and len(self.multi_selected) > 1:
                         self.atom_move_drag_indices = [idx for idx in self.multi_selected if 0 <= idx < n_coords]
                     else:
@@ -287,6 +288,12 @@ class ViewerInteractionMixin:
             # Set intuitive cursor shape on hover
             if hover_ax is not None:
                 self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+            elif getattr(self, "tweezers_active", False):
+                hover_atom = self._pick_atom(event.pos(), tolerance_px=45.0)
+                if hover_atom is not None:
+                    self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
+                else:
+                    self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
             else:
                 hover_atom = self._pick_atom(event.pos(), tolerance_px=28.0)
                 if hover_atom is not None:
@@ -490,6 +497,8 @@ class ViewerInteractionMixin:
                 self.update()
                 if was_dragged and dragged_idx is not None:
                     self.atom_drag_finished.emit(dragged_idx)
+                if getattr(self, "tweezers_active", False):
+                    self.setCursor(QtCore.Qt.CursorShape.CrossCursor)
                 return
 
             if self.atom_add_drag_active:
@@ -608,11 +617,9 @@ class ViewerInteractionMixin:
             clicked_bond = self._pick_bond(event.pos(), tolerance_px=24.0)
 
             is_tweezers = bool(getattr(self, "tweezers_active", False))
-            # When tweezers are active, always pick the closest atom across the entire viewport
-            if is_tweezers and len(self.coords) > 0:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=300.0)
-            else:
-                clicked_atom = self._pick_atom(event.pos(), tolerance_px=32.0)
+            # Pick atom with appropriate tolerance: when tweezers active, use generous but sane tolerance (60px)
+            # so user can click near an atom without mispicking distant background atoms or blocking empty-space camera orbit
+            clicked_atom = self._pick_atom(event.pos(), tolerance_px=60.0 if is_tweezers else 32.0)
 
             if clicked_atom is not None:
                 self.atom_double_clicked.emit(clicked_atom)
@@ -728,7 +735,14 @@ class ViewerInteractionMixin:
         return best_bond
 
     def _pick_atom(self, pos: QtCore.QPoint, tolerance_px: float = 30.0) -> Optional[int]:
-        """Find the atom closest to mouse position under depth test with dynamic screen tolerance."""
+        """Find the atom closest to mouse position under occlusion depth-test with dynamic screen radius.
+        
+        Selection algorithm:
+        1. Identifies all atoms whose projected 2D sphere boundary intersects the cursor.
+        2. If cursor is directly inside projected spheres of overlapping atoms, prioritizes the foremost
+           (closest Z in camera frame, minimum ndc.z).
+        3. If cursor is outside atom boundaries but within tolerance_px, picks the closest 2D pixel hit.
+        """
         if len(self.coords) == 0:
             return None
 
@@ -737,9 +751,8 @@ class ViewerInteractionMixin:
         mvp = proj_mat * view_mat
         w, h = self.width(), self.height()
 
-        best_idx = None
-        min_depth = 1e9
-        best_dist_sq = 1e9
+        direct_hits = []    # (ndc_z, dist_px, atom_idx)
+        proximity_hits = [] # (dist_px, ndc_z, atom_idx)
 
         for i, p in enumerate(self.coords):
             p4 = mvp * QtGui.QVector4D(float(p[0]), float(p[1]), float(p[2]), 1.0)
@@ -749,21 +762,29 @@ class ViewerInteractionMixin:
             sx = (ndc.x() * 0.5 + 0.5) * w
             sy = (-ndc.y() * 0.5 + 0.5) * h
             dist_sq = (sx - pos.x())**2 + (sy - pos.y())**2
+            dist_px = math.sqrt(dist_sq)
 
-            # Dynamic hit radius based on atom radius projected onto screen
             cov_r = get_cov_radius(self.symbols[i])
-            approx_screen_radius = max(tolerance_px, (cov_r / max(self.zoom, 1.0)) * h * 0.45)
-            allowed_dist_sq = approx_screen_radius * approx_screen_radius
+            sphere_px = max(14.0, (cov_r / max(self.zoom, 1.0)) * h * 0.45)
 
-            if dist_sq <= allowed_dist_sq:
-                # Combine depth and 2D pixel distance: favor foreground atom and direct cursor hits
-                score = ndc.z() * 50.0 + math.sqrt(dist_sq)
-                if score < min_depth:
-                    min_depth = score
-                    best_idx = i
-                    best_dist_sq = dist_sq
+            if dist_px <= sphere_px:
+                # Cursor is directly hitting the atom body
+                direct_hits.append((ndc.z(), dist_px, i))
+            elif dist_px <= max(tolerance_px, sphere_px + 8.0):
+                # Cursor is in vicinity
+                proximity_hits.append((dist_px, ndc.z(), i))
 
-        return best_idx
+        if direct_hits:
+            # Foremost direct hit takes absolute precedence
+            direct_hits.sort(key=lambda t: (t[0], t[1]))
+            return direct_hits[0][2]
+
+        if proximity_hits:
+            # Nearest 2D pixel hit
+            proximity_hits.sort(key=lambda t: (t[0], t[1]))
+            return proximity_hits[0][2]
+
+        return None
 
     def _update_measurement_info(self):
         n = min(len(self.symbols), len(self.coords))
