@@ -1890,6 +1890,31 @@ class UIMixin(UIInspectorTabsMixin):
         act_marcus.triggered.connect(self._on_open_marcus_dialog)
         menu_tools.addAction(act_marcus)
 
+        act_spin = QtGui.QAction("⚛️ Open-Shell &Spin Diagnostics & Yamaguchi Projection (<S²>, J)...", self)
+        act_spin.setToolTip("Diagnose <S²> spin contamination, compute Yamaguchi approximate spin-projected energies, and Heisenberg exchange coupling (J)")
+        act_spin.triggered.connect(self._on_open_spin_diagnostics)
+        menu_tools.addAction(act_spin)
+
+        act_redox = QtGui.QAction("⚡ Electrochemical &Redox Potentials & Born-Haber Cycle (E° vs SHE/SCE)...", self)
+        act_redox.setToolTip("Calculate standard reduction/oxidation potentials (E° vs. SHE, SCE, Ag/AgCl, Fc/Fc⁺) via thermodynamic Born-Haber solvation cycles")
+        act_redox.triggered.connect(self._on_open_redox_dialog)
+        menu_tools.addAction(act_redox)
+
+        act_mecp = QtGui.QAction("🔀 &Minimum Energy Crossing Point (MECP) & Spin-Inversion Explorer...", self)
+        act_mecp.setToolTip("Interpolate crossing seams (ΔE → 0) between two spin states in two-state reactivity and export ORCA SurfCross MECP search decks")
+        act_mecp.triggered.connect(self._on_open_mecp_dialog)
+        menu_tools.addAction(act_mecp)
+
+        act_eda = QtGui.QAction("🧩 &Energy Decomposition Analysis (EDA / SAPT / ALMO)...", self)
+        act_eda.setToolTip("Decompose interaction energies into Electrostatics, Pauli Repulsion, Orbital/Charge-Transfer, and Dispersion terms from Q-Chem ALMO-EDA or Psi4 SAPT")
+        act_eda.triggered.connect(self._on_open_eda_dialog)
+        menu_tools.addAction(act_eda)
+
+        act_pes_2d = QtGui.QAction("🗺️ &2D Relaxed PES Scan Grid Builder (ORCA / Gaussian)...", self)
+        act_pes_2d.setToolTip("Build two-dimensional coordinate scan grids (distances, angles, dihedrals) and generate ORCA and Gaussian ModRedundant decks")
+        act_pes_2d.triggered.connect(self._on_open_pes_2d_builder)
+        menu_tools.addAction(act_pes_2d)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")

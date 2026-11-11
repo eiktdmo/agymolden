@@ -1637,6 +1637,56 @@ class CalculationsMixin:
         dlg = MarcusElectronTransferDialog(parent=self)
         dlg.exec()
 
+    def _on_open_spin_diagnostics(self):
+        """Open Open-Shell Spin Diagnostics & Yamaguchi Projection dialog."""
+        from .dialog_spin_diagnostics import SpinContaminationDialog
+
+        dlg = SpinContaminationDialog(parent=self)
+        dlg.exec()
+
+    def _on_open_redox_dialog(self):
+        """Open Electrochemical Redox Potentials & Born-Haber Cycle dialog."""
+        from .dialog_redox_potentials import RedoxPotentialsDialog
+
+        dlg = RedoxPotentialsDialog(parent=self)
+        dlg.exec()
+
+    def _on_open_mecp_dialog(self):
+        """Open Minimum Energy Crossing Point (MECP) & Spin-Inversion Explorer dialog."""
+        from .dialog_mecp import MECPExplorerDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        dlg = MECPExplorerDialog(parent=self, symbols=symbols, coords=coords)
+        dlg.crossing_selected.connect(self._on_mecp_geometry_adopted)
+        dlg.exec()
+
+    def _on_mecp_geometry_adopted(self, symbols: list, coords: np.ndarray):
+        """Handle adopting MECP seam geometry into viewer and editor."""
+        self.coords = np.array(coords, copy=True)
+        if hasattr(self, "viewer") and hasattr(self.viewer, "coords"):
+            self.viewer.coords = np.array(coords, copy=True)
+            self.viewer.compute_bonds()
+            self.viewer.update()
+        self.statusBar().showMessage("Adopted MECP seam crossing geometry.", 4000)
+
+    def _on_open_eda_dialog(self):
+        """Open Energy Decomposition Analysis (EDA / SAPT / ALMO) dialog."""
+        from .dialog_eda import EDADialog
+
+        dlg = EDADialog(parent=self)
+        dlg.exec()
+
+    def _on_open_pes_2d_builder(self):
+        """Open 2D Relaxed PES Scan Grid Builder dialog."""
+        from .dialog_pes_2d_builder import PES2DScanBuilderDialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        sel = list(getattr(self.viewer, "multi_selected", []))
+        dlg = PES2DScanBuilderDialog(parent=self, symbols=symbols, coords=coords, selected_atoms=sel)
+        dlg.exec()
+
 
 
 
