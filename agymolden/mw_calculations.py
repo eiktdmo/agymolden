@@ -1721,6 +1721,41 @@ class CalculationsMixin:
         dlg.project_charges_to_viewer.connect(_on_project_q)
         dlg.exec()
 
+    def _on_open_nmr_dialog(self):
+        """Open NMR Chemical Shift Referencing & 1D Spectrum Plotter."""
+        from .dialog_nmr import NMRDialog
+
+        # Try to find shieldings from current file if it's a QM log
+        cur_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        dlg = NMRDialog(parent=self, log_path=cur_path if cur_path and os.path.exists(cur_path) else None)
+
+        def _on_atom_sel(atom_idx: int):
+            if hasattr(self, "viewer") and hasattr(self.viewer, "highlight_atom"):
+                self.viewer.highlight_atom = atom_idx
+                self.viewer.update()
+
+        dlg.atom_selected.connect(_on_atom_sel)
+        dlg.exec()
+
+    def _on_open_microkinetics_dialog(self):
+        """Open Microkinetics & Catalytic Cycle Simulator."""
+        from .dialog_microkinetics import MicrokineticsDialog
+
+        dlg = MicrokineticsDialog(parent=self)
+        dlg.exec()
+
+    def _on_open_ibo_dialog(self):
+        """Open Intrinsic Bond Orbitals (IBO / IAO) & Lewis Localization Dialog."""
+        from .dialog_ibo import IBODialog
+
+        molden_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        if not (molden_path and os.path.exists(molden_path) and (molden_path.endswith(".molden") or molden_path.endswith(".input"))):
+            # Check if any molden file is loaded
+            molden_path = None
+
+        dlg = IBODialog(parent=self, molden_path=molden_path)
+        dlg.exec()
+
 
 
 

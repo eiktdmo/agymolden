@@ -1921,6 +1921,21 @@ class UIMixin(UIInspectorTabsMixin):
         act_huckel.triggered.connect(self._on_open_huckel_teaching_dialog)
         menu_tools.addAction(act_huckel)
 
+        act_nmr = QtGui.QAction("🧲 &NMR Chemical Shift Referencing & 1D Spectrum Plotter...", self)
+        act_nmr.setToolTip("Convert raw QM isotropic shieldings (σ_iso) to referenced chemical shifts (δ ppm for 1H, 13C, 19F, 31P) and synthesize 1D spectra")
+        act_nmr.triggered.connect(self._on_open_nmr_dialog)
+        menu_tools.addAction(act_nmr)
+
+        act_microkinetics = QtGui.QAction("📈 &Microkinetics & Catalytic Cycle Simulator (TOF, [C] vs. t)...", self)
+        act_microkinetics.setToolTip("Simulate multi-step catalytic cycles and reaction networks via numerical ODE rate equation integration with TOF and TON")
+        act_microkinetics.triggered.connect(self._on_open_microkinetics_dialog)
+        menu_tools.addAction(act_microkinetics)
+
+        act_ibo = QtGui.QAction("🧬 &Intrinsic Bond Orbitals (IBO / IAO) & Lewis Localization...", self)
+        act_ibo.setToolTip("Localize canonical molecular orbitals into Lewis chemical bonds (σ, π), lone pairs, and core pairs via PySCF IAO/IBO")
+        act_ibo.triggered.connect(self._on_open_ibo_dialog)
+        menu_tools.addAction(act_ibo)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
