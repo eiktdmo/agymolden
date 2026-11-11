@@ -122,6 +122,12 @@ class NBODonorAcceptorDialog(QtWidgets.QDialog):
         btn_csv.clicked.connect(self._on_export_csv)
         bot_layout.addWidget(btn_csv)
 
+        btn_net = QtWidgets.QPushButton("🕸️ View E(2) Network Graph...")
+        btn_net.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 4px 10px;")
+        btn_net.setToolTip("Open interactive topological Chord/Bipartite network diagram of donor-acceptor interactions")
+        btn_net.clicked.connect(self._on_view_network_graph)
+        bot_layout.addWidget(btn_net)
+
         btn_md = QtWidgets.QPushButton("📝 Copy Markdown")
         btn_md.clicked.connect(self._on_copy_markdown)
         bot_layout.addWidget(btn_md)
@@ -258,3 +264,11 @@ class NBODonorAcceptorDialog(QtWidgets.QDialog):
             return
         QtWidgets.QApplication.clipboard().setText(self.get_markdown_string())
         QtWidgets.QMessageBox.information(self, "Copied", "NBO Markdown table copied to clipboard for publication SI!")
+
+    def _on_view_network_graph(self):
+        """Open interactive NBO E(2) network graph dialog."""
+        from .dialog_nbo_network import NBONetworkDialog
+        interactions = self.filtered_interactions if self.filtered_interactions else self.all_interactions
+        dlg = NBONetworkDialog(parent=self, interactions=interactions)
+        dlg.exec()
+

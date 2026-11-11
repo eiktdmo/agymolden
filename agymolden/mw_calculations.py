@@ -1382,6 +1382,25 @@ class CalculationsMixin:
         dlg.interaction_highlighted.connect(_on_interaction_highlighted)
         dlg.exec()
 
+    def _on_open_nbo_network_dialog(self):
+        """Open interactive NBO E(2) Network & Chord Graph dialog."""
+        from .dialog_nbo import NBODonorAcceptorDialog
+        from .dialog_nbo_network import NBONetworkDialog
+
+        last_log = getattr(self, "_last_loaded_qm_log_path", None)
+        nbo_dlg = NBODonorAcceptorDialog(parent=self, log_filepath_or_text=last_log, is_path=True)
+        interactions = nbo_dlg.all_interactions
+
+        if not interactions:
+            QtWidgets.QMessageBox.information(
+                self, "NBO Network", "No NBO Second-Order Perturbation data found in current log.\n"
+                "Please open a Gaussian or ORCA log calculated with POP=NBO."
+            )
+            return
+
+        dlg = NBONetworkDialog(parent=self, interactions=interactions)
+        dlg.exec()
+
     def _on_quick_in_memory_pyscf_dft(self, method: str = "b3lyp", basis: str = "def2-svp"):
         """Fast in-process PySCF DFT / HF calculation directly in RAM with zero temporary file pollution."""
         if len(self.zatoms) == 0:

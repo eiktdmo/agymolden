@@ -1919,6 +1919,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_nbo.triggered.connect(self._on_open_nbo_dialog)
         menu_tools.addAction(act_nbo)
 
+        act_nbo_net = QtGui.QAction("🕸️ &NBO E(2) Interaction Network Graph...", self)
+        act_nbo_net.setToolTip("Visualize donor-acceptor interactions as a topological chord or bipartite graph with edge thicknesses proportional to E(2)")
+        act_nbo_net.triggered.connect(self._on_open_nbo_network_dialog)
+        menu_tools.addAction(act_nbo_net)
+
         menu_tools.addSeparator()
 
         act_plugins = QtGui.QAction("🐍 &Python Script & Plugin Runner...", self)
