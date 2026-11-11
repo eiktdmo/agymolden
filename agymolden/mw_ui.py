@@ -1936,6 +1936,21 @@ class UIMixin(UIInspectorTabsMixin):
         act_ibo.triggered.connect(self._on_open_ibo_dialog)
         menu_tools.addAction(act_ibo)
 
+        act_qtaim = QtGui.QAction("⚛️ &QTAIM Topology & Bond Critical Points (3, -1)...", self)
+        act_qtaim.setToolTip("Locate (3, -1) Bond Critical Points, ρ_BCP, and ∇²ρ_BCP from Molden wavefunctions via Bader AIM theory")
+        act_qtaim.triggered.connect(self._on_open_qtaim_dialog)
+        menu_tools.addAction(act_qtaim)
+
+        act_quasiharmonic = QtGui.QAction("🌡️ &Quasi-Harmonic Thermochemistry (Grimme mRRHO & Truhlar)...", self)
+        act_quasiharmonic.setToolTip("Evaluate Grimme mRRHO and Truhlar quasi-harmonic vibrational entropy corrections for low-frequency modes")
+        act_quasiharmonic.triggered.connect(self._on_open_quasiharmonic_dialog)
+        menu_tools.addAction(act_quasiharmonic)
+
+        act_si_gen = QtGui.QAction("📄 &1-Click Supporting Information (SI) & Methods Synthesizer...", self)
+        act_si_gen.setToolTip("Generate publication-ready LaTeX SI documents, Markdown/Word tables, and formatted Cartesian XYZ appendices")
+        act_si_gen.triggered.connect(self._on_open_si_generator_dialog)
+        menu_tools.addAction(act_si_gen)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")

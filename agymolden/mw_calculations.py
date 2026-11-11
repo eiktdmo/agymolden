@@ -1756,6 +1756,48 @@ class CalculationsMixin:
         dlg = IBODialog(parent=self, molden_path=molden_path)
         dlg.exec()
 
+    def _on_open_qtaim_dialog(self):
+        """Open QTAIM Topology & Bond Critical Points Dialog."""
+        from .dialog_qtaim import QTAIMDialog
+
+        molden_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        if not (molden_path and os.path.exists(molden_path) and (molden_path.endswith(".molden") or molden_path.endswith(".input"))):
+            molden_path = None
+
+        dlg = QTAIMDialog(parent=self, molden_path=molden_path)
+        dlg.exec()
+
+    def _on_open_quasiharmonic_dialog(self):
+        """Open Quasi-Harmonic Thermochemistry Dialog."""
+        from .dialog_quasiharmonic import QuasiHarmonicDialog
+
+        cur_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        dlg = QuasiHarmonicDialog(parent=self, log_path=cur_path if cur_path and os.path.exists(cur_path) else None)
+        dlg.exec()
+
+    def _on_open_si_generator_dialog(self):
+        """Open 1-Click Automated Supporting Information (SI) Synthesizer Dialog."""
+        from .dialog_si_generator import SIGeneratorDialog
+        from .si_generator import SISpecies
+
+        initial_species = []
+        cur_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        if cur_path and os.path.exists(cur_path):
+            symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+            coords = self.coords
+            if len(symbols) > 0 and len(coords) > 0:
+                base = os.path.splitext(os.path.basename(cur_path))[0]
+                sp = SISpecies(
+                    name=base,
+                    symbols=symbols,
+                    coords=coords,
+                    electronic_energy_ha=getattr(self, "electronic_energy_ha", None),
+                )
+                initial_species.append(sp)
+
+        dlg = SIGeneratorDialog(parent=self, initial_species=initial_species)
+        dlg.exec()
+
 
 
 
