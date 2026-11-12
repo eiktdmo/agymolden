@@ -1755,6 +1755,14 @@ class UIMixin(UIInspectorTabsMixin):
         # Tools Menu
         menu_tools = menubar.addMenu("&Tools")
 
+        act_hub = QtGui.QAction("⚡ &Chemistry Workbench Hub & Workflow Dashboard...", self)
+        act_hub.setShortcut("Ctrl+W")
+        act_hub.setToolTip("Open unified visual dashboard of all 40+ specialized tools organized by workflow (Ctrl+W)")
+        act_hub.triggered.connect(self._on_open_workbench_hub)
+        menu_tools.addAction(act_hub)
+
+        menu_tools.addSeparator()
+
         act_unit_conv = QtGui.QAction("⚡ Quantum &Unit Converter (Energy, Length, Dipole, Polarizability)...", self)
         act_unit_conv.setShortcut("Ctrl+U")
         act_unit_conv.setToolTip("Instant physical constant conversions: Hartree ↔ eV ↔ kcal/mol ↔ kJ/mol ↔ cm⁻¹ ↔ K; Bohr ↔ Å; Debye ↔ a.u.; Polarizability; Field & Pressure (Ctrl+U)")

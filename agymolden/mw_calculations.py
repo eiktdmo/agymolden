@@ -1798,6 +1798,73 @@ class CalculationsMixin:
         dlg = SIGeneratorDialog(parent=self, initial_species=initial_species)
         dlg.exec()
 
+    def _on_open_workbench_hub(self):
+        """Open Unified Chemistry Workbench Hub & Workflow Dashboard."""
+        from .dialog_workbench_hub import WorkbenchHubDialog
+
+        dlg = WorkbenchHubDialog(parent=self)
+        dlg.exec()
+
+    def _on_open_vibrations_tab(self):
+        """Focus on vibrational frequency analysis tab or compute normal modes."""
+        if hasattr(self, "tab_vibrations") and hasattr(self, "dock_tabs"):
+            self.dock_tabs.setCurrentWidget(self.tab_vibrations)
+        elif hasattr(self, "_on_calculate_vibrations"):
+            self._on_calculate_vibrations()
+
+    def _on_open_qc_doctor_dialog(self):
+        """Open or show QC Doctor calculation autofix."""
+        if hasattr(self, "dock_manager") and self.dock_manager:
+            self.dock_manager.open_qc_doctor()
+        else:
+            from .dialog_qc_doctor import QCDoctorDialog
+            dlg = QCDoctorDialog(parent=self)
+            dlg.exec()
+
+    def _on_open_hpc_dialog(self):
+        """Open HPC Cluster SLURM / PBS Script Generator."""
+        from .dialog_cluster_script import ClusterScriptDialog
+        dlg = ClusterScriptDialog(parent=self)
+        dlg.exec()
+
+    def _on_open_nci_3d_action(self):
+        """Compute and render 3D Real-Space NCI / RDG isosurface directly in the 3D viewport."""
+        cur_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        if not (cur_path and os.path.exists(cur_path) and (cur_path.endswith(".molden") or cur_path.endswith(".input"))):
+            QtWidgets.QMessageBox.information(
+                self,
+                "3D NCI Analysis",
+                "Please open a Molden wavefunction file (.molden) first to compute real-space Non-Covalent Interactions.",
+            )
+            return
+
+        from .volumetric import compute_molden_nci_rdg
+        from .workers import run_in_background
+
+        def _compute():
+            return compute_molden_nci_rdg(cur_path, nx=36, ny=36, nz=36, rdg_isovalue=0.5)
+
+        def _on_done(mesh):
+            if mesh is None:
+                QtWidgets.QMessageBox.warning(self, "3D NCI Analysis", "Could not generate 3D NCI isosurface from current Molden file.")
+                return
+            if hasattr(self, "viewer"):
+                self.viewer.active_isosurfaces = [mesh]
+                self.viewer.update()
+            self.statusBar().showMessage("Generated 3D Non-Covalent Interaction (NCI) Isosurface (s=0.5).", 5000)
+
+        def _on_error(e):
+            QtWidgets.QMessageBox.critical(self, "3D NCI Error", f"Failed to compute 3D NCI surface:\n{e}")
+
+        run_in_background(
+            self,
+            "3D NCI Analysis",
+            "Computing 3D Reduced Density Gradient (RDG) and Hessian in background...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
 
 
 
