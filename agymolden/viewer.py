@@ -2614,16 +2614,60 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 self.clear_surface_rect = None
 
             # 4. Render 3D Translation & Manipulation Gizmo (X=Red, Y=Green, Z=Blue) on selection center
+            # Also render circular Torsion / Dihedral ring gizmo when exactly a single bond or 2 bonded atoms are selected
             if (
-                getattr(self, "show_manipulator_gizmo", False)
-                and has_selection
+                has_selection
                 and len(render_coords) > 0
                 and not self.atom_add_drag_active
             ):
                 valid_sel = [i for i in self.multi_selected if 0 <= i < len(render_coords)]
                 if not valid_sel and self.selected_atom_idx is not None and 0 <= self.selected_atom_idx < len(render_coords):
                     valid_sel = [self.selected_atom_idx]
-                if valid_sel:
+
+                # 4a. 3D Torsion Ring Gizmo around selected bond axis
+                selected_bond = getattr(self, "selected_bond", None)
+                if not selected_bond and len(valid_sel) == 2:
+                    u, v = valid_sel[0], valid_sel[1]
+                    b_pair = (min(u, v), max(u, v))
+                    if b_pair in getattr(self, "bonds", []):
+                        selected_bond = b_pair
+
+                if selected_bond:
+                    u, v = selected_bond
+                    if 0 <= u < len(render_coords) and 0 <= v < len(render_coords):
+                        p_u = render_coords[u]
+                        p_v = render_coords[v]
+                        mid_w = (p_u + p_v) * 0.5
+                        p4_mid = mvp * QtGui.QVector4D(float(mid_w[0]), float(mid_w[1]), float(mid_w[2]), 1.0)
+                        if p4_mid.w() > 0.05:
+                            ndc_mid = p4_mid / p4_mid.w()
+                            mid_sx = int((ndc_mid.x() * 0.5 + 0.5) * w)
+                            mid_sy = int((-ndc_mid.y() * 0.5 + 0.5) * h)
+
+                            # Torsion ring radius on screen
+                            ring_r = 28
+                            is_torsion_active = getattr(self, "torsion_drag_active", False)
+                            ring_col = QtGui.QColor("#38bdf8") if not is_torsion_active else QtGui.QColor("#fbbf24")
+
+                            painter.save()
+                            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+                            pen_ring = QtGui.QPen(ring_col, 2.5 if is_torsion_active else 1.8, QtCore.Qt.PenStyle.DashLine if not is_torsion_active else QtCore.Qt.PenStyle.SolidLine)
+                            painter.setPen(pen_ring)
+                            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+                            painter.drawEllipse(QtCore.QPoint(mid_sx, mid_sy), ring_r, ring_r)
+
+                            # Central torsion badge / angle indicator
+                            painter.setBrush(QtGui.QColor(15, 23, 42, 210))
+                            painter.setPen(QtGui.QPen(ring_col, 1.2))
+                            badge_rect = QtCore.QRect(mid_sx - 28, mid_sy - 10, 56, 20)
+                            painter.drawRoundedRect(badge_rect, 4, 4)
+                            painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                            painter.setPen(QtGui.QColor("#f8fafc"))
+                            painter.drawText(badge_rect, QtCore.Qt.AlignmentFlag.AlignCenter, "Alt+Drag ↻")
+                            painter.restore()
+
+                # 4b. Translation gizmo (when show_manipulator_gizmo is enabled)
+                if getattr(self, "show_manipulator_gizmo", False) and valid_sel:
                     center_world = np.mean(render_coords[valid_sel], axis=0)
                     p4_c = mvp * QtGui.QVector4D(float(center_world[0]), float(center_world[1]), float(center_world[2]), 1.0)
                     if p4_c.w() > 0.05:

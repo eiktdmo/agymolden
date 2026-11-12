@@ -1558,21 +1558,28 @@ class EditingMixin:
         act_periodic.triggered.connect(lambda: self._prompt_mutate_periodic_table(atom_idx))
 
         # Attach Substituent Submenu
-        menu_sub = menu.addMenu("🧪 Attach Functional Group")
+        menu_sub = menu.addMenu("🧪 Attach Functional Group / Ligand")
         popular_frags = [
             "Methyl (-CH3)",
             "Ethyl (-C2H5)",
             "Isopropyl (-CH(CH3)2)",
             "tert-Butyl (-C(CH3)3)",
+            "Vinyl (-CH=CH2)",
+            "Ethynyl (-C≡CH)",
             "Hydroxyl (-OH)",
             "Methoxy (-OCH3)",
             "Amino (-NH2)",
-            "Phenyl (-C6H5)",
-            "Pyridyl (-C5H4N)",
             "Nitro (-NO2)",
             "Carboxyl (-COOH)",
+            "Aldehyde (-CHO)",
             "Cyano (-CN)",
             "Trifluoromethyl (-CF3)",
+            "Phenyl (-C6H5)",
+            "Pyridyl (-C5H4N)",
+            "Triphenylphosphine (-PPh3)",
+            "Cyclopentadienyl (Cp)",
+            "Bipyridine (bpy)",
+            "Phosphine (-PH3)",
             "Chlorine (-Cl)",
             "Bromine (-Br)",
             "Fluorine (-F)",
