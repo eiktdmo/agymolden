@@ -1865,6 +1865,66 @@ class CalculationsMixin:
             _on_error,
         )
 
+    def _on_open_sasa_dialog(self):
+        """Open Solvent-Accessible Surface Area (SASA) & Polar Area Dialog."""
+        from .dialog_sasa import SASADialog
+
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else self.symbols
+        coords = self.coords
+        dlg = SASADialog(parent=self, symbols=symbols, coords=coords)
+
+        def _on_project_exposure(exp_vector):
+            if hasattr(self, "viewer"):
+                self.viewer.custom_charges = np.array(exp_vector, copy=True)
+                self.viewer.show_charges = True
+                self.viewer.update()
+                if hasattr(self, "chk_charges"):
+                    self.chk_charges.blockSignals(True)
+                    self.chk_charges.setChecked(True)
+                    self.chk_charges.blockSignals(False)
+            self.statusBar().showMessage("Projected Solvent Accessibility (SASA exposure) to 3D atoms.", 4000)
+
+        dlg.project_exposure_to_viewer.connect(_on_project_exposure)
+        dlg.exec()
+
+    def _on_open_nto_dialog(self):
+        """Open Natural Transition Orbitals (NTO) Dialog."""
+        from .dialog_nto import NTODialog
+
+        cur_path = getattr(self, "current_file", "") or getattr(self, "last_open_file", "")
+        dlg = NTODialog(parent=self, log_path=cur_path if cur_path and os.path.exists(cur_path) else None)
+        dlg.exec()
+
+    def _on_open_mcp_info(self):
+        """Display ChemMCP (Model Context Protocol) connection instructions."""
+        from PyQt6 import QtWidgets
+        info_text = (
+            "<h3>🤖 ChemMCP AI Assistant Server</h3>"
+            "<p>AgyMolden includes a built-in <b>Model Context Protocol (MCP)</b> stdio server, "
+            "allowing Claude Desktop, Cursor, or local LLM agents to interactively analyze your molecules.</p>"
+            "<p><b>How to configure Claude Desktop / MCP Clients:</b></p>"
+            "<pre style='background:#1e1e1e; color:#00ffcc; padding:10px; border-radius:4px;'>"
+            '{\n'
+            '  "mcpServers": {\n'
+            '    "agymolden": {\n'
+            '      "command": "python",\n'
+            '      "args": ["-m", "agymolden", "--mcp"]\n'
+            '    }\n'
+            '  }\n'
+            '}'
+            "</pre>"
+            "<p><b>Available ChemMCP Tools:</b></p>"
+            "<ul>"
+            "<li><code>get_molecule_info</code>: Atom count, formula, charge, multiplicity</li>"
+            "<li><code>get_coordinates</code>: Cartesian coordinates in Å</li>"
+            "<li><code>calculate_sasa</code>: Solvent-accessible & polar surface area</li>"
+            "<li><code>calculate_sterics</code>: Percent buried volume (%Vbur) & Sterimol parameters</li>"
+            "<li><code>generate_orca_input</code>: Validated QM input deck generation</li>"
+            "</ul>"
+        )
+        QtWidgets.QMessageBox.information(self, "ChemMCP AI Server Integration", info_text)
+
+
 
 
 

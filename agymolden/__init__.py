@@ -125,8 +125,12 @@ def _install_excepthook(QtWidgets) -> None:
 
 def main(argv=None):
     raw_args = sys.argv[1:] if argv is None else argv
-    if raw_args and raw_args[0] in ("parse", "gen", "check", "convert", "bundle", "doctor", "install-desktop"):
-        from .cli import build_cli_parser, cmd_parse, cmd_gen, cmd_check, cmd_convert, cmd_bundle, cmd_doctor, cmd_install_desktop
+    if raw_args and raw_args[0] in ("parse", "gen", "check", "convert", "bundle", "doctor", "install-desktop", "mcp", "--mcp"):
+        if raw_args[0] in ("mcp", "--mcp"):
+            from .mcp_server import run_mcp_server_stdio
+            run_mcp_server_stdio()
+            sys.exit(0)
+        from .cli import build_cli_parser, cmd_parse, cmd_gen, cmd_check, cmd_convert, cmd_bundle, cmd_doctor, cmd_install_desktop, cmd_mcp
         cli_p = build_cli_parser()
         cli_args = cli_p.parse_args(raw_args)
         if cli_args.subcommand == "parse":
@@ -143,6 +147,8 @@ def main(argv=None):
             sys.exit(cmd_doctor(cli_args))
         elif cli_args.subcommand == "install-desktop":
             sys.exit(cmd_install_desktop(cli_args))
+        elif cli_args.subcommand == "mcp":
+            sys.exit(cmd_mcp(cli_args))
 
     parser = argparse.ArgumentParser(
         prog="agymolden", description="AgyMolden - Z-Matrix molecular builder & quantum chemistry viewer"

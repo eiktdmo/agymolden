@@ -431,6 +431,13 @@ def cmd_bundle(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Run ChemMCP JSON-RPC 2.0 stdio server."""
+    from .mcp_server import run_mcp_server_stdio
+    run_mcp_server_stdio()
+    return 0
+
+
 def build_cli_parser() -> argparse.ArgumentParser:
     """Create root parser with CLI subcommands."""
     parser = argparse.ArgumentParser(
@@ -486,5 +493,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     # 7. install-desktop
     subparsers.add_parser("install-desktop", help="Install native OS desktop shortcut and launcher without compiling binaries")
+
+    # 8. mcp
+    subparsers.add_parser("mcp", help="Run ChemMCP Model Context Protocol JSON-RPC 2.0 server over stdio for AI assistants")
 
     return parser

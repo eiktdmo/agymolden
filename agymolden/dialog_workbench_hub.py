@@ -105,6 +105,24 @@ HUB_TOOLS: List[HubToolItem] = [
 
     # 2. Spectroscopy & Analytical
     HubToolItem(
+        title="Solvent-Accessible Surface Area (SASA & PSA)",
+        category="Spectroscopy & Analytical",
+        description="Shrake-Rupley numerical surface area with Fibonacci sphere sampling, polar surface area (PSA), and 3D exposure heatmap.",
+        icon="🌐",
+        shortcut="",
+        badge="Built-in",
+        callback_name="_on_open_sasa_dialog",
+    ),
+    HubToolItem(
+        title="Natural Transition Orbitals (NTO Photochemistry)",
+        category="Spectroscopy & Analytical",
+        description="SVD decomposition of TD-DFT transition density matrices into intuitive Hole → Particle exciton state pairs.",
+        icon="✨",
+        shortcut="",
+        badge="Built-in",
+        callback_name="_on_open_nto_dialog",
+    ),
+    HubToolItem(
         title="NMR Chemical Shift Referencing & 1D Spectrum",
         category="Spectroscopy & Analytical",
         description="Convert isotropic shieldings to referenced chemical shifts (1H, 13C, 19F, 31P) with synthetic Lorentzian spectra.",
@@ -269,6 +287,15 @@ HUB_TOOLS: List[HubToolItem] = [
         shortcut="Ctrl+Shift+H",
         badge="Built-in",
         callback_name="_on_export_html",
+    ),
+    HubToolItem(
+        title="ChemMCP AI Assistant Server (Stdio)",
+        category="Publishing & HPC Automation",
+        description="Model Context Protocol JSON-RPC 2.0 server connecting external AI assistants (Claude Desktop, local LLMs) directly to AgyMolden.",
+        icon="🤖",
+        shortcut="",
+        badge="Built-in",
+        callback_name="_on_open_mcp_info",
     ),
 ]
 

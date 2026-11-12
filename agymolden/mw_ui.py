@@ -1959,6 +1959,16 @@ class UIMixin(UIInspectorTabsMixin):
         act_si_gen.triggered.connect(self._on_open_si_generator_dialog)
         menu_tools.addAction(act_si_gen)
 
+        act_sasa = QtGui.QAction("💧 &Solvent-Accessible Surface Area (SASA) & Polar Area...", self)
+        act_sasa.setToolTip("Calculate total SASA, polar surface area (PSA), and project solvent accessibility onto 3D atoms")
+        act_sasa.triggered.connect(self._on_open_sasa_dialog)
+        menu_tools.addAction(act_sasa)
+
+        act_nto = QtGui.QAction("☀️ &Natural Transition Orbitals (NTO) & Photochemistry (Hole-Particle)...", self)
+        act_nto.setToolTip("SVD analysis of TD-DFT transition density matrices into dominant Hole -> Particle exciton pairs")
+        act_nto.triggered.connect(self._on_open_nto_dialog)
+        menu_tools.addAction(act_nto)
+
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
