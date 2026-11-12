@@ -49,6 +49,15 @@ HUB_TOOLS: List[HubToolItem] = [
         callback_name="_on_open_irc_sweeper",
     ),
     HubToolItem(
+        title="Multi-Structure 3D Superposition & RMSD Overlay",
+        category="Reaction Mechanisms & Catalysis",
+        description="Kabsch SVD optimal rigid superposition, all-atom and heavy-atom RMSD, and ghost model comparison overlay.",
+        icon="🔬",
+        shortcut="Ctrl+Shift+O",
+        badge="Built-in",
+        callback_name="_on_open_structure_overlay",
+    ),
+    HubToolItem(
         title="Reaction Thermochemistry & Kinetics",
         category="Reaction Mechanisms & Catalysis",
         description="Calculate ΔG‡, ΔH‡, ΔGrxn, Keq, and Eyring reaction rate constants k(T) from QM output logs.",

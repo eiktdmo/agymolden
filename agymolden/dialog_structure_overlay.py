@@ -17,7 +17,7 @@ import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .alignment import calculate_kabsch_alignment
-from .xyz_io import parse_xyz
+from .zmatrix import parse_xyz
 
 
 class StructureOverlayDialog(QtWidgets.QDialog):

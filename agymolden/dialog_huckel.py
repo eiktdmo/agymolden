@@ -366,7 +366,13 @@ class HuckelTeachingDialog(QtWidgets.QDialog):
             ax_ladder = self.fig.add_subplot(111)
             self._draw_mo_ladder(ax_ladder, res)
 
-        self.fig.tight_layout()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            try:
+                self.fig.tight_layout()
+            except Exception:
+                pass
         self.canvas.draw()
 
         color = "#4ade80" if "Aromatic" in res.aromaticity_status else ("#f43f5e" if "Antiaromatic" in res.aromaticity_status else "#facc15")

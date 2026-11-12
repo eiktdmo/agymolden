@@ -60,3 +60,27 @@ def test_windows_launcher_syntax_and_winget():
     assert "winget install" in content
     assert "agymolden_env" in content
     assert "setlocal enabledelayedexpansion" in content
+
+
+def test_structure_overlay_dialog_smoke(app):
+    """Verify Multi-Structure 3D Superposition & RMSD Overlay Dialog instantiates and calculates RMSD."""
+    import numpy as np
+    from agymolden.dialog_structure_overlay import StructureOverlayDialog
+
+    symbols = ["O", "H", "H"]
+    coords = np.array([[0.0, 0.0, 0.1], [0.0, 0.7, -0.4], [0.0, -0.7, -0.4]])
+    traj = [coords, coords + 0.05]
+    energies = [-76.4, -76.3]
+
+    dummy_mw = QtWidgets.QMainWindow()
+    dlg = StructureOverlayDialog(
+        parent=dummy_mw,
+        symbols=symbols,
+        coords=coords,
+        trajectory=traj,
+        trajectory_energies=energies,
+    )
+    dlg.show()
+    assert dlg.table_disp.rowCount() == 3
+    dlg.close()
+    dummy_mw.close()
