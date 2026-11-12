@@ -94,9 +94,14 @@ class PluginContext:
             self._window._push_undo_state()
         self._window.coords = arr
         if hasattr(self._window, "viewer") and self._window.viewer:
-            self._window.viewer.set_coords(arr)
+            if hasattr(self._window.viewer, "update_coords"):
+                user_bonds = self._window._current_explicit_bonds() if hasattr(self._window, "_current_explicit_bonds") else None
+                self._window.viewer.update_coords(arr, user_bonds=user_bonds)
+            elif hasattr(self._window.viewer, "set_coords"):
+                self._window.viewer.set_coords(arr)
         if hasattr(self._window, "table_widget") and self._window.table_widget:
-            self._window.table_widget.sync_coords_to_table(arr)
+            if hasattr(self._window.table_widget, "sync_coords_to_table"):
+                self._window.table_widget.sync_coords_to_table(arr)
         if hasattr(self._window, "_sync_raw_text"):
             self._window._sync_raw_text()
 
@@ -110,9 +115,10 @@ class PluginContext:
         self._window.zatoms = zatoms
         self._window.coords = arr
         if hasattr(self._window, "table_widget") and self._window.table_widget:
-            self._window.table_widget.load_zatoms(zatoms)
+            if hasattr(self._window.table_widget, "load_zatoms"):
+                self._window.table_widget.load_zatoms(zatoms)
         if hasattr(self._window, "viewer") and self._window.viewer:
-            self._window.viewer.set_molecule(zatoms, arr)
+            self._window.viewer.set_molecule(list(symbols), arr)
         if hasattr(self._window, "_sync_raw_text"):
             self._window._sync_raw_text()
 

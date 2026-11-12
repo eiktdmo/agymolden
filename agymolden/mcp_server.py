@@ -102,6 +102,34 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                             },
                         },
                         {
+                            "name": "calculate_quasiharmonic",
+                            "description": "Evaluates Grimme mRRHO and Truhlar quasi-harmonic thermochemistry from vibrational frequencies.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "frequencies_cm1": {
+                                        "type": "array",
+                                        "items": {"type": "number"},
+                                        "description": "List of harmonic vibrational frequencies in cm^-1",
+                                    },
+                                    "temperature_k": {"type": "number", "default": 298.15},
+                                    "cutoff_cm1": {"type": "number", "default": 100.0},
+                                },
+                            },
+                        },
+                        {
+                            "name": "export_si_latex",
+                            "description": "Generates publication-ready Supporting Information LaTeX and Markdown tables for the active molecule.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "default": "Structure_1"},
+                                    "electronic_energy_eh": {"type": "number", "default": -150.0},
+                                    "gibbs_energy_eh": {"type": "number", "default": -149.9},
+                                },
+                            },
+                        },
+                        {
                             "name": "generate_orca_input",
                             "description": "Generates a validated ORCA input file for geometry optimization or frequency calculation.",
                             "inputSchema": {
@@ -110,6 +138,8 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                                     "functional": {"type": "string", "default": "wB97X-D"},
                                     "basis": {"type": "string", "default": "def2-TZVP"},
                                     "job_type": {"type": "string", "default": "Opt Freq"},
+                                    "charge": {"type": "integer", "default": 0},
+                                    "multiplicity": {"type": "integer", "default": 1},
                                 },
                             },
                         },
@@ -120,6 +150,17 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
         elif method == "tools/call":
             tool_name = params.get("name", "")
             args = params.get("arguments", {})
+
+            # Support optional inline 'xyz' argument in any tool call
+            if isinstance(args, dict) and "xyz" in args and args["xyz"]:
+                try:
+                    from .zmatrix import parse_xyz
+                    parsed_syms, parsed_crds = parse_xyz(str(args["xyz"]), is_path=False)
+                    if parsed_syms and len(parsed_crds) == len(parsed_syms):
+                        symbols = parsed_syms
+                        coords = np.asarray(parsed_crds, dtype=np.float64)
+                except Exception:
+                    pass
 
             if tool_name == "get_molecule_info":
                 return {
@@ -192,11 +233,66 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                     },
                 }
 
+            elif tool_name == "calculate_quasiharmonic":
+                from .quasiharmonic import calculate_quasiharmonic_thermo
+                freqs = args.get("frequencies_cm1", [45.0, 82.0, 145.0, 520.0, 1200.0, 1650.0, 3100.0])
+                temp_k = float(args.get("temperature_k", 298.15))
+                cutoff = float(args.get("cutoff_cm1", 100.0))
+                qh_res = calculate_quasiharmonic_thermo(freqs, temperature_k=temp_k, cutoff_cm1=cutoff)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({
+                                    "temperature_k": qh_res.temperature_k,
+                                    "cutoff_cm1": qh_res.cutoff_cm1,
+                                    "zpe_kcal_mol": qh_res.zpe_kcal_mol,
+                                    "s_vib_standard_cal_mol_k": qh_res.s_vib_standard_cal_mol_k,
+                                    "s_vib_grimme_cal_mol_k": qh_res.s_vib_grimme_cal_mol_k,
+                                    "s_vib_truhlar_cal_mol_k": qh_res.s_vib_truhlar_cal_mol_k,
+                                    "delta_g_grimme_kcal_mol": qh_res.delta_g_grimme_kcal_mol,
+                                    "delta_g_truhlar_kcal_mol": qh_res.delta_g_truhlar_kcal_mol,
+                                }, indent=2),
+                            }
+                        ]
+                    },
+                }
+
+            elif tool_name == "export_si_latex":
+                from .si_generator import (
+                    SISpecies,
+                    generate_computational_methods_paragraph,
+                    generate_latex_si_document,
+                )
+                sp_name = str(args.get("name", "Structure_1"))
+                e_eh = float(args.get("electronic_energy_eh", -150.0))
+                g_eh = float(args.get("gibbs_energy_eh", -149.9))
+                sp = SISpecies(
+                    name=sp_name,
+                    symbols=symbols,
+                    coords=coords,
+                    electronic_energy_ha=e_eh,
+                    gibbs_ha=g_eh,
+                )
+                methods_txt = generate_computational_methods_paragraph()
+                latex_doc = generate_latex_si_document([sp], methods_txt)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"content": [{"type": "text", "text": latex_doc}]},
+                }
+
             elif tool_name == "generate_orca_input":
                 func = args.get("functional", "wB97X-D")
                 basis = args.get("basis", "def2-TZVP")
                 job = args.get("job_type", "Opt Freq")
-                lines = [f"! {func} {basis} {job}", "* xyz 0 1"]
+                chg = int(args.get("charge", 0))
+                mult = int(args.get("multiplicity", 1))
+                header = f"! {func} {job}".strip() if "3c" in str(func).lower() else f"! {func} {basis} {job}".strip()
+                lines = [header, f"* xyz {chg} {mult}"]
                 for s, c in zip(symbols, coords):
                     lines.append(f"  {s:<2}  {c[0]:12.6f} {c[1]:12.6f} {c[2]:12.6f}")
                 lines.append("*")

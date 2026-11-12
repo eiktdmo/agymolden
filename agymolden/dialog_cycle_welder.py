@@ -427,16 +427,17 @@ class CycleWelderDialog(QtWidgets.QDialog):
 
             # Bridgehead advisory
             bh_tip = ""
-            for a_cand in (u, v):
-                if (
-                    len(_find_attached_hydrogens(symbols, coords, a_cand)) == 0
-                    and len(_find_adjacent_heavy_neighbors(symbols, coords, a_cand, -1)) >= 3
-                ):
-                    bh_tip = (
-                        f"💡 Advisory: {symbols[a_cand]}{a_cand+1} is a bridgehead carbon without hydrogens. "
-                        f"To fuse a ring across the bay (e.g. Naphthalene → Phenalene), switch to the '🌌 Peri-Annulation (3 Atoms / Bay)' tab!"
-                    )
-                    break
+            if coords is not None and len(coords) > max(u, v) and len(symbols) > max(u, v):
+                for a_cand in (u, v):
+                    if (
+                        len(_find_attached_hydrogens(symbols, coords, a_cand)) == 0
+                        and len(_find_adjacent_heavy_neighbors(symbols, coords, a_cand, -1)) >= 3
+                    ):
+                        bh_tip = (
+                            f"💡 Advisory: {symbols[a_cand]}{a_cand+1} is a bridgehead carbon without hydrogens. "
+                            f"To fuse a ring across the bay (e.g. Naphthalene → Phenalene), switch to the '🌌 Peri-Annulation (3 Atoms / Bay)' tab!"
+                        )
+                        break
             if bh_tip:
                 self.lbl_bridgehead_tip.setText(bh_tip)
                 self.lbl_bridgehead_tip.setVisible(True)

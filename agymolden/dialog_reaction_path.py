@@ -5,7 +5,7 @@ and input generation for ORCA NEB-TS and Gaussian QST2/QST3.
 """
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import numpy as np
 from PyQt6 import QtWidgets, QtCore, QtGui
 

@@ -12,7 +12,7 @@ Uses RDKit when available, with a pure-Python fallback for standalone Cartesian 
 """
 
 import logging
-from typing import List, Tuple, Optional, Dict
+from typing import Any, List, Tuple, Optional, Dict
 import numpy as np
 
 try:

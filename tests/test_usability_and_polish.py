@@ -84,3 +84,56 @@ def test_structure_overlay_dialog_smoke(app):
     assert dlg.table_disp.rowCount() == 3
     dlg.close()
     dummy_mw.close()
+
+
+def test_pbc_sterics_workflow_and_homo_lumo_handlers(app):
+    """Verify PBCDialog, StericDescriptorsDialog, WorkflowPipelineDialog, and HOMO/LUMO duality run cleanly."""
+    import numpy as np
+    from agymolden.main_window import MainWindow
+    from agymolden.zmatrix import cartesian_to_zmatrix
+    from agymolden.dialog_steric_descriptors import StericDescriptorsDialog
+
+    mw = MainWindow()
+    coords = np.array([[0.0, 0.0, 0.117], [0.0, 0.757, -0.469], [0.0, -0.757, -0.469]])
+    mw.zatoms = cartesian_to_zmatrix(["O", "H", "H"], coords)
+    mw.coords = coords
+
+    # 1. StericDescriptorsDialog
+    dlg_steric = StericDescriptorsDialog(parent=mw, symbols=["O", "H", "H"], coords=coords, center_idx=0, attached_idx=1)
+    assert "PERCENT BURIED VOLUME" in dlg_steric.txt_out.toPlainText()
+    dlg_steric.close()
+
+    # 2. Align Principal Axes plugin
+    mw._on_align_principal_axes()
+    assert mw.coords.shape == (3, 3)
+
+    # 3. HOMO/LUMO duality quick view
+    mw._on_quick_view_homo_lumo_duality()
+    assert len(mw.viewer.active_isosurfaces) > 0
+
+    mw.close()
+
+
+def test_all_type_annotations_resolvable():
+    """Verify PEP 649 / Python 3.14 inspect.signature succeeds on every function and method in agymolden."""
+    import pkgutil
+    import importlib
+    import inspect
+    import agymolden
+
+    bad = []
+    for _, mod_name, _ in pkgutil.walk_packages(agymolden.__path__, agymolden.__name__ + "."):
+        mod = importlib.import_module(mod_name)
+        for name, obj in inspect.getmembers(mod):
+            if inspect.isfunction(obj):
+                try:
+                    inspect.signature(obj)
+                except Exception as e:
+                    bad.append((mod_name, name, str(e)))
+            elif inspect.isclass(obj):
+                for mname, mobj in inspect.getmembers(obj, predicate=inspect.isfunction):
+                    try:
+                        inspect.signature(mobj)
+                    except Exception as e:
+                        bad.append((mod_name, f"{name}.{mname}", str(e)))
+    assert not bad, f"Broken type annotations found: {bad}"

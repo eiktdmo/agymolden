@@ -152,44 +152,106 @@ def parse_td_dft_and_compute_ntos(
 
     matches = list(orca_pattern.finditer(log_text))
     if matches:
-        for idx, m in enumerate(matches[:10]):  # Parse first 10 states
+        # First pass: collect raw transitions across states to determine global n_occ and n_virt
+        raw_states = []
+        for idx, m in enumerate(matches[:20]):
             st_num = int(m.group(1))
             e_ev = float(m.group(3))
             f_osc = float(m.group(5))
 
-            # Grab following text block until next STATE or empty line
             start_pos = m.end()
             end_pos = min(len(log_text), start_pos + 2000)
             block = log_text[start_pos:end_pos]
 
-            amps: List[Tuple[int, int, float]] = []
+            raw_amps: List[Tuple[int, int, float]] = []
             for line in block.splitlines():
                 if "STATE" in line:
                     break
                 line_m = re.search(r'(\d+)[a-zA-Z]?\s*->\s*(\d+)[a-zA-Z]?\s*:\s*([+-]?\d+\.\d+)', line)
                 if line_m:
-                    i_from = int(line_m.group(1)) - 1  # 0-based
-                    a_to = int(line_m.group(2)) - 1
-                    coeff = float(line_m.group(3))
+                    # ORCA uses 0-based orbital numbering (e.g. 25a -> 26a)
+                    i_from = int(line_m.group(1))
+                    a_to = int(line_m.group(2))
+                    coeff_val = float(line_m.group(3))
+                    # Check if explicit (c= ...) amplitude is given on the line
+                    c_m = re.search(r'\(c=\s*([+-]?\d+\.\d+)\)', line)
+                    amp = float(c_m.group(1)) if c_m else math.sqrt(abs(coeff_val))
                     detected_occ = max(detected_occ, i_from + 1)
-                    detected_virt = max(detected_virt, a_to - i_from)
-                    amps.append((i_from, a_to - detected_occ, coeff))
+                    raw_amps.append((i_from, a_to, amp))
 
-            if amps:
-                occ_cnt = n_occ or detected_occ
-                virt_cnt = n_virt or max(10, detected_virt)
-                # Remap amps with proper virtual offset
-                clean_amps = [(i, max(0, a_to - occ_cnt), c) for i, a_to, c in amps]
+            if raw_amps:
+                raw_states.append((st_num, "Singlet", e_ev, f_osc, raw_amps))
+
+        occ_cnt = n_occ or detected_occ
+        max_virt_idx = max((a_to - occ_cnt for _, _, _, _, r_amps in raw_states for _, a_to, _ in r_amps), default=0)
+        virt_cnt = n_virt or max(10, max_virt_idx + 1)
+
+        for st_num, mult_str, e_ev, f_osc, raw_amps in raw_states:
+            clean_amps = [(i_from, max(0, a_to - occ_cnt), amp) for i_from, a_to, amp in raw_amps]
+            info = compute_ntos_from_amplitudes(
+                clean_amps,
+                n_occ=occ_cnt,
+                n_virt=virt_cnt,
+                state_idx=st_num,
+                multiplicity=mult_str,
+                energy_ev=e_ev,
+                oscillator_strength=f_osc,
+                mo_coeff=mo_coeff,
+            )
+            states.append(info)
+
+    # 2. Gaussian Parser: "Excited State   1:      Singlet-A      3.5421 eV  350.03 nm  f=0.1245 <S**2>=0.000"
+    # Transition lines: "     18 -> 19         0.68412"
+    if not states:
+        gauss_pattern = re.compile(
+            r'Excited State\s+(\d+):\s+([A-Za-z0-9\-\?]+)\s+([+-]?\d+\.\d+)\s+eV\s+([+-]?\d+\.\d+)\s+nm\s+f=([+-]?\d+\.\d+)'
+        )
+        g_matches = list(gauss_pattern.finditer(log_text))
+        if g_matches:
+            raw_states = []
+            for idx, m in enumerate(g_matches[:20]):
+                st_num = int(m.group(1))
+                mult_label = m.group(2)
+                mult_str = "Triplet" if "Triplet" in mult_label else "Singlet"
+                e_ev = float(m.group(3))
+                f_osc = float(m.group(5))
+
+                start_pos = m.end()
+                end_pos = g_matches[idx + 1].start() if (idx + 1) < len(g_matches) else min(len(log_text), start_pos + 2000)
+                block = log_text[start_pos:end_pos]
+
+                raw_amps = []
+                for line in block.splitlines():
+                    line_m = re.search(r'^\s*(\d+)[a-zA-Z]?\s*(?:->|<-)\s*(\d+)[a-zA-Z]?\s+([+-]?\d+\.\d+)', line)
+                    if line_m:
+                        # Gaussian uses 1-based orbital numbering
+                        i_from = int(line_m.group(1)) - 1
+                        a_to = int(line_m.group(2)) - 1
+                        amp = float(line_m.group(3))
+                        detected_occ = max(detected_occ, i_from + 1)
+                        raw_amps.append((i_from, a_to, amp))
+
+                if raw_amps:
+                    raw_states.append((st_num, mult_str, e_ev, f_osc, raw_amps))
+
+            occ_cnt = n_occ or detected_occ
+            max_virt_idx = max((a_to - occ_cnt for _, _, _, _, r_amps in raw_states for _, a_to, _ in r_amps), default=0)
+            virt_cnt = n_virt or max(10, max_virt_idx + 1)
+
+            for st_num, mult_str, e_ev, f_osc, raw_amps in raw_states:
+                clean_amps = [(i_from, max(0, a_to - occ_cnt), amp) for i_from, a_to, amp in raw_amps]
                 info = compute_ntos_from_amplitudes(
                     clean_amps,
                     n_occ=occ_cnt,
                     n_virt=virt_cnt,
                     state_idx=st_num,
+                    multiplicity=mult_str,
                     energy_ev=e_ev,
                     oscillator_strength=f_osc,
                     mo_coeff=mo_coeff,
                 )
                 states.append(info)
+                detected_virt = virt_cnt
 
     return NTOResult(
         excited_states=states,

@@ -4,7 +4,7 @@ import os
 import math
 import copy
 import logging
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 import numpy as np
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -2475,7 +2475,8 @@ class EditingMixin:
         """Open the Periodic Boundary Conditions (PBC) & Supercell Generator dialog."""
         from .dialog_pbc import PBCDialog
         from .forcefield import detect_connectivity, detect_bond_orders
-        from .zmatrix import cartesian_to_zmatrix, norm_bond
+        from .zmatrix import cartesian_to_zmatrix
+        from .topology import norm_bond
 
         symbols = [a.symbol for a in self.zatoms]
         coords = np.array(self.coords, dtype=np.float64, copy=True)

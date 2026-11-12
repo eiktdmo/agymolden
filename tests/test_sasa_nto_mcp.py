@@ -141,6 +141,23 @@ STATE  2:  E=   0.185200 au      5.040 eV    246.0 nm  f=  0.0020
     assert len(st1.nto_pairs) >= 1
 
 
+def test_parse_gaussian_tddft():
+    mock_gaussian = """
+ Excited State   1:      Singlet-A      3.5421 eV  350.03 nm  f=0.1245 <S**2>=0.000
+      18 -> 19         0.68412
+      17 -> 20         0.15234
+ Excited State   2:      Triplet-A      4.1200 eV  300.93 nm  f=0.0000 <S**2>=2.000
+      18 -> 20         0.70110
+"""
+    res = parse_td_dft_and_compute_ntos(mock_gaussian)
+    assert len(res.excited_states) == 2
+    assert res.excited_states[0].state_index == 1
+    assert res.excited_states[0].multiplicity == "Singlet"
+    assert res.excited_states[0].energy_ev == 3.5421
+    assert res.excited_states[1].multiplicity == "Triplet"
+    assert len(res.excited_states[0].nto_pairs) >= 1
+
+
 def test_nto_dialog_smoke(qapp):
     dlg = NTODialog()
     dlg.show()
@@ -232,3 +249,36 @@ def test_mcp_tool_call_sasa_and_orca():
     text = resp_orca["result"]["content"][0]["text"]
     assert "! r2SCAN-3c" in text
     assert "* xyz 0 1" in text
+
+    # Test Quasi-Harmonic tool call
+    call_qh = {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+            "name": "calculate_quasiharmonic",
+            "arguments": {"frequencies_cm1": [35.0, 90.0, 1500.0], "temperature_k": 298.15},
+        },
+    }
+    resp_qh = handle_mcp_request(call_qh, context_molecule=water_ctx)
+    qh_data = json.loads(resp_qh["result"]["content"][0]["text"])
+    assert qh_data["zpe_kcal_mol"] > 0.0
+    assert "s_vib_grimme_cal_mol_k" in qh_data
+
+    # Test SI LaTeX tool call with inline xyz
+    call_si = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {
+            "name": "export_si_latex",
+            "arguments": {
+                "name": "Water_Min",
+                "xyz": "3\nWater\nO 0.0 0.0 0.117\nH 0.0 0.757 -0.469\nH 0.0 -0.757 -0.469\n",
+            },
+        },
+    }
+    resp_si = handle_mcp_request(call_si)
+    si_text = resp_si["result"]["content"][0]["text"]
+    assert r"\documentclass" in si_text
+    assert "Water_Min" in si_text

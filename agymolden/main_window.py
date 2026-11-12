@@ -1967,9 +1967,13 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
     def _on_open_workflow_pipeline_dialog(self):
         """Open Workflow Pipeline / Multi-Stage Recipe dialog."""
         from .calc_runner.dialog_pipeline import WorkflowPipelineDialog
+        symbols = [a.symbol for a in self.zatoms] if self.zatoms else ["O", "H", "H"]
+        coords = np.array(self.coords, dtype=np.float64, copy=True) if (self.coords is not None and len(self.coords) > 0) else np.zeros((3, 3))
         dlg = WorkflowPipelineDialog(
             parent=self,
-            input_dir=os.getcwd(),
+            symbols=symbols,
+            coords=coords,
+            work_dir=os.path.join(os.getcwd(), "workflow_run"),
         )
         dlg.exec()
 

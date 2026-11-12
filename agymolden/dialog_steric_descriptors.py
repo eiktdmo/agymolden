@@ -95,62 +95,68 @@ class StericDescriptorsDialog(QtWidgets.QDialog):
 
         # 1. Buried volume
         res_vbur = compute_buried_volume(
-            self.symbols, self.coords, c_i, radius=radius, include_hydrogens=inc_h, n_points=50000
+            self.symbols, self.coords, center_idx=c_i, sphere_radius=radius, include_hydrogens=inc_h
         )
+        v_bur_pct = float(res_vbur.get("v_bur_pct", 0.0))
+        v_free_pct = float(res_vbur.get("v_free_pct", 100.0))
+        v_total_sphere = (4.0 / 3.0) * np.pi * (radius ** 3)
+        v_buried = v_total_sphere * (v_bur_pct / 100.0)
+        quads = res_vbur.get("quadrants", {})
+        q_vals = [float(v) for v in quads.values()] if quads else [0.0]
+        q_inequity = max(q_vals) - min(q_vals) if q_vals else 0.0
 
         # 2. Sterimol & Tolman cone angle
         res_sterimol = None
         if a_i is not None and a_i != c_i and 0 <= a_i < len(self.symbols):
+            sub_idxs = [
+                i for i in range(len(self.symbols))
+                if i != c_i and (inc_h or self.symbols[i] != "H")
+            ]
             res_sterimol = compute_sterimol_and_cone_angle(
-                self.symbols, self.coords, c_i, a_i, include_hydrogens=inc_h
+                self.symbols, self.coords, primary_idx=c_i, attached_idx=a_i, substituent_indices=sub_idxs
             )
 
         # 3. Coordination geometry indices (tau4, tau4', tau5)
-        res_coord = compute_coordination_geometry_indices(self.symbols, self.coords, c_i)
+        res_coord = compute_coordination_geometry_indices(self.symbols, self.coords, center_idx=c_i)
 
         lines = [
             f"=== STERIC & COORDINATION DESCRIPTORS (Center: #{c_i+1} {self.symbols[c_i]}) ===",
             f"Sphere Radius R: {radius:.2f} Å  |  Include Hydrogens: {inc_h}",
             "",
             "--- 1. PERCENT BURIED VOLUME (%V_bur / SambVca style) ---",
-            f"  Total Buried Volume (%V_bur): {res_vbur.v_bur_percent:6.2f} %",
-            f"  Free Volume (%V_free):        {res_vbur.v_free_percent:6.2f} %",
-            f"  Sphere Volume:                {res_vbur.v_total_sphere:6.2f} Å³",
-            f"  Total Buried Volume (V_bur):  {res_vbur.v_buried:6.2f} Å³",
+            f"  Total Buried Volume (%V_bur): {v_bur_pct:6.2f} %",
+            f"  Free Volume (%V_free):        {v_free_pct:6.2f} %",
+            f"  Sphere Volume:                {v_total_sphere:6.2f} Å³",
+            f"  Total Buried Volume (V_bur):  {v_buried:6.2f} Å³",
             "",
             "  Steric Quadrant Breakdown (Quadrant Steric Map):",
-            f"    NW Quadrant (Q1):           {res_vbur.quadrant_vbur.get('Q1', 0.0):6.2f} %",
-            f"    NE Quadrant (Q2):           {res_vbur.quadrant_vbur.get('Q2', 0.0):6.2f} %",
-            f"    SW Quadrant (Q3):           {res_vbur.quadrant_vbur.get('Q3', 0.0):6.2f} %",
-            f"    SE Quadrant (Q4):           {res_vbur.quadrant_vbur.get('Q4', 0.0):6.2f} %",
-            f"    Steric Map Inequity ΔQ:     {res_vbur.quadrant_inequity:6.2f} %",
+            f"    NW Quadrant (Q1):           {float(quads.get('NW', 0.0)):6.2f} %",
+            f"    NE Quadrant (Q2):           {float(quads.get('NE', 0.0)):6.2f} %",
+            f"    SW Quadrant (Q3):           {float(quads.get('SW', 0.0)):6.2f} %",
+            f"    SE Quadrant (Q4):           {float(quads.get('SE', 0.0)):6.2f} %",
+            f"    Steric Map Inequity ΔQ:     {q_inequity:6.2f} %",
             "",
         ]
 
         if res_sterimol:
             lines.extend([
                 f"--- 2. VERLOOP STERIMOL PARAMETERS & TOLMAN CONE ANGLE (Axis #{c_i+1}➔#{a_i+1}) ---",
-                f"  L  (Primary Axis Length):     {res_sterimol.L:6.2f} Å",
-                f"  B1 (Minimal Perpendicular):   {res_sterimol.B1:6.2f} Å",
-                f"  B5 (Maximal Perpendicular):   {res_sterimol.B5:6.2f} Å",
-                f"  Tolman Cone Angle (θ):        {res_sterimol.tolman_cone_angle:6.2f} °",
+                f"  L  (Primary Axis Length):     {float(res_sterimol.get('L', 0.0)):6.2f} Å",
+                f"  B1 (Minimal Perpendicular):   {float(res_sterimol.get('B1', 0.0)):6.2f} Å",
+                f"  B5 (Maximal Perpendicular):   {float(res_sterimol.get('B5', 0.0)):6.2f} Å",
+                f"  Tolman Cone Angle (θ):        {float(res_sterimol.get('cone_angle_deg', 0.0)):6.2f} °",
                 "",
             ])
 
-        if res_coord and res_coord.get("coordination_number", 0) in (4, 5):
-            cn = res_coord["coordination_number"]
+        if res_coord and res_coord.get("coord_number", 0) >= 2:
+            cn = res_coord["coord_number"]
             lines.append(f"--- 3. COORDINATION GEOMETRY INDICES (CN = {cn}) ---")
-            if cn == 4:
-                lines.extend([
-                    f"  Yang τ₄ Parameter:            {res_coord['tau4']:.3f}  (1.00 = Tetrahedron, 0.00 = Square Planar)",
-                    f"  Okuniewski τ₄' Parameter:     {res_coord['tau4_prime']:.3f}",
-                    f"  Classification:               {res_coord['geometry_label']}",
-                ])
-            elif cn == 5:
-                lines.extend([
-                    f"  Addison τ₅ Parameter:         {res_coord['tau5']:.3f}  (1.00 = Trigonal Bipyramid, 0.00 = Square Pyramid)",
-                    f"  Classification:               {res_coord['geometry_label']}",
-                ])
+            lines.append(f"  Summary:                      {res_coord.get('summary', '')}")
+            if "tau_4" in res_coord:
+                lines.append(f"  Yang τ₄ Parameter:            {res_coord['tau_4']:.3f}  (1.00 = Tetrahedron, 0.00 = Square Planar)")
+                lines.append(f"  Okuniewski τ₄' Parameter:     {res_coord['tau_4_prime']:.3f}")
+            if "tau_5" in res_coord:
+                lines.append(f"  Addison τ₅ Parameter:         {res_coord['tau_5']:.3f}  (1.00 = Trigonal Bipyramid, 0.00 = Square Pyramid)")
             lines.append("")
 
         self.txt_out.setPlainText("\n".join(lines))

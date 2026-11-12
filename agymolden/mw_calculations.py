@@ -1427,7 +1427,7 @@ class CalculationsMixin:
         atom_spec = "; ".join(f"{s} {c[0]} {c[1]} {c[2]}" for s, c in zip(symbols, coords))
 
         import tempfile
-        from .async_task import run_in_background
+        from .workers import run_in_background
 
         def _worker():
             mol = gto.M(atom=atom_spec, basis=basis, verbose=0)

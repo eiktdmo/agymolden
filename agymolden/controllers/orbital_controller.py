@@ -137,7 +137,8 @@ class OrbitalController:
         coords = self.mw.coords
         qm_props = getattr(self.mw, "_semiempirical_qm_props", None)
 
-        from ..volumetric import evaluate_semiempirical_orbital_grid, generate_orbital_surfaces
+        from ..semiempirical import evaluate_semiempirical_orbital_grid
+        from ..volumetric import generate_orbital_surfaces
         n_pts = 36
         vol_h = evaluate_semiempirical_orbital_grid(symbols, coords, orbital_index=homo_idx, nx=n_pts, ny=n_pts, nz=n_pts, qm_props=qm_props)
         vol_l = evaluate_semiempirical_orbital_grid(symbols, coords, orbital_index=lumo_idx, nx=n_pts, ny=n_pts, nz=n_pts, qm_props=qm_props)
