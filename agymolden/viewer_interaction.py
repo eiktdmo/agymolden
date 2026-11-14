@@ -521,6 +521,11 @@ class ViewerInteractionMixin:
                         dx = float(end_p.x() - start_p.x())
                         dy = float(end_p.y() - start_p.y())
                         self.quick_add_atom_dragged.emit(anchor_idx, dx, dy)
+                    mw = self.window()
+                    if mw and getattr(mw, "btn_auto_relax", None) and mw.btn_auto_relax.isChecked():
+                        if hasattr(mw, "statusBar"):
+                            mw.statusBar().showMessage("⚡ Auto-Relaxing geometry (UFF)...", 1500)
+                        QtCore.QTimer.singleShot(30, lambda: self._run_auto_relax_uff(mw))
                 elif anchor_idx is not None:
                     # Simple single click on atom (no significant drag): atom is already selected
                     pass
@@ -847,3 +852,12 @@ class ViewerInteractionMixin:
             msg = "Shift+Click atoms to measure Dist (2), Angle (3), Dihedral (4) or group selection"
 
         self.measurement_updated.emit(msg)
+
+    def _run_auto_relax_uff(self, mw):
+        """Run a fast UFF geometry relaxation after drawing an atom or bond."""
+        try:
+            if mw and hasattr(mw, "_on_optimize_geometry"):
+                mw._on_optimize_geometry()
+        except Exception as exc:
+            if mw and hasattr(mw, "statusBar"):
+                mw.statusBar().showMessage(f"Auto-Relax error: {exc}", 3000)

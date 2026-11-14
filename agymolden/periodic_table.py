@@ -52,9 +52,18 @@ class PeriodicTableDialog(QtWidgets.QDialog):
             btn.setToolTip(f"{name} (Z={z_num})")
             # Connect
             btn.clicked.connect(lambda checked, s=sym: self._choose_element(s))
+            btn.installEventFilter(self)
+            btn.setProperty("elem_sym", sym)
+            btn.setProperty("elem_name", name)
+            btn.setProperty("elem_z", z_num)
             grid.addWidget(btn, row, col)
 
         layout.addWidget(grid_widget, stretch=1)
+
+        # Compact Element Info Strip (updates on hover)
+        self.lbl_elem_info = QtWidgets.QLabel("Hover any element to inspect atomic mass, covalent & vdW radii.")
+        self.lbl_elem_info.setStyleSheet("color: #cbd5e1; font-size: 11px; padding: 4px 6px; background: #1e293b; border-radius: 4px;")
+        layout.addWidget(self.lbl_elem_info)
 
         # GaussView-style Coordination / Hybridization Template Selector
         coord_row = QtWidgets.QHBoxLayout()
@@ -64,13 +73,20 @@ class PeriodicTableDialog(QtWidgets.QDialog):
         coord_row.addWidget(lbl_coord)
 
         self.combo_coordination = QtWidgets.QComboBox()
-        self.combo_coordination.setMinimumWidth(340)
+        self.combo_coordination.setMinimumWidth(300)
         for key, (label, _, _) in COORDINATION_TEMPLATES.items():
             self.combo_coordination.addItem(label, key)
         idx_init = self.combo_coordination.findData(initial_coordination or "auto")
         if idx_init >= 0:
             self.combo_coordination.setCurrentIndex(idx_init)
         coord_row.addWidget(self.combo_coordination, stretch=1)
+
+        if parent is not None and hasattr(parent, "_on_add_hydrogens"):
+            btn_add_h = QtWidgets.QPushButton("💧 Add H (Complete Valence)")
+            btn_add_h.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; padding: 4px 10px;")
+            btn_add_h.setToolTip("Complete valence of all atoms with standard geometric hydrogens (Ctrl+H)")
+            btn_add_h.clicked.connect(lambda: (parent._on_add_hydrogens(), self.reject()))
+            coord_row.addWidget(btn_add_h)
 
         btn_cancel = QtWidgets.QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
@@ -79,6 +95,24 @@ class PeriodicTableDialog(QtWidgets.QDialog):
 
         self.chosen_element: str = ""
         self.chosen_coordination: str = initial_coordination or "auto"
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Type.Enter:
+            sym = obj.property("elem_sym")
+            if sym:
+                name = obj.property("elem_name") or sym
+                z_num = obj.property("elem_z") or ""
+                try:
+                    from .elements import get_mass, get_cov_radius, get_vdw_radius
+                    mass = get_mass(sym)
+                    rcov = get_cov_radius(sym)
+                    rvdw = get_vdw_radius(sym)
+                    self.lbl_elem_info.setText(
+                        f"<b>{sym}</b> — {name} (Z={z_num}) &nbsp;|&nbsp; Mass: {mass:.3f} u &nbsp;|&nbsp; r<sub>cov</sub>: {rcov:.2f} Å &nbsp;|&nbsp; r<sub>vdW</sub>: {rvdw:.2f} Å"
+                    )
+                except Exception as exc:
+                    self.lbl_elem_info.setText(f"<b>{sym}</b> — {name} (Z={z_num}) [info error: {exc}]")
+        return super().eventFilter(obj, event)
 
     def _choose_element(self, sym: str):
         self.chosen_element = sym

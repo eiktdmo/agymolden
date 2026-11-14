@@ -792,6 +792,17 @@ class FileIOMixin:
     def _load_qm_log_path(self, path: str):
         from .controllers import ImportController
         ImportController(self).load_qm_log_path(path)
+        # Auto-link sibling wavefunction (.molden.input / .molden) for instant MO access
+        if path and os.path.isfile(path) and path.lower().endswith((".out", ".log")):
+            base_no_ext = os.path.splitext(path)[0]
+            for ext in (".molden.input", ".molden"):
+                cand = base_no_ext + ext
+                if os.path.isfile(cand) and hasattr(self, "load_orbitals_from_molden"):
+                    try:
+                        self.load_orbitals_from_molden(cand, auto_render=False)
+                    except Exception:
+                        log.debug("Ignored exception auto-linking sibling Molden file", exc_info=True)
+                    break
 
     def _on_view_qm_output_file(self):
         """Open the QM Output & Log Viewer Dialog."""

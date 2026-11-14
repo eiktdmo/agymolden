@@ -187,8 +187,8 @@ void main() {
         result = ambient + diffuse + specular;
     } else if (u_modern_glossy == 1) {
         // ChimeraX / Avogadro 2 style dual-source Blinn-Phong glossy shading
-        float hemi = 0.4 * norm.y + 0.6;
-        vec3 ambient = 0.32 * hemi * base_col;
+        float hemi = 0.15 * norm.y + 0.85;
+        vec3 ambient = 0.48 * hemi * base_col;
 
         // Key light
         float diff1 = max(dot(norm, light_dir), 0.0);
@@ -202,12 +202,12 @@ void main() {
         float diff2 = max(dot(norm, fill_dir), 0.0);
         vec3 diffuse2 = diff2 * base_col * 0.20;
 
-        // Subtle Fresnel rim glow
-        float fresnel = pow(1.0 - max(dot(norm, view_dir), 0.0), 3.0);
-        vec3 rim = 0.18 * fresnel * mix(base_col, vec3(1.0), 0.5);
+        // Subtle Fresnel rim glow (tinted by base_col to avoid chalky white halos on dark atoms)
+        float fresnel = pow(1.0 - max(dot(norm, view_dir), 0.0), 3.5);
+        vec3 rim = 0.06 * fresnel * base_col;
 
-        // Cavity ambient occlusion / contact obscurance
-        float cavity_ao = clamp(0.70 + 0.30 * dot(norm, view_dir), 0.60, 1.0);
+        // Cavity ambient occlusion / contact obscurance (kept >= 0.78 so dark-mode shadows stay visible)
+        float cavity_ao = clamp(0.80 + 0.20 * dot(norm, view_dir), 0.78, 1.0);
 
         result = (ambient * cavity_ao) + diffuse1 + diffuse2 + specular1 + rim;
 
@@ -217,8 +217,8 @@ void main() {
             result *= depth_falloff;
         }
     } else {
-        // Legacy Ambient
-        float ambient_strength = 0.35;
+        // Legacy Ambient (lifted so dark-mode shadows never disappear into the background)
+        float ambient_strength = 0.45;
         vec3 ambient = ambient_strength * base_col;
 
         // Diffuse

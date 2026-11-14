@@ -108,21 +108,31 @@ def get_color(symbol: str, bg_mode: str = "dark") -> Tuple[float, float, float]:
     base = ELEMENT_DATA.get(norm, {}).get("color", (0.7, 0.7, 0.7))
     if bg_mode == "white":
         if norm == "H":
-            # Silver/platinum grey with subtle tint so hydrogen has crisp contrast against pure white
-            return (0.84, 0.86, 0.88)
+            # Crisp light silver-white with subtle cool tint for contrast against pure white
+            return (0.90, 0.92, 0.95)
         elif norm == "C":
-            # Deeper obsidian slate grey for rich contrast against white
-            return (0.32, 0.34, 0.36)
+            # Rich dark charcoal so Carbon is unmistakably distinct from Hydrogen
+            return (0.22, 0.24, 0.27)
         elif norm == "S":
             # Deeper golden amber so yellow doesn't get washed out on white
             return (0.82, 0.72, 0.10)
     else:  # dark background
         if norm == "H":
             # Crisp luminous white/ivory
-            return (0.95, 0.95, 0.97)
+            return (0.96, 0.97, 0.99)
         elif norm == "C":
-            # Modern balanced graphite/charcoal
-            return (0.48, 0.50, 0.53)
+            # High-contrast slate-graphite: clearly visible on dark background yet distinct from Hydrogen
+            return (0.44, 0.46, 0.50)
+
+    # Automatic luminance guard for all other elements in both modes
+    r, g, b = base
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if bg_mode == "white" and lum > 0.72:
+        scale = 0.72 / max(lum, 1e-6)
+        return (r * scale, g * scale, b * scale)
+    if bg_mode != "white" and lum < 0.22:
+        boost = 0.22 - lum
+        return (min(1.0, r + boost), min(1.0, g + boost), min(1.0, b + boost))
     return base
 
 def get_mass(symbol: str) -> float:

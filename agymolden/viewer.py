@@ -725,8 +725,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.shader_program = self._build_shader(VERTEX_SHADER_SRC, FRAGMENT_SHADER_SRC)
         self.surface_program = self._build_shader(SURFACE_VERTEX_SHADER, SURFACE_FRAGMENT_SHADER)
 
+        # Adaptive LOD for software renderers (no dedicated GPU)
+        try:
+            raw_renderer = glGetString(GL_RENDERER)
+            renderer_str = (raw_renderer.decode("utf-8", errors="ignore") if isinstance(raw_renderer, bytes) else str(raw_renderer or "")).lower()
+        except Exception:
+            renderer_str = ""
+        is_software_gl = any(k in renderer_str for k in ("llvmpipe", "swiftshader", "gdi generic", "softpipe"))
+        sphere_stacks, sphere_sectors = (16, 24) if is_software_gl else (48, 64)
+
         # Build sphere geometry
-        s_verts, s_inds = create_sphere_mesh(stacks=48, sectors=64)
+        s_verts, s_inds = create_sphere_mesh(stacks=sphere_stacks, sectors=sphere_sectors)
         self.sphere_indices_count = len(s_inds)
 
         self.sphere_vao = glGenVertexArrays(1)
@@ -1037,12 +1046,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             inv_q = self.rot_quat.inverted()
             cw = inv_q.rotatedVector(QtGui.QVector3D(0.0, 0.0, float(self.zoom)))
             cam_world_pos = (cw.x() + c_x, cw.y() + c_y, cw.z() + c_z)
+            lw = inv_q.rotatedVector(QtGui.QVector3D(15.0, 25.0, 20.0))
+            light_world_pos = (cam_world_pos[0] + lw.x(), cam_world_pos[1] + lw.y(), cam_world_pos[2] + lw.z())
         else:
             cam_world_pos = (c_x, c_y, self.zoom + c_z)
+            light_world_pos = (cam_world_pos[0] + 15.0, cam_world_pos[1] + 25.0, cam_world_pos[2] + 20.0)
 
         glUniformMatrix4fv(loc_proj, 1, GL_FALSE, proj_mat.data())
         glUniformMatrix4fv(loc_view, 1, GL_FALSE, view_mat.data())
-        glUniform3f(loc_light, cam_world_pos[0] + 15.0, cam_world_pos[1] + 25.0, cam_world_pos[2] + 20.0)
+        glUniform3f(loc_light, light_world_pos[0], light_world_pos[1], light_world_pos[2])
         glUniform3f(loc_view_pos, cam_world_pos[0], cam_world_pos[1], cam_world_pos[2])
         glUniform1i(loc_use_inst, 0)
         loc_pub_outline = glGetUniformLocation(self.shader_program, "u_publication_outline")
@@ -1145,9 +1157,9 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     # Aromatic / resonance bond (order 1.5): solid line + shorter parallel line
                     inward = deloc[b_key]
                     side = inward if inward is not None else perp
-                    # Rings: the second line sits inside the ring; otherwise beside the bond
-                    offsets = [(np.zeros(3), 1.0), (side * 0.18, 0.72)]
-                    cyl_rad = self.cylinder_radius * 0.78
+                    # Rings: the second line sits cleanly inside the ring (Avogadro 2 / GaussView proportions)
+                    offsets = [(np.zeros(3), 1.0), (side * 0.12, 0.78)]
+                    cyl_rad = self.cylinder_radius * 0.65
                 elif order == 1:
                     offsets = [(np.zeros(3), 1.0)]
                     cyl_rad = self.cylinder_radius
@@ -1174,6 +1186,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 # Ensure bond halves have crisp visibility and contrast against both dark and white backgrounds
                 def _bond_contrast(c):
                     lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+                    if is_white_bg and lum < 0.30:
+                        return (min(1.0, c[0] + 0.12), min(1.0, c[1] + 0.12), min(1.0, c[2] + 0.12))
                     if is_white_bg:
                         # Against pure white, darken near-white bonds slightly for clear definition
                         if lum > 0.80:
