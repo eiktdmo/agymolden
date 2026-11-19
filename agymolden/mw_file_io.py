@@ -76,6 +76,10 @@ class FileIOMixin:
         return QtCore.QSettings("AgyMolden", "AgyMolden")
 
     def _last_dir(self) -> str:
+        from .session_state import get_last_dir
+        sess_dir = get_last_dir("")
+        if sess_dir and os.path.isdir(sess_dir):
+            return sess_dir
         val = self._settings().value("last_dir", "")
         if val and os.path.isdir(str(val)) and not str(val).startswith("/tmp"):
             return str(val)
@@ -84,6 +88,8 @@ class FileIOMixin:
     def _remember_file(self, path: str):
         abs_path = os.path.abspath(path)
         self.current_file_path = abs_path
+        from .session_state import set_last_dir
+        set_last_dir(abs_path)
         s = self._settings()
         s.setValue("last_dir", os.path.dirname(abs_path))
         recent = s.value("recent_files", [])
@@ -92,6 +98,28 @@ class FileIOMixin:
         recent = [abs_path] + [p for p in recent if p != abs_path]
         s.setValue("recent_files", recent[:10])
         self._update_recent_files_menu()
+
+    def set_molecule_from_cartesian(
+        self,
+        symbols: List[str],
+        coords: np.ndarray,
+        user_bonds: Optional[List[Tuple[int, int]]] = None,
+        strict_bonds: bool = False,
+    ):
+        """Convert Cartesian symbols and coordinates into Z-Matrix and update viewer/model."""
+        arr = np.asarray(coords, dtype=np.float64)
+        bonds = user_bonds if user_bonds is not None else detect_connectivity(symbols, arr)
+        bo = detect_bond_orders(symbols, arr, bonds)
+        zatoms = cartesian_to_zmatrix(symbols, arr, user_bonds=bonds, strict_bonds=strict_bonds)
+        tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+        self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+        self.strict_topology = strict_bonds
+        self.set_molecule_from_zatoms(zatoms, exact_coords=arr)
+        self.viewer.bond_orders = bo
+        self.viewer.auto_center()
+        self.viewer.update()
+
+    load_cartesian_molecule = set_molecule_from_cartesian
 
     def _update_recent_files_menu(self):
         menu = getattr(self, "menu_recent", None)
@@ -111,12 +139,58 @@ class FileIOMixin:
             act.setToolTip(p)
             act.triggered.connect(lambda checked=False, path=p: self.open_path(path))
 
+    def _clear_stale_surfaces_and_qm_state(self, clear_molden: bool = True):
+        """Clear 3D volumetric/orbital isosurfaces and stale QM metadata when starting or loading a new molecule."""
+        if hasattr(self, "viewer") and self.viewer is not None:
+            self.viewer.active_isosurfaces = []
+            self.viewer.clear_surface_rect = None
+            self.viewer.clear_surface_hovered = False
+            self.viewer.custom_charges = None
+            self.viewer.nuclear_forces = None
+            self.viewer.update()
+        self._current_rendered_mo_vol = None
+        self._semiempirical_qm_props = None
+        self._nonbonded_tree_edges = set()
+        if clear_molden:
+            self._active_molden_path = None
+            self._active_molden_data = None
+            self._companion_positron_molden_path = None
+            if hasattr(self, "_traj_timer") and self._traj_timer is not None and self._traj_timer.isActive():
+                self._traj_timer.stop()
+            if hasattr(self, "btn_traj_play") and self.btn_traj_play:
+                self.btn_traj_play.setText("▶ Play")
+            self.trajectory_coords = []
+            self.trajectory_energies = []
+            self.trajectory_symbols = []
+            if hasattr(self, "slider_trajectory") and self.slider_trajectory:
+                self.slider_trajectory.blockSignals(True)
+                self.slider_trajectory.setRange(0, 0)
+                self.slider_trajectory.setValue(0)
+                self.slider_trajectory.blockSignals(False)
+            if hasattr(self, "lbl_trajectory_step") and self.lbl_trajectory_step:
+                self.lbl_trajectory_step.setText("Step 0/0")
+            if hasattr(self, "lbl_trajectory_energy") and self.lbl_trajectory_energy:
+                self.lbl_trajectory_energy.setText("")
+            if hasattr(self, "sparkline_trajectory") and self.sparkline_trajectory:
+                self.sparkline_trajectory.set_data([])
+            if hasattr(self, "table_orbitals"):
+                self.table_orbitals.setRowCount(0)
+            if hasattr(self, "lbl_mo_status") and self.lbl_mo_status:
+                self.lbl_mo_status.setText("No Molecular Orbitals loaded.")
+            if hasattr(self, "lbl_mo_gap_badge") and self.lbl_mo_gap_badge:
+                self.lbl_mo_gap_badge.setVisible(False)
+            if hasattr(self, "grp_qm_summary") and self.grp_qm_summary:
+                self.grp_qm_summary.setVisible(False)
+            if hasattr(self, "grp_trajectory") and self.grp_trajectory:
+                self.grp_trajectory.setVisible(False)
+
     def _on_new_molecule(self):
         if self.zatoms:
             self._push_undo_state()
         self.variables = {}
         self.cross_bonds = set()
         self.strict_topology = False
+        self._clear_stale_surfaces_and_qm_state()
         self.set_molecule_from_zatoms([])
         self.statusBar().showMessage("Cleared molecule (empty workspace, ready for Add Line)", 3000)
 
@@ -170,6 +244,8 @@ class FileIOMixin:
     def open_path(self, path: str):
         """Open a molecule file, choosing the loader from its extension."""
         low = path.lower()
+        if not low.endswith((".cube", ".molden", ".molden.input", ".molf", ".gbw", ".agyproj")):
+            self._clear_stale_surfaces_and_qm_state()
         if low.endswith(".agyproj"):
             self._load_project_bundle_path(path)
         elif low.endswith(".xyz"):
@@ -226,6 +302,7 @@ class FileIOMixin:
         from .chem_identifiers import parse_smiles_or_inchi_to_3d
         symbols, coords, bonds, bo = parse_smiles_or_inchi_to_3d(text)
         self._push_undo_state()
+        self._clear_stale_surfaces_and_qm_state()
         self.variables = {}
         zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
         tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
@@ -261,6 +338,7 @@ class FileIOMixin:
 
         def _on_structure_generated(syms, coords, bonds, bo):
             self._push_undo_state()
+            self._clear_stale_surfaces_and_qm_state()
             self.variables = {}
             try:
                 zatoms = cartesian_to_zmatrix(syms, coords, user_bonds=bonds, strict_bonds=bool(bonds))
@@ -901,18 +979,22 @@ class FileIOMixin:
             companions["Electron Density Cube"] = cand_cube_elec
         if os.path.isfile(cand_cube_pos):
             companions["Positron Density Cube"] = cand_cube_pos
-        if os.path.isfile(cand_molden_elec):
-            companions["Electronic Wavefunction (Molden)"] = cand_molden_elec
-        elif os.path.isfile(cand_molden_orca):
-            companions["ORCA Wavefunction (.molden.input)"] = cand_molden_orca
-        elif os.path.isfile(cand_molden_std):
-            companions["Electronic Wavefunction (.molden)"] = cand_molden_std
-        if os.path.isfile(cand_molden_pos):
-            companions["Positron Wavefunction (Molden)"] = cand_molden_pos
-        elif os.path.isfile(cand_molden_pos_hf):
-            companions["Positron Wavefunction (Molden)"] = cand_molden_pos_hf
-        elif os.path.isfile(cand_molden_pos_pl):
-            companions["Positron Wavefunction (Molden)"] = cand_molden_pos_pl
+        active_m = os.path.realpath(str(getattr(self, "_active_molden_path", ""))) if getattr(self, "_active_molden_path", None) else ""
+        if not active_m:
+            if os.path.isfile(cand_molden_elec):
+                companions["Electronic Wavefunction (Molden)"] = cand_molden_elec
+            elif os.path.isfile(cand_molden_orca):
+                companions["ORCA Wavefunction (.molden.input)"] = cand_molden_orca
+            elif os.path.isfile(cand_molden_std):
+                companions["Electronic Wavefunction (.molden)"] = cand_molden_std
+        active_pos = os.path.realpath(str(getattr(self, "_companion_positron_molden_path", ""))) if getattr(self, "_companion_positron_molden_path", None) else ""
+        if not active_pos:
+            if os.path.isfile(cand_molden_pos):
+                companions["Positron Wavefunction (Molden)"] = cand_molden_pos
+            elif os.path.isfile(cand_molden_pos_hf):
+                companions["Positron Wavefunction (Molden)"] = cand_molden_pos_hf
+            elif os.path.isfile(cand_molden_pos_pl):
+                companions["Positron Wavefunction (Molden)"] = cand_molden_pos_pl
         if os.path.isfile(cand_scan):
             companions["PES Scan Curve (.scan)"] = cand_scan
 
@@ -958,6 +1040,12 @@ class FileIOMixin:
             return
 
         coords = self.trajectory_coords[step]
+        if len(coords) != len(self.zatoms):
+            if hasattr(self, "_traj_timer") and self._traj_timer is not None and self._traj_timer.isActive():
+                self._traj_timer.stop()
+            if hasattr(self, "btn_traj_play") and self.btn_traj_play:
+                self.btn_traj_play.setText("▶ Play")
+            return
         n_steps = len(self.trajectory_coords)
         if hasattr(self, "lbl_trajectory_step"):
             self.lbl_trajectory_step.setText(f"Step {step + 1}/{n_steps}")

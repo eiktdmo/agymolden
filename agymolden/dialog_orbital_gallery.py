@@ -109,6 +109,15 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         self.combo_res.setCurrentIndex(1)
         form_settings.addRow("Grid Mesh:", self.combo_res)
 
+        self.spin_margin = QtWidgets.QDoubleSpinBox()
+        self.spin_margin.setRange(1.0, 15.0)
+        self.spin_margin.setDecimals(1)
+        self.spin_margin.setSingleStep(0.5)
+        self.spin_margin.setValue(3.0)
+        self.spin_margin.setSuffix(" a₀ (Bohr)")
+        self.spin_margin.setToolTip("Plot box padding beyond the outer atoms (Bohr). Increase if orbital lobes are clipped.")
+        form_settings.addRow("Plot Box Size:", self.spin_margin)
+
         self.combo_bg = QtWidgets.QComboBox()
         self.combo_bg.addItems(["Dark (#1e2129)", "White", "Transparent"])
         self.combo_bg.setCurrentIndex(0)
@@ -296,6 +305,7 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         # Render loop in background thread or sequential timer steps
         isovalue = self.spin_iso.value()
         n_pts = int(self.combo_res.currentData() or 40)
+        margin_b = float(self.spin_margin.value()) if hasattr(self, "spin_margin") else 3.0
         bg_mode_text = self.combo_bg.currentText().lower()
         if "white" in bg_mode_text:
             bg_mode = "white"
@@ -307,15 +317,28 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
             bg_mode = "dark"
             transparent = False
 
-        self._run_batch_render_sequence(selected, isovalue, n_pts, bg_mode, transparent)
+        self._run_batch_render_sequence(selected, isovalue, n_pts, bg_mode, transparent, margin_bohr=margin_b)
 
-    def _run_batch_render_sequence(self, selected_indices: List[int], isovalue: float, n_pts: int, bg_mode: str, transparent: bool):
-        from .volumetric import evaluate_molden_orbital_grid, generate_orbital_surfaces
+    def _run_batch_render_sequence(self, selected_indices: List[int], isovalue: float, n_pts: int, bg_mode: str, transparent: bool, margin_bohr: float = 3.0):
+        import numpy as np
+        from .volumetric import evaluate_molden_orbital_grid, generate_orbital_surfaces, parse_molden_file
         viewer = getattr(self._parent_mw, "viewer", None)
         if not viewer:
             QtWidgets.QMessageBox.critical(self, "Error", "3D Molecule Viewer is not available.")
             self._finish_generate()
             return
+
+        # Ensure the 3D viewer has molecular coordinates loaded from the Molden file if the canvas was empty
+        if getattr(viewer, "coords", None) is None or len(viewer.coords) == 0:
+            try:
+                m_data = parse_molden_file(self._molden_path)
+                if m_data and len(m_data.symbols) > 0 and len(m_data.coords) == len(m_data.symbols):
+                    if hasattr(self._parent_mw, "load_cartesian_molecule"):
+                        self._parent_mw.load_cartesian_molecule(
+                            m_data.symbols, m_data.coords, title=os.path.basename(self._molden_path)
+                        )
+            except Exception:
+                pass
 
         orig_surfaces = getattr(viewer, "active_isosurfaces", [])
         orig_clean = getattr(viewer, "export_clean_mode", False)
@@ -330,6 +353,7 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
 
         # Step-by-step generator using QTimer so UI remains completely responsive with progress updates
         idx_cursor = [0]
+        self._last_render_error = None
 
         def _step():
             if self._cancel_requested or idx_cursor[0] >= len(selected_indices):
@@ -347,11 +371,11 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
 
             # 1. Compute orbital grid
             try:
-                vol = evaluate_molden_orbital_grid(self._molden_path, orbital_index=mo_idx, nx=n_pts, ny=n_pts, nz=n_pts)
-                if vol:
-                    max_abs = float(vol.grid_data.max()) if vol.grid_data is not None else 0.0
+                vol = evaluate_molden_orbital_grid(self._molden_path, orbital_index=mo_idx, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_bohr)
+                if vol and vol.grid_data is not None:
+                    max_abs = float(np.max(np.abs(vol.grid_data)))
                     eff_iso = isovalue
-                    if eff_iso >= max_abs and max_abs > 1e-5:
+                    if eff_iso >= max_abs * 0.90 and max_abs > 1e-5:
                         eff_iso = round(max_abs * 0.45, 4)
 
                     if is_pos_file:
@@ -373,7 +397,6 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
                     if not img.isNull():
                         mo_obj = self._orbitals[mo_idx]
                         ev_val = float(mo_obj.energy) * 27.211386
-                        sym = str(getattr(mo_obj, "sym", ""))
 
                         tag = f"MO #{mo_idx+1}"
                         if mo_idx == self._homo_idx:
@@ -384,8 +407,12 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
                         label = f"{tag}\nE = {ev_val:+.2f} eV"
                         self._cache_images[mo_idx] = (img.copy(), ev_val, label)
                         self._add_thumbnail_to_grid(mo_idx, img, label)
+                else:
+                    self._last_render_error = (
+                        f"Could not evaluate 3D basis/MO grid from '{os.path.basename(self._molden_path)}'."
+                    )
             except Exception as ex:
-                print(f"Error computing MO #{mo_idx+1}: {ex}")
+                self._last_render_error = str(ex)
 
             idx_cursor[0] += 1
             self.progress_bar.setValue(idx_cursor[0])
@@ -450,7 +477,10 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
         if hasattr(self, "btn_copy_sheet"):
             self.btn_copy_sheet.setEnabled(has_imgs)
         self.btn_save_zip.setEnabled(has_imgs)
-        self.lbl_stats.setText(f"Completed {len(self._cache_images)} orbital snapshots.")
+        if not has_imgs and getattr(self, "_last_render_error", None):
+            self.lbl_stats.setText(f"⚠️ 0 snapshots generated: {self._last_render_error}")
+        else:
+            self.lbl_stats.setText(f"Completed {len(self._cache_images)} orbital snapshots.")
 
     def _create_composite_contact_sheet(self) -> QtGui.QImage:
         """Compose all cached orbital snapshots into a high-res publication-ready contact sheet grid."""

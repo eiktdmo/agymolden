@@ -173,7 +173,7 @@ class SketchCanvas2D(QtWidgets.QWidget):
         self.update()
         self.molecule_changed.emit()
 
-    def add_fragment_ring(self, n_sides: int = 6):
+    def add_fragment_ring(self, n_sides: int = 6, aromatic: bool = False):
         """Adds a regular n-sided ring centered on canvas or clicked atom."""
         self.push_undo_state()
         cx = self.width() / 2.0 if self.width() > 0 else 240.0
@@ -190,7 +190,8 @@ class SketchCanvas2D(QtWidgets.QWidget):
         for i in range(n_sides):
             a1 = start_idx + i
             a2 = start_idx + ((i + 1) % n_sides)
-            self.bonds.append(SketchBond2D(atom1=a1, atom2=a2, order=1))
+            b_order = 2 if (aromatic and n_sides == 6 and i % 2 == 0) else 1
+            self.bonds.append(SketchBond2D(atom1=a1, atom2=a2, order=b_order))
 
         self.update()
         self.molecule_changed.emit()
@@ -210,6 +211,10 @@ class SketchCanvas2D(QtWidgets.QWidget):
             from rdkit.Chem import AllChem
             mol = Chem.MolFromSmiles(smi)
             if mol is not None:
+                try:
+                    Chem.Kekulize(mol, clearAromaticFlags=True)
+                except Exception:
+                    pass
                 AllChem.Compute2DCoords(mol)
                 conf = mol.GetConformer()
                 frag_syms = [a.GetSymbol() for a in mol.GetAtoms()]
@@ -221,13 +226,45 @@ class SketchCanvas2D(QtWidgets.QWidget):
             pass
 
         if not frag_syms:
-            if group_key.startswith("Me"):
-                frag_syms = ["C"]
-                frag_pos = [(0.0, 0.0)]
-            elif group_key.startswith("Ph"):
+            if group_key.startswith("Ph"):
                 frag_syms = ["C"] * 6
-                frag_pos = [(40.0 * math.cos(2*math.pi*i/6), 40.0 * math.sin(2*math.pi*i/6)) for i in range(6)]
-                frag_bonds = [(i, (i + 1) % 6, 1) for i in range(6)]
+                frag_pos = [(42.0 * math.cos(2 * math.pi * i / 6), 42.0 * math.sin(2 * math.pi * i / 6)) for i in range(6)]
+                frag_bonds = [(i, (i + 1) % 6, 2 if i % 2 == 0 else 1) for i in range(6)]
+            elif group_key.startswith("Et"):
+                frag_syms = ["C", "C"]
+                frag_pos = [(42.0, 0.0), (0.0, 0.0)]
+                frag_bonds = [(0, 1, 1)]
+            elif group_key.startswith("tBu"):
+                frag_syms = ["C", "C", "C", "C"]
+                frag_pos = [(42.0, 0.0), (0.0, 0.0), (0.0, 42.0), (0.0, -42.0)]
+                frag_bonds = [(1, 0, 1), (1, 2, 1), (1, 3, 1)]
+            elif group_key.startswith("NO2"):
+                frag_syms = ["N", "O", "O"]
+                frag_pos = [(0.0, 0.0), (36.0, 24.0), (36.0, -24.0)]
+                frag_bonds = [(0, 1, 2), (0, 2, 1)]
+            elif group_key.startswith("CF3"):
+                frag_syms = ["C", "F", "F", "F"]
+                frag_pos = [(0.0, 0.0), (42.0, 0.0), (0.0, 42.0), (0.0, -42.0)]
+                frag_bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1)]
+            elif group_key.startswith("COOH"):
+                frag_syms = ["C", "O", "O"]
+                frag_pos = [(0.0, 0.0), (36.0, 24.0), (36.0, -24.0)]
+                frag_bonds = [(0, 1, 2), (0, 2, 1)]
+            elif group_key.startswith("CHO"):
+                frag_syms = ["C", "O"]
+                frag_pos = [(0.0, 0.0), (40.0, 0.0)]
+                frag_bonds = [(0, 1, 2)]
+            elif group_key.startswith("OMe"):
+                frag_syms = ["O", "C"]
+                frag_pos = [(0.0, 0.0), (40.0, 0.0)]
+                frag_bonds = [(0, 1, 1)]
+            elif group_key.startswith("NH2"):
+                frag_syms = ["N"]
+                frag_pos = [(0.0, 0.0)]
+            elif group_key.startswith("SO3H"):
+                frag_syms = ["S", "O", "O", "O"]
+                frag_pos = [(0.0, 0.0), (40.0, 0.0), (0.0, 40.0), (0.0, -40.0)]
+                frag_bonds = [(0, 1, 2), (0, 2, 2), (0, 3, 1)]
             else:
                 frag_syms = ["C"]
                 frag_pos = [(0.0, 0.0)]
@@ -592,11 +629,15 @@ class MoleculeSketcher2DDialog(QtWidgets.QDialog):
         side_bar.addSpacing(6)
         side_bar.addWidget(QtWidgets.QLabel("<b>Templates & Stamp Groups:</b>"))
         btn_ring6 = QtWidgets.QPushButton("⌬ Benzene")
-        btn_ring6.clicked.connect(lambda: self.canvas.add_fragment_ring(6))
+        btn_ring6.clicked.connect(lambda: self.canvas.add_fragment_ring(6, aromatic=True))
         side_bar.addWidget(btn_ring6)
 
+        btn_ring6_sat = QtWidgets.QPushButton("⬡ Cyclohexane")
+        btn_ring6_sat.clicked.connect(lambda: self.canvas.add_fragment_ring(6, aromatic=False))
+        side_bar.addWidget(btn_ring6_sat)
+
         btn_ring5 = QtWidgets.QPushButton("⏢ 5-Ring")
-        btn_ring5.clicked.connect(lambda: self.canvas.add_fragment_ring(5))
+        btn_ring5.clicked.connect(lambda: self.canvas.add_fragment_ring(5, aromatic=False))
         side_bar.addWidget(btn_ring5)
 
         # Quick Stamp Palette Grid
@@ -855,21 +896,33 @@ class MoleculeSketcher2DDialog(QtWidgets.QDialog):
 
             if add_hs:
                 try:
-                    from .forcefield import add_hydrogens_to_valence
-                    h_syms, h_coords, h_bonds = add_hydrogens_to_valence(curr_syms, curr_coords, bonds=curr_bonds)
+                    from .forcefield import add_hydrogens_to_valence, detect_connectivity
+                    if not curr_bonds and len(curr_syms) > 1:
+                        curr_bonds = detect_connectivity(curr_syms, curr_coords)
+                    h_syms, h_coords, _n_added = add_hydrogens_to_valence(
+                        curr_syms, curr_coords, user_bonds=curr_bonds or None, user_bond_orders=curr_bo or None
+                    )
+                    orig_bonds = list(curr_bonds)
                     curr_syms = h_syms
                     curr_coords = h_coords
-                    curr_bonds = h_bonds
+                    det_bonds = detect_connectivity(curr_syms, curr_coords)
+                    bond_set = { (min(u, v), max(u, v)) for u, v in orig_bonds } | { (min(u, v), max(u, v)) for u, v in det_bonds }
+                    curr_bonds = sorted(bond_set)
                     for b in curr_bonds:
                         if b not in curr_bo:
                             curr_bo[b] = 1
                 except Exception as e:
                     log.warning("Pure-Python hydrogen addition notice: %s", e)
 
-            from .forcefield import UniversalForceField
+            from .forcefield import optimize_geometry_force_field
             try:
-                uff = UniversalForceField(curr_syms, curr_coords, bonds=curr_bonds)
-                opt_coords, _ = uff.optimize(max_steps=200, lr=0.1)
+                opt_coords, _ = optimize_geometry_force_field(
+                    curr_syms,
+                    curr_coords,
+                    user_bonds=curr_bonds,
+                    max_iter=200,
+                    user_bond_orders=curr_bo,
+                )
                 final_coords = opt_coords
             except Exception:
                 final_coords = curr_coords

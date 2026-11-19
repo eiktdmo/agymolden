@@ -155,6 +155,10 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         # Check for first-launch onboarding tour
         QtCore.QTimer.singleShot(1200, self._check_first_run_tour)
 
+        # Start companion IPC server for agemacs <-> AgyMolden integration
+        from agymolden.companion import start_agymolden_ipc
+        start_agymolden_ipc(self)
+
     @property
     def zatoms(self) -> List[ZAtom]:
         return self.model.zatoms
@@ -445,6 +449,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         exact_coords: Optional[np.ndarray] = None,
         preserve_frame: bool = False,
     ):
+        prev_symbols = [a.symbol for a in getattr(self, "zatoms", [])]
+        prev_coords = np.asarray(getattr(self, "coords", np.empty((0, 3))), dtype=np.float64)
+
         self.zatoms = zatoms
         if len(zatoms) == 0:
             self._rigid_frame = None
@@ -461,6 +468,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 self.coords = local_coords
         symbols = [a.symbol for a in zatoms]
 
+        structure_modified = (
+            prev_symbols != symbols
+            or prev_coords.shape != self.coords.shape
+            or (len(self.coords) > 0 and float(np.max(np.abs(prev_coords - self.coords))) > 1e-4)
+        )
+
         # Extract user bonds from Z-matrix (sanitized: no H-H bonds, no non-bonded distance references)
         user_bonds = []
         is_pure_h2 = (len(zatoms) == 2 and symbols[0] == "H" and symbols[1] == "H")
@@ -472,7 +485,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                     continue
                 if s_ref == "H" and s_cur == "H" and not is_pure_h2:
                     continue
-                if len(self.coords) == len(symbols):
+                if (min(a.ref1, idx), max(a.ref1, idx)) in getattr(self, "_nonbonded_tree_edges", set()):
+                    continue
+                if not getattr(self, "strict_topology", False) and len(self.coords) == len(symbols):
                     d = float(np.linalg.norm(self.coords[a.ref1] - self.coords[idx]))
                     r_cov_max = (get_cov_radius(s_ref) + get_cov_radius(s_cur)) * 1.38 + 0.25
                     if d > r_cov_max:
@@ -501,6 +516,24 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self.btn_play_vibration.setEnabled(False)
             self.btn_stop_vibration.setEnabled(False)
             self.lbl_vib_info.setText("Click 'Calculate Frequencies' to analyze normal modes.")
+
+        if structure_modified:
+            if getattr(self.viewer, "active_isosurfaces", None):
+                self.viewer.active_isosurfaces = []
+                self.viewer.clear_surface_rect = None
+                self.viewer.clear_surface_hovered = False
+            self._current_rendered_mo_vol = None
+            self._semiempirical_qm_props = None
+            if prev_symbols != symbols:
+                self._active_molden_path = None
+                self._active_molden_data = None
+                self._companion_positron_molden_path = None
+                if hasattr(self, "table_orbitals"):
+                    self.table_orbitals.setRowCount(0)
+                if hasattr(self, "lbl_mo_status") and self.lbl_mo_status:
+                    self.lbl_mo_status.setText("No Molecular Orbitals loaded.")
+                if hasattr(self, "lbl_mo_gap_badge") and self.lbl_mo_gap_badge:
+                    self.lbl_mo_gap_badge.setVisible(False)
 
         self.viewer.highlighted_feature_atoms = {}
         self.viewer.strict_bonds = bool(getattr(self, 'strict_topology', False))
@@ -570,6 +603,8 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 if s_ref == "X" or s_cur == "X":
                     continue
                 if s_ref == "H" and s_cur == "H" and not is_pure_h2:
+                    continue
+                if (min(a.ref1, idx), max(a.ref1, idx)) in getattr(self, "_nonbonded_tree_edges", set()):
                     continue
                 if len(self.coords) == len(self.viewer.symbols):
                     d = float(np.linalg.norm(self.coords[a.ref1] - self.coords[idx]))
@@ -720,6 +755,8 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
     def load_preset_molecule(self, name: str):
         if name in SAMPLE_MOLECULES:
             self._push_undo_state()
+            if hasattr(self, "_clear_stale_surfaces_and_qm_state"):
+                self._clear_stale_surfaces_and_qm_state()
             self.cross_bonds = set()
             self.strict_topology = False
             text = SAMPLE_MOLECULES[name]

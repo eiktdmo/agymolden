@@ -169,8 +169,9 @@ class ViewerInteractionMixin:
                     self.selected_bond = None
                     self.highlighted_feature_atoms = {}
                     self.smartslide_selection_active = False
-                    # If clicked on the already-selected single atom -> unselect it!
-                    if clicked_atom == self.selected_atom_idx and len(self.multi_selected) <= 1:
+                    # If clicked on the already-selected single atom in Inspect mode -> unselect it!
+                    was_already_sel = (clicked_atom == self.selected_atom_idx and len(self.multi_selected) <= 1)
+                    if was_already_sel and getattr(self, "interaction_mode", "build") != "build":
                         self.selected_atom_idx = None
                         self.multi_selected = []
                         self._update_measurement_info()
@@ -178,10 +179,11 @@ class ViewerInteractionMixin:
                         self.update()
                         return
                     else:
+                        self._press_was_already_selected = was_already_sel
                         self.selected_atom_idx = clicked_atom
                         self.multi_selected = [clicked_atom]
                         self._update_measurement_info()
-                        # Only start Avogadro-style atom addition drag when in Build mode
+                        # Start Avogadro-style atom/bond addition drag when in Build mode (even from an already-selected atom!)
                         if getattr(self, "interaction_mode", "build") == "build":
                             self.atom_add_drag_active = True
                             self.atom_add_drag_anchor_idx = clicked_atom
@@ -527,8 +529,13 @@ class ViewerInteractionMixin:
                             mw.statusBar().showMessage("⚡ Auto-Relaxing geometry (UFF)...", 1500)
                         QtCore.QTimer.singleShot(30, lambda: self._run_auto_relax_uff(mw))
                 elif anchor_idx is not None:
-                    # Simple single click on atom (no significant drag): atom is already selected
-                    pass
+                    # Simple single click on atom (no significant drag): toggle unselect if it was already selected
+                    if getattr(self, "_press_was_already_selected", False):
+                        self.selected_atom_idx = None
+                        self.multi_selected = []
+                        self._update_measurement_info()
+                        self.update()
+                    self._press_was_already_selected = False
                 return
 
             # Check if this was a plain click on empty canvas or bond (release without drag)

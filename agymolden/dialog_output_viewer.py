@@ -161,7 +161,8 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         window_lum = self.palette().color(QtGui.QPalette.ColorRole.Window).lightness()
         if window_lum < 100:
             return False
-        settings = QtCore.QSettings("AgyMolden", "AgyMolden")
+        from agymolden.session_state import get_settings
+        settings = get_settings("AgyMolden")
         return settings.value("color_theme", "white") == "white"
 
     def load_file(self, path: str):

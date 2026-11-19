@@ -149,8 +149,57 @@ class ImportController:
                 if hasattr(self.mw, "tabs_spectra") and not (res.vibrational_analysis and res.vibrational_analysis.n_modes > 0):
                     self.mw.tabs_spectra.setCurrentIndex(2)
 
-            # Apply Molecular Orbitals
-            if getattr(res, "orbitals", None) and hasattr(self.mw, "set_orbitals_from_data"):
+            self.mw._last_loaded_qm_log_path = path
+
+            # Apply Molecular Orbitals: always prefer a full companion Molden / .gbw wavefunction
+            # (with [GTO] basis & [MO] coefficients) over log eigenvalue tables when available!
+            q_dir = os.path.dirname(path)
+            q_base = os.path.splitext(os.path.basename(path))[0]
+            companion_loaded = False
+            for cand_ext in (
+                "_hf_electrons.molden",
+                "_electrons.molden",
+                ".molden.input",
+                ".molden",
+                ".e-.molden",
+                ".E-.molden",
+                ".E-ALPHA.molden",
+                ".molf",
+                ".fchk.molden",
+                ".gbw",
+            ):
+                cand_m = os.path.join(q_dir, q_base + cand_ext)
+                if os.path.isfile(cand_m):
+                    if cand_m.lower().endswith(".gbw"):
+                        from ..volumetric import convert_gbw_to_molden_if_possible
+                        conv_m = convert_gbw_to_molden_if_possible(cand_m)
+                        if not conv_m or not os.path.isfile(conv_m):
+                            continue
+                        cand_m = conv_m
+                    try:
+                        self.mw.load_orbitals_from_molden(cand_m, auto_render=False)
+                        companion_loaded = True
+                        break
+                    except Exception:
+                        log.debug("Auto-loading companion molden failed", exc_info=True)
+
+            if not companion_loaded and path.lower().endswith((".fchk", ".fch")):
+                try:
+                    import cclib
+                    p_cclib = cclib.io.ccopen(path)
+                    data_cclib = p_cclib.parse()
+                    if data_cclib is not None:
+                        m_str = cclib.io.moldenwriter.MOLDEN(data_cclib).generate_repr()
+                        if m_str and len(m_str) > 50:
+                            cand_fchk_molden = os.path.join(q_dir, q_base + ".fchk.molden")
+                            with open(cand_fchk_molden, "w", encoding="utf-8") as f_fchk:
+                                f_fchk.write(m_str)
+                            self.mw.load_orbitals_from_molden(cand_fchk_molden, auto_render=False)
+                            companion_loaded = True
+                except Exception as e_fchk:
+                    log.debug("Auto-generation of Molden from FCHK failed: %s", e_fchk)
+
+            if not companion_loaded and getattr(res, "orbitals", None) and hasattr(self.mw, "set_orbitals_from_data"):
                 from ..volumetric import MoldenFileData
                 m_dummy = MoldenFileData(
                     title=f"{res.program_name} log orbitals",
@@ -159,40 +208,12 @@ class ImportController:
                     orbitals=res.orbitals or [],
                 )
                 self.mw.set_orbitals_from_data(m_dummy, homo_idx=res.homo_idx, source_label=os.path.basename(path))
-            else:
-                q_dir = os.path.dirname(path)
-                q_base = os.path.splitext(os.path.basename(path))[0]
-                companion_loaded = False
-                for cand_ext in ("_hf_electrons.molden", "_electrons.molden", ".molden", ".molden.input", ".e-.molden", ".E-.molden", ".E-ALPHA.molden", ".molf", ".fchk.molden"):
-                    cand_m = os.path.join(q_dir, q_base + cand_ext)
-                    if os.path.isfile(cand_m):
-                        try:
-                            self.mw.load_orbitals_from_molden(cand_m, auto_render=False)
-                            companion_loaded = True
-                            break
-                        except Exception:
-                            log.debug("Auto-loading companion molden failed", exc_info=True)
-                if not companion_loaded and path.lower().endswith((".fchk", ".fch")):
-                    try:
-                        import cclib
-                        p_cclib = cclib.io.ccopen(path)
-                        data_cclib = p_cclib.parse()
-                        if data_cclib is not None:
-                            m_str = cclib.io.moldenwriter.MOLDEN(data_cclib).generate_repr()
-                            if m_str and len(m_str) > 50:
-                                cand_fchk_molden = os.path.join(q_dir, q_base + ".fchk.molden")
-                                with open(cand_fchk_molden, "w", encoding="utf-8") as f_fchk:
-                                    f_fchk.write(m_str)
-                                self.mw.load_orbitals_from_molden(cand_fchk_molden, auto_render=False)
-                    except Exception as e_fchk:
-                        log.debug("Auto-generation of Molden from FCHK failed: %s", e_fchk)
 
             if hasattr(self.mw, "_active_molden_data") and self.mw._active_molden_data:
                 idx = self.mw.tabs.indexOf(getattr(self.mw, "tab_orbitals", None))
                 if idx >= 0:
                     self.mw.tabs.setCurrentIndex(idx)
 
-            self.mw._last_loaded_qm_log_path = path
             self.mw._remember_file(path)
             if hasattr(self.mw, "set_interaction_mode"):
                 self.mw.set_interaction_mode("inspect")

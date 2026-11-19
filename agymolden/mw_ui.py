@@ -75,6 +75,80 @@ from .theme import (
 from .mw_ui_tabs import UIInspectorTabsMixin
 
 
+class _FlowLayout(QtWidgets.QLayout):
+    """Responsive wrapping layout so toolbar buttons wrap onto new rows instead of hiding off-screen."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, margin: int = 0, h_spacing: int = 6, v_spacing: int = 4):
+        super().__init__(parent)
+        self._items: List[QtWidgets.QLayoutItem] = []
+        self._h_spacing = h_spacing
+        self._v_spacing = v_spacing
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def addItem(self, item: QtWidgets.QLayoutItem):
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> Optional[QtWidgets.QLayoutItem]:
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> Optional[QtWidgets.QLayoutItem]:
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> QtCore.Qt.Orientation:
+        return QtCore.Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QtCore.QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QtCore.QRect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QtCore.QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QtCore.QSize:
+        size = QtCore.QSize(0, 0)
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QtCore.QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect: QtCore.QRect, test_only: bool) -> int:
+        m = self.contentsMargins()
+        eff = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = eff.x()
+        y = eff.y()
+        line_height = 0
+        for item in self._items:
+            wid = item.widget()
+            if wid is not None and wid.isHidden():
+                continue
+            hint = item.sizeHint()
+            next_x = x + hint.width() + self._h_spacing
+            if next_x - self._h_spacing > eff.right() and line_height > 0:
+                x = eff.x()
+                y = y + line_height + self._v_spacing
+                next_x = x + hint.width() + self._h_spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + m.bottom()
+
+
 class UIMixin(UIInspectorTabsMixin):
     def _init_ui(self):
         # Central splitter: Left is 3D Viewport, Right is Control Panel & ZMAT Table
@@ -118,9 +192,9 @@ class UIMixin(UIInspectorTabsMixin):
         self.viewer.measurement_updated.connect(self._on_measurement_updated)
         left_layout.addWidget(self.viewer, stretch=1)
 
-        # Viewer quick controls ribbon (compact so essential builder controls are always visible without scrolling)
-        view_ctrls = QtWidgets.QHBoxLayout()
-        view_ctrls.setSpacing(6)
+        # Viewer quick controls ribbon (responsive wrapping layout so buttons never hide when right panel is widened)
+        ribbon_widget = QtWidgets.QWidget()
+        view_ctrls = _FlowLayout(ribbon_widget, margin=0, h_spacing=6, v_spacing=4)
 
         self.btn_mode_toggle = QtWidgets.QPushButton("✏️ Build")
         self.btn_mode_toggle.setCheckable(True)
@@ -395,22 +469,8 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_display_menu.setMenu(self.menu_display_overlays)
         view_ctrls.addWidget(self.btn_display_menu)
 
-        view_ctrls.addStretch()
-
-        # Ribbon lives in a horizontal scroll area so its width never forces the window wider
-        ribbon_widget = QtWidgets.QWidget()
-        ribbon_widget.setLayout(view_ctrls)
-        view_ctrls.setContentsMargins(0, 0, 0, 0)
-        ribbon_scroll = QtWidgets.QScrollArea()
-        ribbon_scroll.setWidget(ribbon_widget)
-        ribbon_scroll.setWidgetResizable(True)
-        ribbon_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        ribbon_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        ribbon_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        ribbon_scroll.setMinimumWidth(100)
-        ribbon_scroll.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Fixed)
-        ribbon_scroll.setFixedHeight(ribbon_widget.sizeHint().height() + 18)
-        left_layout.addWidget(ribbon_scroll)
+        ribbon_widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Minimum)
+        left_layout.addWidget(ribbon_widget)
 
         # Measurement readout + inline live geometry spinbox (GaussView style)
         meas_row = QtWidgets.QHBoxLayout()
@@ -591,24 +651,13 @@ class UIMixin(UIInspectorTabsMixin):
         self.sparkline_trajectory.step_clicked.connect(lambda s: self.slider_trajectory.setValue(s))
         traj_box_layout.addWidget(self.sparkline_trajectory)
 
-        # Row 2: Step Energy & Analysis Tools (Scrollable so buttons are always clearly readable)
-        row2_scroll = QtWidgets.QScrollArea()
-        row2_scroll.setWidgetResizable(True)
-        row2_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        row2_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        row2_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        row2_scroll.setFixedHeight(36)
-
+        # Row 2: Step Energy & Analysis Tools (wrapping flow layout so all buttons stay visible)
         row2_container = QtWidgets.QWidget()
-        row2_layout = QtWidgets.QHBoxLayout(row2_container)
-        row2_layout.setContentsMargins(0, 0, 0, 0)
-        row2_layout.setSpacing(6)
+        row2_layout = _FlowLayout(row2_container, margin=0, h_spacing=6, v_spacing=4)
 
         self.lbl_trajectory_energy = QtWidgets.QLabel("")
         self.lbl_trajectory_energy.setStyleSheet("color: #a7f3d0; font-family: monospace; font-size: 11px; white-space: nowrap;")
         row2_layout.addWidget(self.lbl_trajectory_energy)
-
-        row2_layout.addStretch()
 
         self.btn_adopt_traj_frame = QtWidgets.QPushButton("📌 Adopt Frame")
         self.btn_adopt_traj_frame.setStyleSheet("background-color: #059669; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
@@ -648,8 +697,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_view_loaded_log.clicked.connect(self._on_view_qm_output_file)
         row2_layout.addWidget(self.btn_view_loaded_log)
 
-        row2_scroll.setWidget(row2_container)
-        traj_box_layout.addWidget(row2_scroll)
+        traj_box_layout.addWidget(row2_container)
 
         self.grp_trajectory.setVisible(False)
         left_layout.addWidget(self.grp_trajectory)
@@ -2386,12 +2434,6 @@ class UIMixin(UIInspectorTabsMixin):
         self.act_command_palette.setToolTip("Instant searchable command palette for all 60+ AgyMolden tools and actions (Ctrl+K / Ctrl+Shift+P)")
         self.act_command_palette.triggered.connect(self._on_open_command_palette)
         menu_help.addAction(self.act_command_palette)
-
-        act_shortcuts = QtGui.QAction("⌨️ &Keyboard Shortcuts...", self)
-        act_shortcuts.setShortcut("F1")
-        act_shortcuts.setToolTip("Show quick keyboard & mouse shortcuts cheat sheet (F1)")
-        act_shortcuts.triggered.connect(self._on_show_shortcuts_cheat_sheet)
-        menu_help.addAction(act_shortcuts)
 
         act_test_setup = QtGui.QAction("🩺 &Test My Setup (ORCA / xTB)...", self)
         act_test_setup.setToolTip("Check whether ORCA and xTB are detected and ready to run")

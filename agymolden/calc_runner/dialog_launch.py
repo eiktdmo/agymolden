@@ -890,7 +890,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         safe_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", profile_name)
         prof_key = f"profile_{safe_key}"
 
-        settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")
+        from agymolden.session_state import get_settings
+        settings = get_settings("RemoteProfiles")
         settings.setValue(f"{prof_key}/alias", profile_name)
         settings.setValue(f"{prof_key}/hostname", cfg.hostname)
         settings.setValue(f"{prof_key}/user", cfg.user)
@@ -938,7 +939,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
 
-        settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")
+        from agymolden.session_state import get_settings
+        settings = get_settings("RemoteProfiles")
         # Find matching group
         for group in settings.childGroups():
             if not group.startswith("profile_"):
@@ -965,7 +967,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         self.combo_remote_host.blockSignals(False)
 
     def _load_saved_settings(self):
-        settings = QtCore.QSettings("AgyMolden", "JobRunner")
+        from agymolden.session_state import get_settings
+        settings = get_settings("JobRunner")
         saved_py = settings.value("python_bin", "")
         saved_wrap = settings.value("brorsen_wrapper", "")
 
@@ -1006,7 +1009,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
                         break
 
         # Load last verified remote profile if exists
-        rem_settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")
+        from agymolden.session_state import get_settings
+        rem_settings = get_settings("RemoteProfiles")
         last_prof = rem_settings.value("last_verified_profile", "")
         if last_prof:
             h_name = rem_settings.value(f"{last_prof}/hostname", "")
@@ -1027,7 +1031,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         self._test_compatibility(fast_only=True)
 
     def _save_settings(self):
-        settings = QtCore.QSettings("AgyMolden", "JobRunner")
+        from agymolden.session_state import get_settings
+        settings = get_settings("JobRunner")
         py_bin = self.combo_conda.currentData()
         wrapper = self.combo_wrapper.currentData()
         if py_bin:

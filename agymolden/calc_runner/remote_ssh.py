@@ -148,7 +148,8 @@ def get_all_remote_hosts() -> List[RemoteHostConfig]:
 
     # 1. Load saved user profiles from QSettings FIRST
     try:
-        settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")
+        from agymolden.session_state import get_settings
+        settings = get_settings("RemoteProfiles")
         for group in settings.childGroups():
             if not group.startswith("profile_"):
                 continue

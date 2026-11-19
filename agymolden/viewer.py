@@ -759,6 +759,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         # Dynamic instance buffer for fast batch rendering of spheres
         self.sphere_inst_vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.sphere_inst_vbo)
+        glBufferData(GL_ARRAY_BUFFER, 256, None, GL_DYNAMIC_DRAW)
         # 8 floats per instance: pos(3), radius(1), color(3), hl_flag(1) = 32 bytes
         inst_stride = 8 * 4
         # Attribute 2: instance_pos (vec3)
@@ -801,6 +802,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         # Dynamic instance buffer for fast batch rendering of bond cylinders
         self.cyl_inst_vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.cyl_inst_vbo)
+        glBufferData(GL_ARRAY_BUFFER, 512, None, GL_DYNAMIC_DRAW)
         # 11 floats per cylinder instance: start_pos(3), radius(1), color(3), hl(1), end_pos(3) = 44 bytes
         cyl_inst_stride = 11 * 4
         glEnableVertexAttribArray(2)
@@ -1078,13 +1080,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             deloc = self._delocalized_bonds()
 
             # Pre-compute adjacency graph for in-plane molecular vector calculation (GaussView / Chemcraft style)
+            n_rc = len(render_coords)
             adj_graph: Dict[int, List[int]] = {}
             for u, w in self.bonds:
-                adj_graph.setdefault(u, []).append(w)
-                adj_graph.setdefault(w, []).append(u)
+                if 0 <= u < n_rc and 0 <= w < n_rc:
+                    adj_graph.setdefault(u, []).append(w)
+                    adj_graph.setdefault(w, []).append(u)
 
             cyl_instances = []
             for i1, i2 in self.bonds:
+                if not (0 <= i1 < n_rc and 0 <= i2 < n_rc):
+                    continue
                 p1 = render_coords[i1]
                 p2 = render_coords[i2]
                 v = p2 - p1
@@ -1106,6 +1112,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 if nbrs:
                     normals = []
                     for k in nbrs:
+                        if not (0 <= k < n_rc):
+                            continue
                         pk = render_coords[k]
                         vec_k = pk - p1
                         n_k = np.cross(v_norm, vec_k)
@@ -1186,16 +1194,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 # Ensure bond halves have crisp visibility and contrast against both dark and white backgrounds
                 def _bond_contrast(c):
                     lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
-                    if is_white_bg and lum < 0.30:
-                        return (min(1.0, c[0] + 0.12), min(1.0, c[1] + 0.12), min(1.0, c[2] + 0.12))
+                    if is_white_bg and lum < 0.42:
+                        # Lighten dark Carbon bonds in white mode so balls and bonds are clearly distinct
+                        return (min(1.0, c[0] + 0.16), min(1.0, c[1] + 0.16), min(1.0, c[2] + 0.16))
                     if is_white_bg:
                         # Against pure white, darken near-white bonds slightly for clear definition
                         if lum > 0.80:
-                            return (min(c[0], 0.76), min(c[1], 0.78), min(c[2], 0.80))
+                            return (min(c[0], 0.74), min(c[1], 0.76), min(c[2], 0.79))
                     else:
-                        # Against dark backgrounds, brighten overly dark bonds
-                        if lum < 0.55 and max(c) - min(c) < 0.12:
-                            return (max(c[0], 0.58), max(c[1], 0.58), max(c[2], 0.60))
+                        # Against dark backgrounds, make Carbon bonds slightly lighter than Carbon balls
+                        if lum < 0.60 and max(c) - min(c) < 0.12:
+                            return (min(1.0, c[0] + 0.12), min(1.0, c[1] + 0.12), min(1.0, c[2] + 0.12))
                     return c
                 c1 = _bond_contrast(raw_c1)
                 c2 = _bond_contrast(raw_c2)
@@ -2422,7 +2431,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
             # Top-left HUD badge: Active Element Brush indicator
             brush_sym = getattr(self, "brush_element", "C") or "C"
-            brush_text = f"Brush: {brush_sym} (Keys: C, H, O, N, S, P, F, Cl, Br, I)"
+            brush_text = f"Brush: {brush_sym}"
             painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
             b_fm = painter.fontMetrics()
             b_tw = b_fm.horizontalAdvance(brush_text)
@@ -2555,14 +2564,22 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.drawText(twz_rect, QtCore.Qt.AlignmentFlag.AlignCenter, twz_txt)
                 painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
 
-            # Top-right HUD badge: Clear 3D Orbital / Surface Pill (when active_isosurfaces is non-empty)
+            # Top-right HUD badge: Clear 3D Orbital / Surface Pill (positioned cleanly below the Formula/MW pill)
             if active_surfaces:
                 surf_txt = "✖ Clear 3D Surface (Esc)"
                 painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
                 s_fm = painter.fontMetrics()
                 s_tw = s_fm.horizontalAdvance(surf_txt)
-                y_surf = 38 if ((self.show_dipole or self.show_charges) and len(self.symbols) > 0) else 8
-                s_rect = QtCore.QRect(w - s_tw - 28, y_surf, s_tw + 18, 26)
+                has_formula_pill = len(self.symbols) > 0
+                has_extra_badge = (self.show_dipole or self.show_charges) and has_formula_pill
+                if has_extra_badge:
+                    y_surf = 72
+                elif has_formula_pill:
+                    y_surf = 44
+                else:
+                    y_surf = 12
+                s_w = s_tw + 18
+                s_rect = QtCore.QRect(w - s_w - 12, y_surf, s_w, 26)
                 self.clear_surface_rect = s_rect
                 is_hover_clear = getattr(self, "clear_surface_hovered", False)
                 painter.setBrush(QtGui.QColor(220, 38, 38, 235) if is_hover_clear else QtGui.QColor(15, 23, 42, 225))
@@ -2577,8 +2594,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                     e_min, e_max = esp_mesh.esp_range
                     cbar_w = 170
                     cbar_h = 12
-                    cbar_x = w - cbar_w - 28
-                    cbar_y = y_surf + 32
+                    cbar_x = w - cbar_w - 20
+                    cbar_y = y_surf + 48
                     box_rect = QtCore.QRect(cbar_x - 8, cbar_y - 16, cbar_w + 16, cbar_h + 36)
                     if is_white_vp:
                         painter.setBrush(QtGui.QColor(248, 250, 252, 240))

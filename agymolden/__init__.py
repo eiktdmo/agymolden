@@ -7,7 +7,7 @@ import os
 import sys
 import traceback
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 _REQUIRED = {
     "PyQt6": "PyQt6",
@@ -170,6 +170,14 @@ def main(argv=None):
     from PyQt6 import QtWidgets, QtGui, QtCore
     from .main_window import MainWindow
 
+    # Suppress noisy benign Qt Wayland textinput focus warnings on Linux desktops
+    existing_rules = os.environ.get("QT_LOGGING_RULES", "").strip()
+    wayland_rule = "qt.qpa.wayland.textinput*=false"
+    if wayland_rule not in existing_rules:
+        QtCore.QLoggingCategory.setFilterRules(
+            f"{existing_rules}\n{wayland_rule}".strip() if existing_rules else wayland_rule
+        )
+
     # Enable shared OpenGL contexts before creating QApplication to prevent context recreation flicker
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
@@ -191,6 +199,8 @@ def main(argv=None):
     fmt.setSwapInterval(1)
     QtGui.QSurfaceFormat.setDefaultFormat(fmt)
     app = QtWidgets.QApplication([sys.argv[0]] + qt_args)
+    from agymolden.session_state import install_file_dialog_session_memory
+    install_file_dialog_session_memory()
     app.setApplicationName("AgyMolden")
     app.setOrganizationName("AgyMolden")
     app.setApplicationVersion(__version__)

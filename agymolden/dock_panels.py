@@ -337,12 +337,14 @@ class WorkspaceDockManager:
 
     def save_layout(self):
         """Save dock states and positions into user preferences."""
-        settings = QtCore.QSettings("AgyMolden", "AgyMolden")
+        from agymolden.session_state import get_settings
+        settings = get_settings("AgyMolden")
         settings.setValue("workspace/dock_state", self.mw.saveState())
 
     def restore_layout(self):
         """Restore dock states and positions from user preferences."""
-        settings = QtCore.QSettings("AgyMolden", "AgyMolden")
+        from agymolden.session_state import get_settings
+        settings = get_settings("AgyMolden")
         state = settings.value("workspace/dock_state", None)
         if state is not None and isinstance(state, (QtCore.QByteArray, bytes)):
             self.mw.restoreState(state)

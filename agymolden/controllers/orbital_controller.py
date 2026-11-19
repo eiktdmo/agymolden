@@ -432,20 +432,98 @@ class OrbitalController:
 
     def open_orbital_snapshot_gallery(self) -> None:
         """Open Orbital Snapshot & Gallery dialog to batch capture all or selected orbitals."""
+        from ..volumetric import convert_gbw_to_molden_if_possible
+
         molden_path = getattr(self.mw, "_active_molden_path", None)
         molden_data = getattr(self.mw, "_active_molden_data", None)
 
-        if not molden_path or not molden_data or not getattr(molden_data, "orbitals", None):
+        # Auto-discover companion Molden / .gbw file from active Volumetric dialog, last calculation, or last QM log
+        if not molden_path or not os.path.isfile(str(molden_path)):
+            vol_dlg = getattr(self.mw, "_volumetric_dlg", None)
+            if vol_dlg and getattr(vol_dlg, "current_molden_path", None) and os.path.isfile(vol_dlg.current_molden_path):
+                molden_path = vol_dlg.current_molden_path
+                molden_data = getattr(vol_dlg, "current_molden_data", None)
+
+        if not molden_path or not os.path.isfile(str(molden_path)):
+            last_res = getattr(self.mw, "_last_calculation_results", {}) or {}
+            if last_res.get("molden_file") and os.path.isfile(last_res["molden_file"]):
+                molden_path = last_res["molden_file"]
+
+        if not molden_path or not os.path.isfile(str(molden_path)):
+            search_bases = []
+            for attr in ("_last_loaded_qm_log_path", "current_file_path"):
+                p = getattr(self.mw, attr, None)
+                if p and os.path.isfile(str(p)):
+                    search_bases.append(str(p))
+            last_res = getattr(self.mw, "_last_calculation_results", {}) or {}
+            for k in ("out_file", "input_file"):
+                p = last_res.get(k)
+                if p and os.path.isfile(str(p)):
+                    search_bases.append(str(p))
+
+            for base_file in search_bases:
+                q_dir = os.path.dirname(base_file)
+                q_stem = os.path.splitext(os.path.basename(base_file))[0]
+                for ext in (
+                    ".molden.input",
+                    ".molden",
+                    "_hf_electrons.molden",
+                    "_electrons.molden",
+                    ".e-.molden",
+                    ".E-.molden",
+                    ".E-ALPHA.molden",
+                    ".molf",
+                    ".fchk.molden",
+                    ".gbw",
+                ):
+                    cand = os.path.join(q_dir, q_stem + ext)
+                    if os.path.isfile(cand):
+                        if cand.lower().endswith(".gbw"):
+                            conv = convert_gbw_to_molden_if_possible(cand)
+                            if conv and os.path.isfile(conv):
+                                molden_path = conv
+                                break
+                        else:
+                            molden_path = cand
+                            break
+                if molden_path and os.path.isfile(str(molden_path)):
+                    break
+
+        if molden_path and os.path.isfile(str(molden_path)) and (not molden_data or not getattr(molden_data, "orbitals", None)):
+            try:
+                molden_data = parse_molden_file(molden_path)
+                self.mw._active_molden_path = molden_path
+                self.mw._active_molden_data = molden_data
+            except Exception:
+                molden_data = None
+
+        if not molden_path or not os.path.isfile(str(molden_path)) or not molden_data or not getattr(molden_data, "orbitals", None):
+            init_dir = self.mw._last_dir() if hasattr(self.mw, "_last_dir") else getattr(self.mw, "_last_opened_dir", "")
             molden_path, _ = QtWidgets.QFileDialog.getOpenFileName(
                 self.mw,
-                "Select Molden File for Orbital Snapshots",
-                getattr(self.mw, "_last_opened_dir", ""),
-                "Molden Files (*.molden *.molden.input);;All Files (*)",
+                "Select Molden or ORCA Wavefunction File for Orbital Snapshots",
+                init_dir,
+                "Molden & ORCA Wavefunctions (*.molden *.molden.input *.molf *.gbw *.fchk *.fch);;All Files (*)",
             )
             if not molden_path:
                 return
+            if molden_path.lower().endswith(".gbw"):
+                conv = convert_gbw_to_molden_if_possible(molden_path)
+                if not conv or not os.path.isfile(conv):
+                    dialog_service.warning(
+                        self.mw,
+                        "orca_2mkl Required",
+                        f"Could not convert '{os.path.basename(molden_path)}' because 'orca_2mkl' was not found.\n"
+                        "Please select a .molden.input / .molden file or configure your ORCA path under File → Configure QM Engines & Routes.",
+                    )
+                    return
+                molden_path = conv
             try:
                 molden_data = parse_molden_file(molden_path)
+                self.mw._active_molden_path = molden_path
+                self.mw._active_molden_data = molden_data
+                if hasattr(self.mw, "_remember_file"):
+                    self.mw._remember_file(molden_path)
             except Exception as e:
                 dialog_service.error(self.mw, "Error Reading Molden File", str(e), exc=e)
                 return

@@ -204,6 +204,8 @@ class SymmetryController:
         if res.order > 0:
             self.mw.table_symmetry_ops.selectRow(prev_row if 0 <= prev_row < res.order else 0)
         self.update_sym_step_buttons()
+        if hasattr(self.mw, "_update_orbital_symmetries"):
+            self.mw._update_orbital_symmetries(res)
 
     def detect_symmetry(
         self, checked_or_switch: bool = True, *, switch_tab: bool = True, preferred_symbol: Optional[str] = None

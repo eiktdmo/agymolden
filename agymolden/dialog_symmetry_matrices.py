@@ -11,6 +11,22 @@ class SymmetryMatricesDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None, sym_res=None, initial_row: int = 0, bg_color_mode: str = "dark"):
         super().__init__(parent)
+        if sym_res is None and parent is not None:
+            sym_res = getattr(parent, "current_sym_result", None)
+            if sym_res is None and getattr(parent, "zatoms", None):
+                try:
+                    from .symmetry import find_symmetry_operations
+                    syms = [a.symbol for a in parent.zatoms]
+                    sym_res = find_symmetry_operations(syms, parent.coords)
+                except Exception:
+                    sym_res = None
+        if sym_res is None:
+            from .symmetry import PointGroupResult, SymmetryOperation
+            sym_res = PointGroupResult(
+                symbol="C1",
+                operations=[SymmetryOperation("E", "identity", np.eye(3))],
+                center_of_mass=np.zeros(3),
+            )
         self.sym_res = sym_res
         self.setWindowTitle(f"3×3 Cartesian Symmetry Matrices — Point Group {sym_res.symbol}")
         self.resize(520, 460)

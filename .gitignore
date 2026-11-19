@@ -41,6 +41,8 @@ scratch_calculations/
 *.molden
 *.molden.input
 *_trj.xyz
+*.inp
+*_property*.txt
 
 # Local scratch outputs (moved from project root)
 scratch/

@@ -366,8 +366,62 @@ def compute_grid_difference(grid_a: VolumetricData, grid_b: VolumetricData, oper
     )
 
 
+def convert_gbw_to_molden_if_possible(gbw_path: str) -> Optional[str]:
+    """Convert an ORCA binary wavefunction (.gbw) file to .molden.input / .molden using orca_2mkl if available."""
+    import shutil
+    import subprocess
+    if not gbw_path or not os.path.isfile(gbw_path):
+        return None
+    stem = os.path.splitext(os.path.abspath(gbw_path))[0]
+    molden_inp = f"{stem}.molden.input"
+    molden_std = f"{stem}.molden"
+    gbw_mtime = os.path.getmtime(gbw_path)
+    for cand in (molden_inp, molden_std):
+        if os.path.isfile(cand) and os.path.getmtime(cand) >= gbw_mtime - 2.0:
+            return cand
+
+    orca_2mkl = shutil.which("orca_2mkl")
+    if not orca_2mkl:
+        try:
+            from .qm_detect import detect_qm_executable
+            info = detect_qm_executable("orca")
+            if info.found and info.resolved_path:
+                cand_2mkl = os.path.join(os.path.dirname(info.resolved_path), "orca_2mkl")
+                if os.path.isfile(cand_2mkl):
+                    orca_2mkl = cand_2mkl
+        except Exception:
+            pass
+    if not orca_2mkl:
+        return None
+
+    try:
+        subprocess.run(
+            [orca_2mkl, os.path.basename(stem), "-molden"],
+            cwd=os.path.dirname(stem),
+            capture_output=True,
+            timeout=30,
+        )
+        if os.path.isfile(molden_inp):
+            if not os.path.isfile(molden_std):
+                try:
+                    shutil.copy2(molden_inp, molden_std)
+                except OSError:
+                    pass
+            return molden_inp
+        if os.path.isfile(molden_std):
+            return molden_std
+    except Exception as e:
+        log.debug("orca_2mkl conversion failed for %s: %s", gbw_path, e)
+    return None
+
+
 def parse_molden_file(path: str) -> MoldenFileData:
     """Parse standard .molden / .molf format file containing geometry, orbitals and frequencies."""
+    # Automatic conversion if ORCA binary wavefunction (.gbw) is passed
+    if path.lower().endswith(".gbw"):
+        conv_gbw = convert_gbw_to_molden_if_possible(path)
+        if conv_gbw and os.path.isfile(conv_gbw):
+            path = conv_gbw
     # Automatic conversion if Gaussian FCHK file is passed
     if path.lower().endswith((".fchk", ".fch")):
         stem = os.path.splitext(os.path.abspath(path))[0]
@@ -554,9 +608,396 @@ _MO_CTX_LOCK = threading.Lock()
 _MO_CTX_CACHE: Dict[tuple, dict] = {}
 _MO_CTX_MAX_BYTES = 400 * 1024 * 1024
 
+_CART2SPH_L2 = np.array([
+    [0.0, 0.0, -0.31539156525252005, 0.0, 0.5462742152960395],
+    [1.092548430592079, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 1.092548430592079, 0.0],
+    [0.0, 0.0, -0.31539156525252005, 0.0, -0.5462742152960395],
+    [0.0, 1.092548430592079, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.6307831305050401, 0.0, 0.0],
+], dtype=np.float64)
+
+_CART2SPH_L3 = np.array([
+    [0.0, 0.0, 0.0, 0.0, -0.4570457994644658, 0.0, 0.5900435899266435],
+    [1.7701307697799304, 0.0, -0.4570457994644658, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, -1.1195289977703462, 0.0, 1.445305721320277, 0.0],
+    [0.0, 0.0, 0.0, 0.0, -0.4570457994644658, 0.0, -1.7701307697799304],
+    [0.0, 2.890611442640554, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 1.8281831978578632, 0.0, 0.0],
+    [-0.5900435899266435, 0.0, -0.4570457994644658, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, -1.1195289977703462, 0.0, -1.445305721320277, 0.0],
+    [0.0, 0.0, 1.8281831978578632, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.7463526651802308, 0.0, 0.0, 0.0],
+], dtype=np.float64)
+
+_CART2SPH_L4 = np.array([
+    [0.0, 0.0, 0.0, 0.0, 0.317356640745, 0.0, -0.473087347879, 0.0, 0.625835735449],
+    [2.503342941796, 0.0, -0.946174695758, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, -2.007139630672, 0.0, 1.77013076978, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.63471328149, 0.0, 0.0, 0.0, -3.755014412695],
+    [0.0, 5.31039230934, 0.0, -2.007139630672, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, -2.53885312596, 0.0, 2.838524087273, 0.0, 0.0],
+    [-2.503342941796, 0.0, -0.946174695758, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, -2.007139630672, 0.0, -5.31039230934, 0.0],
+    [0.0, 0.0, 5.677048174545, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 2.676186174229, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.317356640745, 0.0, 0.473087347879, 0.0, 0.625835735449],
+    [0.0, -1.77013076978, 0.0, -2.007139630672, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, -2.53885312596, 0.0, -2.838524087273, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 2.676186174229, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.84628437532, 0.0, 0.0, 0.0, 0.0],
+], dtype=np.float64)
+
+
+def _gto_gaussian_int_np(n: int, alpha: np.ndarray) -> np.ndarray:
+    from scipy.special import gamma
+    n1 = (n + 1) * 0.5
+    return float(gamma(n1)) / (2.0 * (alpha ** n1))
+
+
+def _gto_norm_np(l_ang: int, expnt: np.ndarray) -> np.ndarray:
+    return 1.0 / np.sqrt(_gto_gaussian_int_np(l_ang * 2 + 2, 2.0 * expnt))
+
+
+def _cart_powers_for_l(l_ang: int) -> List[Tuple[int, int, int]]:
+    powers = []
+    for lx in range(l_ang, -1, -1):
+        for ly in range(l_ang - lx, -1, -1):
+            lz = l_ang - lx - ly
+            powers.append((lx, ly, lz))
+    return powers
+
+
+class _FallbackCube:
+    """Pure-NumPy drop-in replacement for pyscf.tools.cubegen.Cube."""
+
+    def __init__(self, mol: Any, nx: int = 48, ny: int = 48, nz: int = 48, margin: float = 3.0, extent: Optional[Tuple[float, float, float]] = None):
+        self.nx = int(nx)
+        self.ny = int(ny)
+        self.nz = int(nz)
+        atom_coords = mol.atom_coords()
+        if extent is not None and all(e > 0 for e in extent):
+            center = 0.5 * (np.max(atom_coords, axis=0) + np.min(atom_coords, axis=0))
+            box_diag = np.asarray(extent, dtype=np.float64)
+            self.boxorig = center - 0.5 * box_diag
+        else:
+            box_diag = np.max(atom_coords, axis=0) - np.min(atom_coords, axis=0) + 2.0 * float(margin)
+            self.boxorig = np.min(atom_coords, axis=0) - float(margin)
+        self.box = np.diag(box_diag)
+
+    def get_coords(self) -> np.ndarray:
+        xs = np.arange(self.nx, dtype=np.float64) * (self.box[0, 0] / max(1, self.nx - 1))
+        ys = np.arange(self.ny, dtype=np.float64) * (self.box[1, 1] / max(1, self.ny - 1))
+        zs = np.arange(self.nz, dtype=np.float64) * (self.box[2, 2] / max(1, self.nz - 1))
+        return np.vstack(np.meshgrid(xs, ys, zs, indexing="ij")).reshape(3, -1).T + self.boxorig
+
+
+class _FallbackMol:
+    """Pure-NumPy molecular GTO representation and evaluator when PySCF is unavailable."""
+
+    def __init__(self, symbols: List[str], coords_bohr: np.ndarray, shells: List[Dict[str, Any]], cart: bool = False):
+        self._symbols = list(symbols)
+        self._coords_bohr = np.asarray(coords_bohr, dtype=np.float64)
+        self._shells = shells
+        self.cart = bool(cart)
+        self.natm = len(self._symbols)
+        self._basis = True  # truthy sentinel for callers checking getattr(mol, "_basis", None)
+        from .elements import ELEMENT_DATA
+        self._charges = np.array([ELEMENT_DATA.get(s, {}).get("number", 6) for s in self._symbols], dtype=np.int32)
+        self.nelectron = int(np.sum(self._charges))
+
+    def atom_coords(self) -> np.ndarray:
+        return self._coords_bohr
+
+    def atom_symbol(self, idx: int) -> str:
+        return self._symbols[idx]
+
+    def atom_charges(self) -> np.ndarray:
+        return self._charges
+
+    def ao_labels(self, fmt: bool = True) -> List[Any]:
+        labels = []
+        shell_counts: Dict[Tuple[int, int], int] = {}
+        l_names = {0: "s", 1: "p", 2: "d", 3: "f", 4: "g"}
+        for sh in self._shells:
+            at_idx = int(sh["atom_idx"])
+            l_ang = int(sh["l"])
+            sym = self._symbols[at_idx]
+            base_n = l_ang + 1 + shell_counts.get((at_idx, l_ang), 0)
+            shell_counts[(at_idx, l_ang)] = shell_counts.get((at_idx, l_ang), 0) + 1
+            nl_str = f"{base_n}{l_names.get(l_ang, 's')}"
+            n_comp = ((l_ang + 1) * (l_ang + 2)) // 2 if self.cart else (2 * l_ang + 1)
+            for c_i in range(n_comp):
+                if fmt:
+                    labels.append(f"{at_idx} {sym}{at_idx + 1} {nl_str}")
+                else:
+                    labels.append((at_idx, sym, nl_str, str(c_i)))
+        return labels
+
+    def eval_gto(self, eval_name: str, coords: np.ndarray) -> np.ndarray:
+        pts = np.asarray(coords, dtype=np.float64)
+        n_pts = pts.shape[0]
+        cols = []
+        for sh in self._shells:
+            at_idx = int(sh["atom_idx"])
+            l_ang = int(sh["l"])
+            exps = sh["exps"]
+            weights = sh["weights"]
+            r = pts - self._coords_bohr[at_idx]
+            x, y, z = r[:, 0], r[:, 1], r[:, 2]
+            r2 = x * x + y * y + z * z
+            rad = np.exp(-r2[:, None] * exps[None, :]) @ weights  # (n_pts,)
+
+            if l_ang == 0:
+                cols.append((rad * 0.28209479177387814)[:, None])
+            elif l_ang == 1:
+                cols.append(np.column_stack([x, y, z]) * (rad * 0.4886025119029199)[:, None])
+            else:
+                powers = _cart_powers_for_l(l_ang)
+                cart_ang = np.empty((n_pts, len(powers)), dtype=np.float64)
+                for p_idx, (lx, ly, lz) in enumerate(powers):
+                    val = np.ones(n_pts, dtype=np.float64)
+                    if lx:
+                        val = val * (x ** lx if lx > 1 else x)
+                    if ly:
+                        val = val * (y ** ly if ly > 1 else y)
+                    if lz:
+                        val = val * (z ** lz if lz > 1 else z)
+                    cart_ang[:, p_idx] = val
+                cart_block = cart_ang * rad[:, None]
+                if self.cart:
+                    cols.append(cart_block)
+                elif l_ang == 2:
+                    cols.append(cart_block @ _CART2SPH_L2)
+                elif l_ang == 3:
+                    cols.append(cart_block @ _CART2SPH_L3)
+                elif l_ang == 4:
+                    cols.append(cart_block @ _CART2SPH_L4)
+                else:
+                    cols.append(cart_block[:, : (2 * l_ang + 1)])
+
+        if not cols:
+            return np.zeros((n_pts, 0), dtype=np.float64)
+        return np.hstack(cols)
+
+
+def _load_fallback_molden(molden_path: str):
+    """Pure-NumPy Molden [Atoms] + [GTO] + [MO] loader when PySCF is not installed."""
+    with open(molden_path, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+
+    symbols: List[str] = []
+    coords_bohr_list: List[List[float]] = []
+    atom_units = "AU"
+    cart = True
+
+    raw_shells: List[Dict[str, Any]] = []
+    mo_energies: List[float] = []
+    mo_occs: List[float] = []
+    mo_syms: List[str] = []
+    mo_spins: List[str] = []
+    mo_coeffs_dicts: List[Dict[int, float]] = []
+
+    l_map = {"s": 0, "p": 1, "d": 2, "f": 3, "g": 4}
+    sec = None
+    cur_atom_idx = 0
+    i = 0
+    n_lines = len(lines)
+
+    while i < n_lines:
+        raw = lines[i].strip()
+        if not raw:
+            i += 1
+            continue
+        if raw.startswith("[") and "]" in raw:
+            sec_header = raw[1:raw.index("]")].strip().upper()
+            sec = sec_header.split()[0]
+            if "ATOMS" in sec_header:
+                sec = "ATOMS"
+                if "ANG" in raw.upper():
+                    atom_units = "ANGS"
+                else:
+                    atom_units = "AU"
+            elif sec_header[:2] in ("5D", "7F", "9G"):
+                cart = False
+            elif sec_header[:2] == "6D" or sec_header[:3] in ("10F", "15G"):
+                cart = True
+            i += 1
+            continue
+
+        if sec == "ATOMS":
+            toks = raw.split()
+            if len(toks) >= 6:
+                sym = "".join(c for c in toks[0] if c.isalpha()).capitalize() or toks[0]
+                x, y, z = float(toks[3]), float(toks[4]), float(toks[5])
+                scale = ANGSTROM_TO_BOHR if atom_units == "ANGS" else 1.0
+                symbols.append(sym)
+                coords_bohr_list.append([x * scale, y * scale, z * scale])
+        elif sec == "GTO":
+            toks = raw.split()
+            if len(toks) >= 1 and toks[0].isdigit():
+                cur_atom_idx = int(toks[0]) - 1
+            elif len(toks) >= 2 and toks[0].lower() in l_map:
+                lsym = toks[0].lower()
+                n_prim = int(toks[1])
+                fac = float(toks[2].replace("D", "E").replace("d", "e")) if len(toks) >= 3 else 1.0
+                if fac == 0.0:
+                    fac = 1.0
+                exps = []
+                cs = []
+                for _ in range(n_prim):
+                    i += 1
+                    if i >= n_lines:
+                        break
+                    ptoks = lines[i].replace("D", "E").replace("d", "e").split()
+                    if len(ptoks) >= 2:
+                        exps.append(float(ptoks[0]))
+                        cs.append(float(ptoks[1]) * fac)
+                if exps:
+                    raw_shells.append({
+                        "atom_idx": cur_atom_idx,
+                        "l": l_map[lsym],
+                        "exps": np.array(exps, dtype=np.float64),
+                        "cs": np.array(cs, dtype=np.float64),
+                    })
+        elif sec == "MO":
+            up = raw.upper()
+            if up.startswith("SYM=") or (up.startswith("ENE=") and not (i > 0 and lines[i - 1].strip().upper().startswith("SYM="))):
+                sym_val = raw.split("=", 1)[1].strip() if up.startswith("SYM=") else "1a"
+                ene_val = float(raw.replace("D", "E").replace("d", "e").split("=", 1)[1].strip()) if up.startswith("ENE=") else 0.0
+                spin_val = "Alpha"
+                occ_val = 0.0
+                c_dict: Dict[int, float] = {}
+                has_ene = up.startswith("ENE=")
+                i += 1
+                while i < n_lines:
+                    sub = lines[i].strip()
+                    if not sub:
+                        i += 1
+                        continue
+                    if sub.startswith("["):
+                        i -= 1
+                        break
+                    sub_up = sub.upper()
+                    if sub_up.startswith("SYM="):
+                        i -= 1
+                        break
+                    if sub_up.startswith("ENE="):
+                        if has_ene:
+                            i -= 1
+                            break
+                        ene_val = float(sub.replace("D", "E").replace("d", "e").split("=", 1)[1].strip())
+                        has_ene = True
+                    elif sub_up.startswith("SPIN="):
+                        spin_val = sub.split("=", 1)[1].strip()
+                    elif sub_up.startswith("OCC"):
+                        occ_val = float(sub.replace("D", "E").replace("d", "e").split("=", 1)[1].strip())
+                    else:
+                        ctoks = sub.replace("D", "E").replace("d", "e").split()
+                        if len(ctoks) >= 2:
+                            try:
+                                c_dict[int(ctoks[0]) - 1] = float(ctoks[1])
+                            except ValueError:
+                                pass
+                    i += 1
+                mo_syms.append(sym_val)
+                mo_energies.append(ene_val)
+                mo_spins.append(spin_val)
+                mo_occs.append(occ_val)
+                mo_coeffs_dicts.append(c_dict)
+        i += 1
+
+    if not symbols or not raw_shells or not mo_coeffs_dicts:
+        return None
+
+    # Build AO permutation from Molden order to internal PySCF AO order
+    order_idx: List[int] = []
+    off = 0
+    for sh in raw_shells:
+        l_ang = int(sh["l"])
+        if cart:
+            if l_ang == 2:
+                order_idx.extend([off + 0, off + 3, off + 5, off + 1, off + 2, off + 4])
+            elif l_ang == 3:
+                order_idx.extend([off + 0, off + 6, off + 9, off + 3, off + 1, off + 2, off + 5, off + 8, off + 7, off + 4])
+            elif l_ang == 4:
+                order_idx.extend([off + 0, off + 10, off + 14, off + 1, off + 2, off + 6, off + 11, off + 9, off + 13, off + 3, off + 5, off + 12, off + 4, off + 7, off + 8])
+            else:
+                order_idx.extend(range(off, off + ((l_ang + 1) * (l_ang + 2)) // 2))
+            off += ((l_ang + 1) * (l_ang + 2)) // 2
+        else:
+            if l_ang == 2:
+                order_idx.extend([off + 2, off + 3, off + 1, off + 4, off + 0])
+            elif l_ang == 3:
+                order_idx.extend([off + 3, off + 4, off + 2, off + 5, off + 1, off + 6, off + 0])
+            elif l_ang == 4:
+                order_idx.extend([off + 4, off + 5, off + 3, off + 6, off + 2, off + 7, off + 1, off + 8, off + 0])
+            else:
+                order_idx.extend(range(off, off + 2 * l_ang + 1))
+            off += 2 * l_ang + 1
+
+    n_ao = off
+    n_mo = len(mo_coeffs_dicts)
+    mo_raw = np.zeros((n_ao, n_mo), dtype=np.float64)
+    for m_i, c_dict in enumerate(mo_coeffs_dicts):
+        for ao_i, val in c_dict.items():
+            if 0 <= ao_i < n_ao:
+                mo_raw[ao_i, m_i] = val
+
+    aoidx = np.argsort(order_idx)
+    mo_coeff = mo_raw[aoidx]
+
+    # Compute contracted radial weights for both unnormalized and pre-normalized (orca_2mkl) conventions
+    # Check which convention gives cleaner shell self-normalization
+    shells_built: List[Dict[str, Any]] = []
+    for sh in raw_shells:
+        l_ang = int(sh["l"])
+        exps = sh["exps"]
+        cs = sh["cs"]
+        # In _nomalize_contracted_ao, dividing cs by gto_norm before multiplying by gto_norm cancels out!
+        # Wait: make_bas_env multiplies cs by gto_norm(l, es). If the Molden file (like orca_2mkl) already
+        # multiplied cs by gto_norm(l, es), then dividing cs by gto_norm(l, es) means make_bas_env's
+        # multiplication restores cs! Let's detect whether cs is already pre-normalized by checking
+        # the shell radial self-overlap int_0^inf r^(2l+2) (sum_p c_p exp(-a_p r^2))^2 dr:
+        ee = _gto_gaussian_int_np(l_ang * 2 + 2, exps[:, None] + exps[None, :])
+        ovlp_direct = float(cs @ ee @ cs)
+        cs_times_gn = cs * _gto_norm_np(l_ang, exps)
+        ovlp_unnorm = float(cs_times_gn @ ee @ cs_times_gn)
+        if abs(ovlp_direct - 1.0) < abs(ovlp_unnorm - 1.0):
+            w_raw = cs.copy()
+            s1 = 1.0 / np.sqrt(max(1e-30, ovlp_direct))
+        else:
+            w_raw = cs_times_gn
+            s1 = 1.0 / np.sqrt(max(1e-30, ovlp_unnorm))
+        shells_built.append({
+            "atom_idx": sh["atom_idx"],
+            "l": l_ang,
+            "exps": exps,
+            "weights": w_raw * s1,
+        })
+
+    mol = _FallbackMol(symbols, np.array(coords_bohr_list, dtype=np.float64), shells_built, cart=cart)
+    mo_en_arr = np.array(mo_energies, dtype=np.float64)
+    mo_occ_arr = np.array(mo_occs, dtype=np.float64)
+    spins_up = [s.upper() for s in mo_spins]
+    if any(s.startswith("B") for s in spins_up) and any(s.startswith("A") for s in spins_up):
+        beta_mask = np.array([s.startswith("B") for s in spins_up])
+        alpha_mask = ~beta_mask
+        if np.sum(alpha_mask) == np.sum(beta_mask):
+            mo_en_arr = np.stack([mo_en_arr[alpha_mask], mo_en_arr[beta_mask]], axis=0)
+            mo_coeff = np.stack([mo_coeff[:, alpha_mask], mo_coeff[:, beta_mask]], axis=0)
+            mo_occ_arr = np.stack([mo_occ_arr[alpha_mask], mo_occ_arr[beta_mask]], axis=0)
+            irrep_arr = (
+                [mo_syms[idx] for idx in np.where(alpha_mask)[0]],
+                [mo_syms[idx] for idx in np.where(beta_mask)[0]],
+            )
+            return (mol, mo_en_arr, mo_coeff, mo_occ_arr, irrep_arr, mo_spins)
+
+    return (mol, mo_en_arr, mo_coeff, mo_occ_arr, mo_syms, mo_spins)
+
 
 def _load_pyscf_molden(molden_path: str):
-    """Load a Molden file with PySCF and automatically normalize ORCA/orca_2mkl pre-normalized GTOs.
+    """Load a Molden file with PySCF (or pure-NumPy fallback) and automatically normalize ORCA/orca_2mkl pre-normalized GTOs.
 
     ORCA's `orca_2mkl` writes primitive contraction coefficients already multiplied by the
     primitive Gaussian normalization factor `gto_norm(l, alpha)`. PySCF's `molden.load`
@@ -567,8 +1008,11 @@ def _load_pyscf_molden(molden_path: str):
     import copy
     import io
     import contextlib
-    from pyscf import gto
-    from pyscf.tools import molden
+    try:
+        from pyscf import gto
+        from pyscf.tools import molden
+    except ImportError:
+        return _load_fallback_molden(molden_path)
 
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         res = list(molden.load(molden_path))
@@ -610,14 +1054,15 @@ def _load_pyscf_molden(molden_path: str):
 
 
 def _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr):
-    """Load a Molden file with PySCF and evaluate AO values on the cube grid (cached, 1 entry).
+    """Load a Molden file with PySCF (or pure-NumPy fallback) and evaluate AO values on the cube grid (cached, 1 entry).
 
-    Returns None when PySCF is missing or the file has no usable basis.
+    Returns None when the file has no usable basis.
     """
     try:
         from pyscf.tools import cubegen
+        cube_cls = cubegen.Cube
     except ImportError:
-        return None
+        cube_cls = _FallbackCube
 
     try:
         key = (os.path.abspath(molden_path), os.path.getmtime(molden_path), nx, ny, nz, float(margin_bohr))
@@ -639,7 +1084,10 @@ def _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr):
     if not getattr(mol, "_basis", None) or mol.natm == 0:
         return None
 
-    c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
+    if isinstance(mol, _FallbackMol):
+        c = _FallbackCube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
+    else:
+        c = cube_cls(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
     coords = c.get_coords()
     ao_val = mol.eval_gto("GTOval", coords)
     ctx = {"res": res, "mol": mol, "cube": c, "coords": coords, "ao_val": ao_val}
@@ -731,6 +1179,137 @@ def compute_molden_mo_atom_contributions(
         else:
             parts.append(f"{pct:.1f}% {sym}{at_idx + 1}")
     return ", ".join(parts)
+
+
+def classify_molden_orbitals_irreps(
+    molden_path: str,
+    sym_res: Any,
+    coords_ang: Optional[np.ndarray] = None,
+) -> List[str]:
+    """Classify each Molecular Orbital in a Molden file into an irreducible representation of `sym_res`.
+
+    Uses a G-invariant 3D real-space sample cloud and character projection over the point group's
+    conjugacy classes (works with both PySCF and the pure-NumPy GTO fallback).
+    """
+    if not molden_path or not os.path.isfile(molden_path) or sym_res is None:
+        return []
+
+    res = None
+    with _MO_CTX_LOCK:
+        for k, v in _MO_CTX_CACHE.items():
+            if k[0] == os.path.abspath(molden_path):
+                res = v.get("res")
+                break
+    if res is None:
+        try:
+            res = _load_pyscf_molden(molden_path)
+        except Exception:
+            return []
+    if not res:
+        return []
+    mol = res[0]
+    if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return []
+
+    mo_coeff = np.asarray(res[2], dtype=np.float64)
+    mo_energy = np.asarray(res[1], dtype=np.float64) if len(res) > 1 and res[1] is not None else None
+
+    if mo_coeff.ndim == 3:
+        n_mo_total = mo_coeff.shape[0] * mo_coeff.shape[2]
+    else:
+        n_mo_total = mo_coeff.shape[1]
+
+    group = getattr(sym_res, "symbol", "C1")
+    if getattr(sym_res, "order", 1) <= 1 or group == "C1":
+        return ["A"] * n_mo_total
+
+    from .symmetry import CHARACTER_TABLES, calculate_symmetry_representations, _center_molecule
+    if group not in CHARACTER_TABLES:
+        return []
+
+    ctable = CHARACTER_TABLES[group]
+    classes = ctable["classes"]
+    irreps = ctable["irreps"]
+
+    mol_coords_ang = mol.atom_coords() * BOHR_TO_ANGSTROM
+    symbols = [mol.atom_symbol(i) for i in range(mol.natm)]
+    reps_coords = coords_ang if (coords_ang is not None and len(coords_ang) == len(symbols)) else mol_coords_ang
+    reps_info = calculate_symmetry_representations(symbols, reps_coords, sym_res)
+    class_ops = reps_info.get("class_ops", [])
+    if len(class_ops) != len(classes):
+        return []
+
+    # Map symmetry operations from reps_coords frame into the Molden file's coordinate frame
+    mol_centered_ang, mol_com_ang = _center_molecule(symbols, mol_coords_ang)
+    mol_com_bohr = mol_com_ang * ANGSTROM_TO_BOHR
+    r_align = np.eye(3, dtype=np.float64)
+    if coords_ang is not None and len(coords_ang) == len(symbols):
+        mw_centered_ang, _ = _center_molecule(symbols, coords_ang)
+        if np.max(np.abs(mw_centered_ang - mol_centered_ang)) > 1e-3:
+            cov = mol_centered_ang.T @ mw_centered_ang
+            u_m, _, vt_m = np.linalg.svd(cov)
+            d_det = np.linalg.det(vt_m.T @ u_m.T)
+            r_align = vt_m.T @ np.diag([1.0, 1.0, 1.0 if d_det >= 0 else -1.0]) @ u_m.T
+
+    # Build a G-invariant 3D point cloud around the molecule in Bohr
+    rng = np.random.default_rng(42)
+    seeds = (mol.atom_coords() - mol_com_bohr) + rng.normal(0.0, 0.75, size=(mol.natm, 3))
+    op_mats_mol = [r_align.T @ op.matrix @ r_align for op in sym_res.operations]
+    pts_centered = np.vstack([seeds @ m.T for m in op_mats_mol])
+    pts_molden = pts_centered + mol_com_bohr
+
+    ao_0 = mol.eval_gto("GTOval", pts_molden)
+
+    def _classify_channel(c_mat: np.ndarray, en_vec: Optional[np.ndarray]) -> List[str]:
+        n_mo = c_mat.shape[1]
+        psi_0 = ao_0 @ c_mat
+        norms = np.maximum(np.sum(psi_0 * psi_0, axis=0), 1e-18)
+
+        diag_chars = np.empty((len(classes), n_mo), dtype=np.float64)
+        for c_idx, op in enumerate(class_ops):
+            m_mol = r_align.T @ op.matrix @ r_align
+            pts_rot = (pts_centered @ m_mol) + mol_com_bohr
+            ao_rot = mol.eval_gto("GTOval", pts_rot)
+            psi_rot = ao_rot @ c_mat
+            diag_chars[c_idx] = np.sum(psi_0 * psi_rot, axis=0) / norms
+
+        out = [""] * n_mo
+        i = 0
+        while i < n_mo:
+            j = i + 1
+            if en_vec is not None and j < n_mo:
+                while j < n_mo and abs(float(en_vec[j]) - float(en_vec[i])) < 1e-4:
+                    j += 1
+            shell_chars = np.sum(diag_chars[:, i:j], axis=1)
+            best_irr = "-"
+            best_err = 1e9
+            for irr_name, chi_vec in irreps.items():
+                err = sum(g * ((shell_chars[ci] - chi_vec[ci]) ** 2) for ci, (_, g) in enumerate(classes))
+                if err < best_err:
+                    best_err = err
+                    best_irr = irr_name
+
+            if best_err > 0.5 and (j - i) > 1:
+                for k in range(i, j):
+                    c_vec = diag_chars[:, k]
+                    b_irr, b_err = "-", 1e9
+                    for irr_name, chi_vec in irreps.items():
+                        err = sum(g * ((c_vec[ci] - chi_vec[ci]) ** 2) for ci, (_, g) in enumerate(classes))
+                        if err < b_err:
+                            b_err = err
+                            b_irr = irr_name
+                    out[k] = b_irr
+            else:
+                for k in range(i, j):
+                    out[k] = best_irr
+            i = j
+        return out
+
+    if mo_coeff.ndim == 3:
+        en0 = mo_energy[0] if (mo_energy is not None and mo_energy.ndim == 2) else mo_energy
+        en1 = mo_energy[1] if (mo_energy is not None and mo_energy.ndim == 2) else mo_energy
+        return _classify_channel(mo_coeff[0], en0) + _classify_channel(mo_coeff[1], en1)
+    return _classify_channel(mo_coeff, mo_energy)
 
 
 def localize_molden_orbitals(

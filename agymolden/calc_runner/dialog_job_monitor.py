@@ -210,9 +210,18 @@ class JobMonitorDialog(QtWidgets.QDialog):
         self._build_handoff_menu()
         bottom_layout.addWidget(self.btn_stage_handoff)
 
+        btn_view_input = QtWidgets.QPushButton("📝 View Input File...")
+        btn_view_input.clicked.connect(self._on_open_input_viewer)
+        bottom_layout.addWidget(btn_view_input)
+
         btn_view_full_out = QtWidgets.QPushButton("📄 Open Output Log...")
         btn_view_full_out.clicked.connect(self._on_open_output_viewer)
         bottom_layout.addWidget(btn_view_full_out)
+
+        btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in agemacs")
+        btn_open_agemacs.setToolTip("Open the current input/output files in agemacs")
+        btn_open_agemacs.clicked.connect(self._on_open_in_agemacs)
+        bottom_layout.addWidget(btn_open_agemacs)
 
         self.btn_auto_fix = QtWidgets.QPushButton("🩹 Auto-Fix & Relaunch")
         self.btn_auto_fix.setStyleSheet("background-color: #dc2626; color: white; font-weight: bold; padding: 4px 10px;")
@@ -294,7 +303,8 @@ class JobMonitorDialog(QtWidgets.QDialog):
         self._save_settings()
 
     def _load_saved_settings(self):
-        settings = QtCore.QSettings("AgyMolden", "JobRunner")
+        from agymolden.session_state import get_settings
+        settings = get_settings("JobRunner")
         saved_py = settings.value("python_bin", "")
         saved_wrap = settings.value("brorsen_wrapper", "")
 
@@ -308,7 +318,8 @@ class JobMonitorDialog(QtWidgets.QDialog):
                 self.combo_wrapper.setCurrentIndex(idx)
 
     def _save_settings(self):
-        settings = QtCore.QSettings("AgyMolden", "JobRunner")
+        from agymolden.session_state import get_settings
+        settings = get_settings("JobRunner")
         py_bin = self.combo_conda.currentData()
         wrapper = self.combo_wrapper.currentData()
         if py_bin:
@@ -354,6 +365,8 @@ class JobMonitorDialog(QtWidgets.QDialog):
             py_bin = getattr(self.runner, "python_bin", None) or self.combo_conda.currentData() or sys.executable
             self.runner.python_bin = py_bin
 
+        from agymolden.session_state import set_last_dir
+        set_last_dir(input_file)
         self.lbl_job_info.setText(f"File: {os.path.basename(input_file)} | WorkDir: {os.path.dirname(input_file)}")
         self.btn_stop.setEnabled(True)
 
@@ -386,7 +399,8 @@ class JobMonitorDialog(QtWidgets.QDialog):
         if window_lum < 100:
             return False
         # 3. Fall back to QSettings
-        settings = QtCore.QSettings("AgyMolden", "AgyMolden")
+        from agymolden.session_state import get_settings
+        settings = get_settings("AgyMolden")
         return settings.value("color_theme", "white") == "white"
 
     def _apply_theme_styles(self):
@@ -644,6 +658,56 @@ class JobMonitorDialog(QtWidgets.QDialog):
             # Note: Do not permanently close or destroy the monitor, simply hide it while loading results
             self.hide()
             self.calculation_completed.emit(self.runner.input_file)
+
+    def _on_open_input_viewer(self):
+        inp_path = getattr(self.runner, "input_file", None)
+        if not inp_path or not os.path.isfile(inp_path):
+            inp_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Select Input File to View",
+                getattr(self.runner, "work_dir", "") or "",
+                "Input Files (*.inp *.in *.gjf *.com *.lowdin *.py);;All Files (*)",
+            )
+        if inp_path and os.path.isfile(inp_path):
+            from agymolden.dialog_output_viewer import QMOutputViewerDialog
+            dlg = QMOutputViewerDialog(self, file_path=inp_path)
+            dlg.exec()
+
+    def _on_open_in_agemacs(self):
+        import shutil
+        import subprocess
+
+        targets = []
+        inp_path = getattr(self.runner, "input_file", None)
+        log_path = getattr(self.runner, "log_file", None)
+        work_dir = getattr(self.runner, "work_dir", None)
+        if inp_path and os.path.isfile(inp_path):
+            targets.append(inp_path)
+        if log_path and os.path.isfile(log_path):
+            targets.append(log_path)
+        if not targets and work_dir and os.path.isdir(work_dir):
+            targets.append(work_dir)
+        if not targets:
+            QtWidgets.QMessageBox.information(self, "Open in agemacs", "No active input, output, or working directory to open.")
+            return
+
+        from agymolden.companion import send_to_agemacs
+        if send_to_agemacs(targets, self):
+            return
+
+        # Classroom fallback: if agemacs is not installed on this machine, open file in built-in viewer
+        file_targets = [t for t in targets if os.path.isfile(t)]
+        if file_targets:
+            from agymolden.dialog_output_viewer import QMOutputViewerDialog
+            dlg = QMOutputViewerDialog(self, file_path=file_targets[0])
+            dlg.exec()
+            return
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Open in agemacs",
+            "Could not find 'agemacs' on PATH or in standard project folders.\n\nFiles ready to open:\n" + "\n".join(targets),
+        )
 
     def _on_open_output_viewer(self):
         log_path = getattr(self.runner, "log_file", None)

@@ -383,6 +383,19 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         row_grid.addWidget(self.combo_grid_points, stretch=1)
         p_layout.addRow("Grid Resolution:", row_grid)
 
+        # Plot Box Size / Margin (Bohr)
+        self.spin_box_margin = QtWidgets.QDoubleSpinBox()
+        self.spin_box_margin.setRange(1.0, 15.0)
+        self.spin_box_margin.setDecimals(1)
+        self.spin_box_margin.setSingleStep(0.5)
+        self.spin_box_margin.setValue(3.0)
+        self.spin_box_margin.setSuffix(" a₀ (Bohr)")
+        self.spin_box_margin.setToolTip(
+            "Plot box padding beyond the outer atoms (in Bohr). Increase if diffuse orbital lobes or surfaces are clipped at the box boundary."
+        )
+        self.spin_box_margin.valueChanged.connect(self._on_grid_points_changed)
+        p_layout.addRow("Plot Box Size:", self.spin_box_margin)
+
         # Mesh Visual Quality / Resolution Selector
         row_res = QtWidgets.QHBoxLayout()
         self.combo_mesh_res = QtWidgets.QComboBox()
@@ -806,6 +819,11 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return int(self.combo_grid_points.currentData() or default)
         return default
 
+    def _get_box_margin(self, default: float = 3.0) -> float:
+        if hasattr(self, "spin_box_margin"):
+            return float(self.spin_box_margin.value())
+        return default
+
     def _on_grid_points_changed(self):
         if self.current_molden_path and self.grp_mo.isVisible():
             self._on_mo_selected(self.combo_mo.currentIndex())
@@ -817,7 +835,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return
 
         n_pts = self._get_grid_pts(40)
-        margin_b = 3.5
+        margin_b = max(3.5, self._get_box_margin(3.5))
 
         def _compute():
             return compute_molden_esp_grid(self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
@@ -1393,8 +1411,9 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         # Attempt exact analytic GTO evaluation first if basis is available
         if self.current_molden_path:
+            margin_b = self._get_box_margin(3.0)
             def _eval_mo():
-                vol = evaluate_molden_orbital_grid(self.current_molden_path, orbital_index=idx, nx=n_pts, ny=n_pts, nz=n_pts)
+                vol = evaluate_molden_orbital_grid(self.current_molden_path, orbital_index=idx, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
                 decomp = compute_molden_orbital_decomposition(self.current_molden_path, orbital_index=idx) if vol else []
                 return vol, decomp
 

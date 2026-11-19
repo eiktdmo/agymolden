@@ -140,8 +140,8 @@ def detect_connectivity(
                 # Reject H-H bonds in systems with more than 2 atoms
                 if su == "H" and sv == "H" and not is_pure_h2:
                     continue
-                # If coords are available, reject references that exceed covalent distance (unless ghost atom X)
-                if len(coords) == n and su != "X" and sv != "X":
+                # If coords are available and not in strict topology mode, reject non-bonded Z-matrix distance references
+                if not strict and len(coords) == n and su != "X" and sv != "X":
                     d = float(np.linalg.norm(coords[u] - coords[v]))
                     r_cov_max = (get_cov_radius(su) + get_cov_radius(sv)) * 1.38 + 0.25
                     if d > r_cov_max:

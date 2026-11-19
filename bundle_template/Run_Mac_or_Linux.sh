@@ -106,11 +106,11 @@ if [ "$NEED_INSTALL" -eq 1 ]; then
     fi
     echo "Installation complete!"
 else
-    # Update wheel if newer wheel was placed in directory
+    # Update wheel if newer wheel was placed in directory (force-reinstall in case version number is unchanged)
     if command -v uv &>/dev/null; then
-        uv pip install --python agymolden_env/bin/python --no-deps --upgrade "$WHL_FILE" >/dev/null 2>&1 || true
+        uv pip install --python agymolden_env/bin/python --no-deps --reinstall "$WHL_FILE" >/dev/null 2>&1 || true
     else
-        pip install --no-deps --upgrade "$WHL_FILE" >/dev/null 2>&1 || true
+        pip install --no-deps --upgrade --force-reinstall "$WHL_FILE" >/dev/null 2>&1 || true
     fi
 fi
 

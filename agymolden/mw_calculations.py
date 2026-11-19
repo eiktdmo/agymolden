@@ -116,21 +116,22 @@ class CalculationsMixin:
         imposed = self._get_active_imposed_symmetry() if not frozen else None
 
         def run_opt(c0, iters):
+            is_strict = bool(getattr(self, "strict_topology", False) or user_bonds)
             if method == "mlip":
                 from .mlip_engine import optimize_geometry_mlip
                 return optimize_geometry_mlip(
                     symbols, c0, user_bonds=user_bonds, max_iter=iters,
-                    user_bond_orders=bo, frozen_indices=frozen
+                    strict_bonds=is_strict, user_bond_orders=bo, frozen_indices=frozen
                 )
             if method == "semiempirical":
                 from .semiempirical import optimize_geometry_semiempirical
                 return optimize_geometry_semiempirical(
                     symbols, c0, user_bonds=user_bonds, max_iter=iters,
-                    user_bond_orders=bo, frozen_indices=frozen
+                    strict_bonds=is_strict, user_bond_orders=bo, frozen_indices=frozen
                 )
             opt_coords, final_e = optimize_geometry_force_field(
                 symbols, c0, user_bonds=user_bonds, max_iter=iters,
-                user_bond_orders=bo, method=method, frozen_indices=frozen
+                strict_bonds=is_strict, user_bond_orders=bo, method=method, frozen_indices=frozen
             )
             return opt_coords, final_e, {}
 
@@ -169,27 +170,54 @@ class CalculationsMixin:
             qm_summary = f"{b_tag} | HOMO: {homo:.2f} eV, LUMO: {lumo:.2f} eV, Gap: {gap:.2f} eV"
             self._semiempirical_qm_props = qm_props
 
-        # Reconstruct Z-matrix from optimized Cartesian coordinates preserving references
+        # Reconstruct Z-matrix from optimized Cartesian coordinates preserving references and all ring/cross bonds
+        old_bo = dict(getattr(self.viewer, "bond_orders", {}))
+        is_strict = bool(getattr(self, "strict_topology", False))
         new_zatoms = cartesian_to_zmatrix(
-            symbols, opt_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds
+            symbols, opt_coords, existing_zatoms=self.zatoms, user_bonds=user_bonds, strict_bonds=is_strict
         )
+
+        def _sync_cross_bonds(target_zatoms):
+            if user_bonds:
+                tree = {
+                    (min(a.ref1, idx), max(a.ref1, idx))
+                    for idx, a in enumerate(target_zatoms)
+                    if a.ref1 is not None and 0 <= a.ref1 < idx
+                }
+                self.cross_bonds = {
+                    (min(u, v), max(u, v))
+                    for u, v in user_bonds
+                    if u != v and (min(u, v), max(u, v)) not in tree
+                }
+
         frozen = {i for i in getattr(self, "frozen_atoms", set()) if 0 <= i < len(symbols)}
         if frozen or sym_kept:
             # Keep exact (symmetrized) coordinates and frame so the imposed point group stays exact
+            _sync_cross_bonds(new_zatoms)
             self.set_molecule_from_zatoms(new_zatoms, exact_coords=opt_coords)
+            if old_bo:
+                self.viewer.bond_orders = old_bo
             self.viewer.fit_camera()
         else:
-            self.set_molecule_from_zatoms(new_zatoms)
+            _sync_cross_bonds(new_zatoms)
+            self.set_molecule_from_zatoms(new_zatoms, exact_coords=opt_coords)
             # Align optimized geometry to standard orientation (highest C_n along Z, molecular plane in XZ)
             # and align camera to present the molecule directly in the screen plane
             try:
                 sym_res = find_symmetry_operations(symbols, opt_coords, tolerance=0.20)
                 aligned_coords, _ = align_molecule_to_symmetry(symbols, opt_coords, sym_res)
-                aligned_zatoms = cartesian_to_zmatrix(symbols, aligned_coords, user_bonds=user_bonds)
+                aligned_zatoms = cartesian_to_zmatrix(
+                    symbols, aligned_coords, existing_zatoms=new_zatoms, user_bonds=user_bonds, strict_bonds=is_strict
+                )
+                _sync_cross_bonds(aligned_zatoms)
                 self.set_molecule_from_zatoms(aligned_zatoms, exact_coords=aligned_coords)
+                if old_bo:
+                    self.viewer.bond_orders = old_bo
                 self.viewer.align_camera_standard()
             except Exception:
                 log.warning("Symmetry alignment after optimization failed; keeping unaligned geometry", exc_info=True)
+                if old_bo:
+                    self.viewer.bond_orders = old_bo
                 self.viewer.align_camera_standard()
 
         self.statusBar().showMessage(
@@ -1086,6 +1114,10 @@ class CalculationsMixin:
             else:
                 self.lbl_mo_gap_badge.setVisible(False)
 
+        # Apply point group symmetry labels to orbitals if symmetry is detected or selected
+        if hasattr(self, "_update_orbital_symmetries"):
+            self._update_orbital_symmetries(getattr(self, "_current_sym_res", None))
+
         # Select HOMO by default if found
         if homo_idx is not None:
             if auto_render:
@@ -1096,6 +1128,91 @@ class CalculationsMixin:
                 self.table_orbitals.blockSignals(False)
                 if hasattr(self, "mo_ladder_widget"):
                     self.mo_ladder_widget.set_selected_orbital(homo_idx)
+
+    def _update_orbital_symmetries(self, sym_res: Optional[PointGroupResult] = None):
+        """Classify loaded MOs under `sym_res` (or auto-detected symmetry) and update the Orbitals table & ladder."""
+        data = getattr(self, "_active_molden_data", None)
+        if not data or not getattr(data, "orbitals", None):
+            return
+
+        if sym_res is None and getattr(self, "zatoms", None) and len(self.zatoms) > 0:
+            try:
+                tol = self.spin_sym_tol.value() if hasattr(self, "spin_sym_tol") else 0.15
+                symbols = [a.symbol for a in self.zatoms]
+                sym_res = find_symmetry_operations(symbols, self.coords, tolerance=tol)
+            except Exception:
+                sym_res = None
+
+        if sym_res is None:
+            return
+
+        irreps: List[str] = []
+        molden_path = getattr(self, "_active_molden_path", None)
+        if molden_path and os.path.isfile(str(molden_path)):
+            try:
+                from .volumetric import classify_molden_orbitals_irreps
+                irreps = classify_molden_orbitals_irreps(
+                    str(molden_path), sym_res, coords_ang=getattr(self, "coords", None)
+                )
+            except Exception:
+                log.debug("Failed classifying MO irreps", exc_info=True)
+        elif sym_res.symbol == "C1" or sym_res.order <= 1:
+            irreps = ["A"] * len(data.orbitals)
+
+        if not irreps or len(irreps) < len(data.orbitals):
+            return
+
+        homo_idx = None
+        for idx, mo in enumerate(data.orbitals):
+            if getattr(mo, "occupancy", 0.0) > 0.05:
+                homo_idx = idx
+            if irreps[idx] and irreps[idx] != "-":
+                mo.sym = irreps[idx]
+
+        if hasattr(self, "table_orbitals"):
+            self.table_orbitals.blockSignals(True)
+            for idx, mo in enumerate(data.orbitals):
+                irr = irreps[idx]
+                base_tag = irr if (irr and irr != "-") else getattr(mo, "sym", f"MO {idx+1}")
+                if homo_idx is not None:
+                    if idx == homo_idx:
+                        tag = f"HOMO ({irr})" if irr and irr != "-" else "HOMO"
+                    elif idx == homo_idx + 1:
+                        tag = f"LUMO ({irr})" if irr and irr != "-" else "LUMO"
+                    elif idx == homo_idx - 1:
+                        tag = f"HOMO-1 ({irr})" if irr and irr != "-" else "HOMO-1"
+                    elif idx == homo_idx + 2:
+                        tag = f"LUMO+1 ({irr})" if irr and irr != "-" else "LUMO+1"
+                    else:
+                        tag = base_tag
+                else:
+                    tag = base_tag
+                item_tag = self.table_orbitals.item(idx, 1)
+                if item_tag is not None:
+                    item_tag.setText(tag)
+            self.table_orbitals.blockSignals(False)
+
+        if hasattr(self, "mo_ladder_widget"):
+            self.mo_ladder_widget.set_orbitals(data.orbitals, homo_idx=homo_idx)
+
+        if hasattr(self, "lbl_mo_gap_badge") and homo_idx is not None and 0 <= homo_idx < len(data.orbitals) - 1:
+            try:
+                from .symmetry import determine_electronic_term_symbol
+                e_homo = float(data.orbitals[homo_idx].energy) * 27.211386
+                e_lumo = float(data.orbitals[homo_idx + 1].energy) * 27.211386
+                gap_ev = e_lumo - e_homo
+                gap_kcal = gap_ev * 23.0605
+                hardness = gap_ev / 2.0
+                mu_chem = (e_homo + e_lumo) / 2.0
+                term = determine_electronic_term_symbol(sym_res.symbol, data.orbitals)
+                term_str = f"  |  <b>State: {term}</b> ({sym_res.symbol})" if term else f"  |  <b>Symmetry: {sym_res.symbol}</b>"
+                self.lbl_mo_gap_badge.setText(
+                    f"⚡ HOMO: {e_homo:+.2f} eV  |  LUMO: {e_lumo:+.2f} eV  |  "
+                    f"ΔE_gap = {gap_ev:.2f} eV ({gap_kcal:.1f} kcal/mol)  |  "
+                    f"Hardness (η): {hardness:.2f} eV  |  μ: {mu_chem:+.2f} eV{term_str}"
+                )
+            except Exception:
+                pass
 
     def _on_mo_source_combo_changed(self, idx: int):
         if not hasattr(self, "combo_mo_file_source") or idx < 0:
@@ -1317,6 +1434,16 @@ class CalculationsMixin:
 
     def _on_quick_iso_changed(self, val: float):
         self._on_quick_spin_iso_changed(val)
+
+    def _on_quick_grid_or_margin_changed(self, *_args):
+        """Re-evaluate the active MO on the 3D grid when Grid Resolution or Plot Box Size changes."""
+        mo_idx = getattr(self, "_current_rendered_mo_index", None)
+        if mo_idx is None and hasattr(self, "table_orbitals"):
+            selected = self.table_orbitals.selectedItems()
+            if selected:
+                mo_idx = self.table_orbitals.row(selected[0])
+        if mo_idx is not None and mo_idx >= 0:
+            self._render_mo_orbital(mo_idx)
 
     def _on_quick_opacity_changed(self, val: int):
         self.viewer.surface_opacity = val / 100.0
@@ -1807,9 +1934,10 @@ class CalculationsMixin:
 
     def _on_open_vibrations_tab(self):
         """Focus on vibrational frequency analysis tab or compute normal modes."""
-        if hasattr(self, "tab_vibrations") and hasattr(self, "dock_tabs"):
-            self.dock_tabs.setCurrentWidget(self.tab_vibrations)
-        elif hasattr(self, "_on_calculate_vibrations"):
+        tab_container = getattr(self, "tabs", None) or getattr(self, "dock_tabs", None)
+        if hasattr(self, "tab_vibrations") and tab_container is not None:
+            tab_container.setCurrentWidget(self.tab_vibrations)
+        if hasattr(self, "_on_calculate_vibrations") and not getattr(self, "current_vib_analysis", None):
             self._on_calculate_vibrations()
 
     def _on_open_qc_doctor_dialog(self):

@@ -788,6 +788,7 @@ class EditingMixin:
         new_zatoms = cartesian_to_zmatrix(symbols, coords, user_bonds=bonds, strict_bonds=True)
         tree = {norm_bond(a.ref1, i) for i, a in enumerate(new_zatoms) if a.ref1 is not None}
         self.cross_bonds = {b for b in bonds if b not in tree}
+        self._nonbonded_tree_edges = tree - set(bonds)
         self.strict_topology = True
         self.variables = {}
         self.set_molecule_from_zatoms(new_zatoms, exact_coords=coords)
@@ -2793,6 +2794,13 @@ class EditingMixin:
         dlg.raise_()
         dlg.activateWindow()
         self._irc_sweeper_dlg = dlg
+
+    def _on_invert_chiral_center_at(self, atom_idx: int):
+        """Select the target stereocenter atom and invert its chirality."""
+        if 0 <= atom_idx < len(self.zatoms):
+            self.viewer.selected_atom_idx = atom_idx
+            self.viewer.multi_selected = [atom_idx]
+            self._on_invert_stereocenter()
 
     def _on_invert_chirality(self):
         if not self.zatoms:
