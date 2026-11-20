@@ -143,9 +143,11 @@ def test_generic_qm_runner_parsing(qapp):
 
 
 
-def test_remote_ssh_password_wrapping():
+def test_remote_ssh_password_wrapping(monkeypatch):
+    import shutil
     from agymolden.calc_runner.remote_ssh import _wrap_ssh_command, RemoteHostConfig
 
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/sshpass" if name == "sshpass" else None)
     cmd = ["ssh", "user@host", "echo READY"]
     wrapped_cmd, env = _wrap_ssh_command(cmd, password="secretpassword")
     assert "SSHPASS" in env

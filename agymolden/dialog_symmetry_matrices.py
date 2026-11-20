@@ -24,8 +24,7 @@ class SymmetryMatricesDialog(QtWidgets.QDialog):
             from .symmetry import PointGroupResult, SymmetryOperation
             sym_res = PointGroupResult(
                 symbol="C1",
-                operations=[SymmetryOperation("E", "identity", np.eye(3))],
-                center_of_mass=np.zeros(3),
+                operations=[SymmetryOperation("E", np.eye(3), "E (Identity)")],
             )
         self.sym_res = sym_res
         self.setWindowTitle(f"3×3 Cartesian Symmetry Matrices — Point Group {sym_res.symbol}")

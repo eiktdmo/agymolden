@@ -42,10 +42,14 @@ class MOEnergyLadderWidget(QtWidgets.QWidget):
 
     def set_orbitals(self, orbitals: List, homo_idx: Optional[int] = None):
         """Populate diagram from MoldenMO objects."""
+        import math
         raw_list = []
         for idx, mo in enumerate(orbitals):
-            ev_val = float(mo.energy) * 27.211386
-            occ = float(getattr(mo, "occupancy", 0.0))
+            raw_e = getattr(mo, "energy", 0.0)
+            ev_val = (float(raw_e) if raw_e is not None else 0.0) * 27.211386
+            if not math.isfinite(ev_val):
+                ev_val = 0.0
+            occ = float(getattr(mo, "occupancy", 0.0) or 0.0)
             sym = str(getattr(mo, "sym", f"MO {idx+1}"))
             raw_list.append((idx, ev_val, occ, sym))
 

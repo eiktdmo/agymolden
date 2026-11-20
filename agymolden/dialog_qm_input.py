@@ -143,6 +143,17 @@ class QMCalculationDialog(QtWidgets.QDialog):
         self.selected_atoms = [i for i in (selected_atoms or []) if 0 <= i < len(symbols)]
         self.auto_enable_scan = bool(auto_enable_scan)
 
+        from .chemistry_checker import detect_cpu_cores, predict_default_multiplicity
+        from .calc_runner.orca_runner import OrcaRunner
+        init_symbols = [getattr(a, "symbol", "C") for a in self.zatoms] if self.zatoms else []
+        n_cpus = detect_cpu_cores()
+        has_orca_mpi = bool(OrcaRunner._resolve_orca_mpi_env())
+        if not has_orca_mpi:
+            import shutil
+            has_orca_mpi = bool(shutil.which("mpirun"))
+        self._detected_cpus = n_cpus
+        self._default_orca_procs = min(4, n_cpus) if has_orca_mpi else 1
+
         self._init_ui()
         # Initialize default preview and labels for the first selected QM code
         first_code = self.combo_qm_code.currentText()
@@ -153,9 +164,11 @@ class QMCalculationDialog(QtWidgets.QDialog):
             if not first_gen.supports_zmatrix:
                 self.chk_zmatrix.setChecked(False)
             if "orca" in first_code.lower():
-                self.spin_procs.setValue(1)
+                self.spin_procs.setValue(self._default_orca_procs)
                 if self.combo_dispersion.currentText() == "D4":
                     self.combo_dispersion.setCurrentText("D3BJ")
+        if init_symbols:
+            self.spin_mult.setValue(predict_default_multiplicity(init_symbols, self.spin_charge.value()))
         self._update_route_ui()
         self._update_preview()
 
@@ -305,11 +318,18 @@ class QMCalculationDialog(QtWidgets.QDialog):
         t3_layout.setContentsMargins(10, 10, 10, 10)
         t3_layout.setSpacing(8)
 
+        n_cpus = getattr(self, "_detected_cpus", max(1, os.cpu_count() or 1))
+        proc_row = QtWidgets.QHBoxLayout()
         self.spin_procs = QtWidgets.QSpinBox()
-        self.spin_procs.setRange(1, 128)
-        self.spin_procs.setValue(8)
+        self.spin_procs.setRange(1, max(128, n_cpus))
+        self.spin_procs.setValue(min(8, n_cpus))
         self.spin_procs.valueChanged.connect(self._update_preview)
-        t3_layout.addRow("Processors / Threads:", self.spin_procs)
+        proc_row.addWidget(self.spin_procs)
+        btn_all_procs = QtWidgets.QPushButton(f"Use All ({n_cpus} detected)")
+        btn_all_procs.clicked.connect(lambda: self.spin_procs.setValue(n_cpus))
+        proc_row.addWidget(btn_all_procs)
+        proc_row.addStretch()
+        t3_layout.addRow("Processors / Threads:", proc_row)
 
         self.spin_mem = QtWidgets.QSpinBox()
         self.spin_mem.setRange(1, 1024)
@@ -558,8 +578,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
                 self.combo_basis.blockSignals(False)
 
         if "orca" in name.lower():
-            # Default to 1 processor for ORCA so serial runs work out-of-the-box without OpenMPI ABI issues
-            self.spin_procs.setValue(1)
+            self.spin_procs.setValue(getattr(self, "_default_orca_procs", 1))
             if self.combo_dispersion.currentText() == "D4":
                 self.combo_dispersion.setCurrentText("D3BJ")
         elif "gaussian" in name.lower():

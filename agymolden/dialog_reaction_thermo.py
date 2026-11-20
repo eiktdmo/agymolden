@@ -4,8 +4,11 @@ Dialog for Reaction Thermochemistry Workbench (Eyring kinetics & equilibrium).
 
 from __future__ import annotations
 
+import math
 import os
 from typing import List, Optional
+
+import numpy as np
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 

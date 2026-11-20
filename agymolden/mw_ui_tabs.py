@@ -570,10 +570,11 @@ class UIInspectorTabsMixin:
         self.table_orbitals.verticalHeader().setDefaultSectionSize(22)
         self.table_orbitals.setAlternatingRowColors(True)
         self.table_orbitals.itemSelectionChanged.connect(self._on_mo_table_selected)
+        self.table_orbitals.cellClicked.connect(lambda row, _col: self._on_mo_row_clicked(row))
         mo_split_layout.addWidget(self.table_orbitals, stretch=3)
 
         self.mo_ladder_widget = MOEnergyLadderWidget(self)
-        self.mo_ladder_widget.orbital_clicked.connect(lambda idx: self.table_orbitals.selectRow(idx))
+        self.mo_ladder_widget.orbital_clicked.connect(self._on_mo_ladder_clicked)
         mo_split_layout.addWidget(self.mo_ladder_widget, stretch=2)
 
         tab_mo_layout.addLayout(mo_split_layout, stretch=1)

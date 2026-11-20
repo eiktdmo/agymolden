@@ -13,9 +13,12 @@ existing code and tests referencing `FRAGMENTS[name]` continue to work seamlessl
 """
 
 import json
+import logging
 import os
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 from .fragments import FRAGMENTS
 from .topology import norm_bond
@@ -608,7 +611,7 @@ def load_custom_fragments_into_registry(path: Optional[str] = None) -> Dict[str,
             loaded[name] = entry
         return loaded
     except Exception as e:
-        log.warning(f"Failed to read custom fragments from {CUSTOM_FRAGMENTS_PATH}: {e}", exc_info=True)
+        log.warning(f"Failed to read custom fragments from {fpath}: {e}", exc_info=True)
         return {}
 
 
@@ -656,7 +659,7 @@ def save_custom_fragment(
             with open(fpath, "r", encoding="utf-8") as fh:
                 existing_raw = json.load(fh)
         except Exception as e:
-            log.warning(f"Failed to parse existing JSON in {CUSTOM_FRAGMENTS_PATH}: {e}", exc_info=True)
+            log.warning(f"Failed to parse existing JSON in {fpath}: {e}", exc_info=True)
             existing_raw = {}
 
     serializable = {

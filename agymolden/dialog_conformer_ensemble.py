@@ -14,7 +14,7 @@ Provides:
 """
 
 import os
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 import numpy as np
 from PyQt6 import QtWidgets, QtCore, QtGui
 

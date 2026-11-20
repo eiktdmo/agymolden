@@ -336,7 +336,7 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
                             final_coords = np.array(crds, dtype=np.float64)
                             traj_coords = [final_coords]
                 except Exception as e:
-                    log.debug("Failed parsing xyz candidate %s: %s", xyz_cand, e)
+                    log.debug("Failed parsing py candidate %s: %s", py_cand, e)
         if final_coords is None:
             import glob
             # Check explicitly declared generated artifacts in log

@@ -906,15 +906,16 @@ class CalculationsMixin:
     # -------------------------------------------------------------------------
     # Quick Molecular Orbital Inspector
     # -------------------------------------------------------------------------
-    def load_orbitals_from_molden(self, path: str, auto_render: bool = True):
+    def load_orbitals_from_molden(self, path: str, auto_render: bool = True) -> bool:
         """Parse Molden file and populate the Molecular Orbitals table."""
         from .volumetric import parse_molden_file
         data = parse_molden_file(path)
         if not data or not data.orbitals:
-            return
+            return False
 
         self._active_molden_path = path
         self.set_orbitals_from_data(data, auto_render=auto_render, source_path=path)
+        return True
 
     def set_orbitals_from_data(
         self,
@@ -1223,6 +1224,24 @@ class CalculationsMixin:
             if hasattr(self, "_volumetric_dlg") and self._volumetric_dlg and self._volumetric_dlg.isVisible():
                 self._volumetric_dlg.load_molden_path(target_path)
 
+    def _on_mo_row_clicked(self, row: int):
+        """Ensure clicking an already-selected MO row still plots the orbital if not yet rendered."""
+        if row < 0 or not hasattr(self, "table_orbitals") or row >= self.table_orbitals.rowCount():
+            return
+        cur_rendered = getattr(self, "_current_rendered_mo_index", None)
+        has_surf = bool(getattr(self.viewer, "active_isosurfaces", None))
+        if cur_rendered != row or not has_surf:
+            self._on_mo_table_selected()
+
+    def _on_mo_ladder_clicked(self, idx: int):
+        """Select and render the clicked orbital from the MO Energy Ladder diagram."""
+        if idx < 0 or not hasattr(self, "table_orbitals") or idx >= self.table_orbitals.rowCount():
+            return
+        was_selected = (self.table_orbitals.currentRow() == idx)
+        self.table_orbitals.selectRow(idx)
+        if was_selected:
+            self._on_mo_table_selected()
+
     def _on_mo_table_selected(self):
         selected = self.table_orbitals.selectedItems()
         if not selected:
@@ -1302,6 +1321,12 @@ class CalculationsMixin:
 
         def _on_done(res_tuple):
             meshes, eff_iso, vol = res_tuple
+            if vol is None:
+                self.statusBar().showMessage(
+                    f"Could not evaluate 3D grid for MO #{mo_index+1} from {os.path.basename(molden_path)} (missing [GTO] basis or incompatible Molden format).",
+                    5000,
+                )
+                return
             if vol:
                 self._current_rendered_mo_vol = vol
                 self._current_rendered_mo_index = mo_index

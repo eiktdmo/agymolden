@@ -15,6 +15,8 @@ import logging
 from typing import Any, List, Tuple, Optional, Dict
 import numpy as np
 
+log = logging.getLogger(__name__)
+
 try:
     from rdkit import Chem
     from rdkit.Chem import rdDetermineBonds

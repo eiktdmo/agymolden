@@ -760,14 +760,21 @@ def compute_hirshfeld_and_cm5_charges(molden_path: str) -> PartialChargesResult:
         raise MultiwfnNotFoundError("CM5 / Hirshfeld charges")
 
     inp = f"{molden_path}\n7\n16\n1\nn\n0\nq\n"
-    res = subprocess.run(
-        [multiwfn_bin],
-        input=inp,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=90,
-    )
+    try:
+        res = subprocess.run(
+            [multiwfn_bin],
+            input=inp,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=90,
+        )
+    except subprocess.CalledProcessError as exc:
+        err_detail = (exc.stderr or exc.stdout or "").strip()
+        raise RuntimeError(
+            f"Multiwfn failed (exit code {exc.returncode}) at '{multiwfn_bin}'"
+            + (f": {err_detail}" if err_detail else ".")
+        ) from exc
     stdout = res.stdout
 
     atoms_list = []

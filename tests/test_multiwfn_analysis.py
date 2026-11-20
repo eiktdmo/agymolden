@@ -102,7 +102,12 @@ def test_compute_hirshfeld_and_cm5_charges():
     if not bin_path or not os.path.isfile(H2O_MOLDEN):
         pytest.skip("Multiwfn not installed or h2o_orca.molden missing")
 
-    res = compute_hirshfeld_and_cm5_charges(H2O_MOLDEN)
+    try:
+        res = compute_hirshfeld_and_cm5_charges(H2O_MOLDEN)
+    except RuntimeError as exc:
+        if "exit code 127" in str(exc):
+            pytest.skip(f"Multiwfn binary is not runnable on this host: {exc}")
+        raise
     assert len(res.atoms) == 3
     # Oxygen atom should be negatively charged
     o_atom = res.atoms[0]

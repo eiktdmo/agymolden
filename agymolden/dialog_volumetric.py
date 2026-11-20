@@ -12,7 +12,10 @@ Provides controls for:
 
 import logging
 import os
+import re
 from typing import List, Optional, Tuple, Dict
+
+log = logging.getLogger(__name__)
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 

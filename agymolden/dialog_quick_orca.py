@@ -264,6 +264,16 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         state_grid = QtWidgets.QGridLayout(grp_state)
         state_grid.setVerticalSpacing(6)
 
+        from .chemistry_checker import detect_cpu_cores, predict_default_multiplicity
+        from .calc_runner.orca_runner import OrcaRunner
+
+        init_symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
+        n_cpus = detect_cpu_cores()
+        has_mpi = bool(OrcaRunner._resolve_orca_mpi_env()) or bool(os.environ.get("OMPI_COMM_WORLD_SIZE"))
+        if not has_mpi:
+            import shutil
+            has_mpi = bool(shutil.which("mpirun"))
+
         row_charge = QtWidgets.QHBoxLayout()
         self.spn_charge = QtWidgets.QSpinBox()
         self.spn_charge.setRange(-10, 10)
@@ -273,7 +283,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         self.spn_mult = QtWidgets.QSpinBox()
         self.spn_mult.setRange(1, 10)
-        self.spn_mult.setValue(1)
+        self.spn_mult.setValue(predict_default_multiplicity(init_symbols, 0))
         row_charge.addWidget(QtWidgets.QLabel("Multiplicity:"))
         row_charge.addWidget(self.spn_mult)
         row_charge.addStretch()
@@ -283,15 +293,25 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         self.lbl_parity_warning.setWordWrap(True)
         state_grid.addWidget(self.lbl_parity_warning, 1, 0, 1, 2)
 
-        self.spn_charge.valueChanged.connect(self._validate_charge_multiplicity)
+        self.spn_charge.valueChanged.connect(self._on_charge_changed)
         self.spn_mult.valueChanged.connect(self._validate_charge_multiplicity)
 
         row_hw = QtWidgets.QHBoxLayout()
         self.spn_cores = QtWidgets.QSpinBox()
-        self.spn_cores.setRange(1, 64)
-        self.spn_cores.setValue(4)
+        self.spn_cores.setRange(1, max(64, n_cpus))
+        self.spn_cores.setValue(min(4, n_cpus) if has_mpi else 1)
         row_hw.addWidget(QtWidgets.QLabel("Cores (%pal):"))
         row_hw.addWidget(self.spn_cores)
+
+        self.btn_use_all_cores = QtWidgets.QPushButton(f"All ({n_cpus})")
+        self.btn_use_all_cores.setToolTip(f"Set Cores (%pal) to all {n_cpus} detected CPU cores")
+        self.btn_use_all_cores.setStyleSheet("padding: 2px 6px; font-size: 11px;")
+        self.btn_use_all_cores.clicked.connect(lambda: self.spn_cores.setValue(n_cpus))
+        row_hw.addWidget(self.btn_use_all_cores)
+
+        self.lbl_detected_cores = QtWidgets.QLabel(f"({n_cpus} detected)")
+        self.lbl_detected_cores.setStyleSheet("color: #64748b; font-size: 11px;")
+        row_hw.addWidget(self.lbl_detected_cores)
 
         self.spn_mem = QtWidgets.QSpinBox()
         self.spn_mem.setRange(500, 32000)
@@ -609,6 +629,18 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             basis_set=route_str,
             qm_package="ORCA",
         )
+
+    def _on_charge_changed(self):
+        """Auto-adjust multiplicity parity when net charge changes, then re-validate."""
+        if self.zatoms:
+            from .chemistry_checker import predict_default_multiplicity
+            symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
+            pred_mult = predict_default_multiplicity(symbols, self.spn_charge.value())
+            if ((self.spn_mult.value() - 1) % 2) != ((pred_mult - 1) % 2):
+                self.spn_mult.blockSignals(True)
+                self.spn_mult.setValue(pred_mult)
+                self.spn_mult.blockSignals(False)
+        self._validate_charge_multiplicity()
 
     def _validate_charge_multiplicity(self):
         """Validates electron count parity, interatomic clashes, and basis suitability."""

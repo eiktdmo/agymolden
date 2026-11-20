@@ -77,9 +77,9 @@ def _detect_pairs_spatial_hash(
             iu = np.triu_indices(n_a, k=1)
             mask = d2[iu] <= r2_cutoff
             if np.any(mask):
-                u_idx, v_idx = iu[0][mask], iu[1][mask]
-                for u, v in zip(atoms[u_idx], atoms[v_idx]):
-                    candidate_pairs.append((min(u, v), max(u, v)))
+                us = atoms[iu[0][mask]]
+                vs = atoms[iu[1][mask]]
+                candidate_pairs.extend(map(tuple, np.column_stack((np.minimum(us, vs), np.maximum(us, vs))).tolist()))
 
         for dx, dy, dz in neighbor_offsets:
             nc = (cx + dx, cy + dy, cz + dz)
@@ -91,25 +91,31 @@ def _detect_pairs_spatial_hash(
                 mask = d2 <= r2_cutoff
                 if np.any(mask):
                     u_idx, v_idx = np.where(mask)
-                    for u, v in zip(atoms[u_idx], n_atoms[v_idx]):
-                        candidate_pairs.append((min(u, v), max(u, v)))
+                    us = atoms[u_idx]
+                    vs = n_atoms[v_idx]
+                    candidate_pairs.extend(map(tuple, np.column_stack((np.minimum(us, vs), np.maximum(us, vs))).tolist()))
+
+    grid_pts_list = {c: coords[atoms].tolist() for c, atoms in grid_arr.items()}
+    grid_atoms_list = {c: atoms.tolist() for c, atoms in grid_arr.items()}
 
     def query_ball_point(x: np.ndarray, r: float) -> List[int]:
-        pt = np.asarray(x, dtype=np.float64)
-        cx, cy, cz = int(np.floor(pt[0] * inv_r)), int(np.floor(pt[1] * inv_r)), int(np.floor(pt[2] * inv_r))
+        px, py, pz = float(x[0]), float(x[1]), float(x[2])
+        cx, cy, cz = int(math.floor(px * inv_r)), int(math.floor(py * inv_r)), int(math.floor(pz * inv_r))
         r2_q = r * r
         res = []
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 for dz in (-1, 0, 1):
                     nc = (cx + dx, cy + dy, cz + dz)
-                    if nc in grid_arr:
-                        c_atoms = grid_arr[nc]
-                        c_pts = grid_coords[nc]
-                        d2 = np.sum((c_pts - pt) ** 2, axis=-1)
-                        matches = c_atoms[d2 <= r2_q]
-                        if len(matches) > 0:
-                            res.extend(matches.tolist())
+                    if nc in grid_atoms_list:
+                        c_atoms = grid_atoms_list[nc]
+                        c_pts = grid_pts_list[nc]
+                        for idx_a, pt_a in zip(c_atoms, c_pts):
+                            ddx = pt_a[0] - px
+                            ddy = pt_a[1] - py
+                            ddz = pt_a[2] - pz
+                            if ddx * ddx + ddy * ddy + ddz * ddz <= r2_q:
+                                res.append(idx_a)
         return res
 
     return candidate_pairs, query_ball_point
@@ -165,6 +171,7 @@ def detect_connectivity(
         else:
             candidate_pairs, ball_query = _detect_pairs_spatial_hash(coords, r_cutoff=4.8)
 
+        pts_list = coords.tolist()
         for i, j in candidate_pairs:
             si, sj = symbols[i], symbols[j]
             if si in MONOVALENT or sj in MONOVALENT or si == "X" or sj == "X":
@@ -175,27 +182,37 @@ def detect_connectivity(
             max_val_j = DEFAULT_VALENCES.get(sj, 4)
             if user_bonds and len(user_adj[j]) >= max_val_j:
                 continue
-            dist = float(np.linalg.norm(coords[i] - coords[j]))
+            pi = pts_list[i]
+            pj = pts_list[j]
+            dx = pi[0] - pj[0]
+            dy = pi[1] - pj[1]
+            dz = pi[2] - pj[2]
+            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
             max_cov = (cov_radii[i] + cov_radii[j]) * 1.25 + 0.15
             if 0.4 < dist <= max_cov:
                 bonds_set.add((min(i, j), max(i, j)))
 
+        bonded_atoms = {u for b in bonds_set for u in b}
         for m_idx in range(n):
             sm = symbols[m_idx]
             if sm not in MONOVALENT:
                 continue
-            already_bonded = any(m_idx in b for b in bonds_set)
-            if already_bonded:
+            if m_idx in bonded_atoms:
                 continue
 
             r_m = cov_radii[m_idx]
+            pm = pts_list[m_idx]
             nearby_indices = ball_query(coords[m_idx], r=3.5)
             best_partner = None
             best_dist = 1e9
             for j in nearby_indices:
                 if j == m_idx or symbols[j] in MONOVALENT or symbols[j] == "X":
                     continue
-                dist = float(np.linalg.norm(coords[m_idx] - coords[j]))
+                pj = pts_list[j]
+                dx = pm[0] - pj[0]
+                dy = pm[1] - pj[1]
+                dz = pm[2] - pj[2]
+                dist = math.sqrt(dx * dx + dy * dy + dz * dz)
                 max_cov = (r_m + cov_radii[j]) * 1.30 + 0.15
                 if dist <= max_cov and dist < best_dist:
                     best_dist = dist

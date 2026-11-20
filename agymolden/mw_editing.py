@@ -2711,9 +2711,10 @@ class EditingMixin:
                     self.slider_trajectory.setEnabled(True)
                     self.slider_trajectory.setRange(0, len(p_frames) - 1)
                     self.slider_trajectory.setValue(0)
+                if hasattr(self, "grp_trajectory"):
+                    self.grp_trajectory.setVisible(True)
                 if hasattr(self, "sparkline_trajectory"):
-                    self.sparkline_trajectory.set_energies(self.trajectory_energies)
-                    self.sparkline_trajectory.set_current_frame(0)
+                    self.sparkline_trajectory.set_data(self.trajectory_energies, active_step=0)
                 if hasattr(self, "lbl_trajectory_step"):
                     self.lbl_trajectory_step.setText(f"1/{len(p_frames)}")
                 if len(p_frames) > 0:

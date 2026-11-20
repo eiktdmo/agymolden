@@ -155,20 +155,44 @@ class ImportController:
             # (with [GTO] basis & [MO] coefficients) over log eigenvalue tables when available!
             q_dir = os.path.dirname(path)
             q_base = os.path.splitext(os.path.basename(path))[0]
+            q_prefix = q_base
+            for _sfx in ("_checkpoint", "_final", "_summary", "_profile"):
+                if q_prefix.endswith(_sfx):
+                    q_prefix = q_prefix[:-len(_sfx)]
+
+            cand_moldens: List[str] = []
+            try:
+                import re
+                with open(path, "r", encoding="utf-8", errors="ignore") as f_qm:
+                    qm_txt = f_qm.read()
+                for m_art in re.finditer(r"\[Artifact Generated\]\s+([^\s]+\.molden(?:\.input)?)", qm_txt):
+                    art_file = m_art.group(1).strip()
+                    art_full = art_file if os.path.isabs(art_file) else os.path.join(q_dir, art_file)
+                    if os.path.isfile(art_full) and "positron" not in os.path.basename(art_full).lower() and art_full not in cand_moldens:
+                        cand_moldens.append(art_full)
+            except Exception:
+                log.debug("Ignored non-fatal exception scanning log for Molden artifacts", exc_info=True)
+
+            stem_list = [q_base] if q_prefix == q_base else [q_base, q_prefix]
+            for st in stem_list:
+                for cand_ext in (
+                    "_hf_electrons.molden",
+                    "_electrons.molden",
+                    ".molden.input",
+                    ".molden",
+                    ".e-.molden",
+                    ".E-.molden",
+                    ".E-ALPHA.molden",
+                    ".molf",
+                    ".fchk.molden",
+                    ".gbw",
+                ):
+                    cm = os.path.join(q_dir, st + cand_ext)
+                    if cm not in cand_moldens:
+                        cand_moldens.append(cm)
+
             companion_loaded = False
-            for cand_ext in (
-                "_hf_electrons.molden",
-                "_electrons.molden",
-                ".molden.input",
-                ".molden",
-                ".e-.molden",
-                ".E-.molden",
-                ".E-ALPHA.molden",
-                ".molf",
-                ".fchk.molden",
-                ".gbw",
-            ):
-                cand_m = os.path.join(q_dir, q_base + cand_ext)
+            for cand_m in cand_moldens:
                 if os.path.isfile(cand_m):
                     if cand_m.lower().endswith(".gbw"):
                         from ..volumetric import convert_gbw_to_molden_if_possible
@@ -177,9 +201,9 @@ class ImportController:
                             continue
                         cand_m = conv_m
                     try:
-                        self.mw.load_orbitals_from_molden(cand_m, auto_render=False)
-                        companion_loaded = True
-                        break
+                        if self.mw.load_orbitals_from_molden(cand_m, auto_render=False):
+                            companion_loaded = True
+                            break
                     except Exception:
                         log.debug("Auto-loading companion molden failed", exc_info=True)
 

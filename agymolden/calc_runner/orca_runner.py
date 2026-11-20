@@ -67,7 +67,7 @@ class OrcaRunner(BaseCalcRunner):
             with open(self.input_file, "r", encoding="utf-8", errors="replace") as f_in:
                 inp_text = f_in.read().lower()
             if "moread" not in inp_text and "moinp" not in inp_text:
-                for stale_ext in (".ges", ".gbw", ".prop"):
+                for stale_ext in (".ges", ".gbw", ".prop", ".molden", ".molden.input"):
                     stale = f"{stem}{stale_ext}"
                     if os.path.isfile(stale):
                         try:
@@ -103,9 +103,33 @@ class OrcaRunner(BaseCalcRunner):
             for tok in route_cmd[1:]
         ]
         args = extra_args + [self.input_file]
-        self._setup_process(exec_bin, args, self.work_dir)
+        extra_env = self._resolve_orca_mpi_env()
+        self._setup_process(exec_bin, args, self.work_dir, extra_env=extra_env)
         self._set_status(JobStatus.RUNNING, f"Running ORCA on {os.path.basename(input_file)}...")
         return True
+
+    @staticmethod
+    def _resolve_orca_mpi_env() -> Optional[Dict[str, str]]:
+        """Locate an OpenMPI 4.1 environment (e.g. conda env 'orca_mpi') if libmpi.so.40 / mpirun is not in PATH."""
+        if sys.platform != "linux":
+            return None
+        home = os.path.expanduser("~")
+        candidates = [
+            os.path.join(home, "anaconda3", "envs", "orca_mpi"),
+            os.path.join(home, "miniconda3", "envs", "orca_mpi"),
+            os.path.join(home, "mambaforge", "envs", "orca_mpi"),
+            os.path.join(home, "miniforge3", "envs", "orca_mpi"),
+        ]
+        for env_root in candidates:
+            bin_dir = os.path.join(env_root, "bin")
+            lib_dir = os.path.join(env_root, "lib")
+            if os.path.isfile(os.path.join(bin_dir, "mpirun")) and os.path.isfile(os.path.join(lib_dir, "libmpi.so.40")):
+                cur_path = os.environ.get("PATH", "")
+                cur_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                new_path = f"{bin_dir}:{cur_path}" if cur_path else bin_dir
+                new_ld = f"{lib_dir}:{cur_ld}" if cur_ld else lib_dir
+                return {"PATH": new_path, "LD_LIBRARY_PATH": new_ld}
+        return None
 
     def _on_process_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus):
         if self._out_fh:
@@ -136,7 +160,7 @@ class OrcaRunner(BaseCalcRunner):
                         alt_inp = os.path.join(self.work_dir, f"{stem_base}.molden.input")
                         if os.path.isfile(alt_inp):
                             molden_inp = alt_inp
-                    if os.path.isfile(molden_inp) and not os.path.isfile(molden_std):
+                    if os.path.isfile(molden_inp):
                         shutil.copy2(molden_inp, molden_std)
                 except (subprocess.SubprocessError, OSError) as e:
                     log.warning(f"orca_2mkl conversion warning: {e}")

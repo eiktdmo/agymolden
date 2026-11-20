@@ -10,8 +10,31 @@ frustrations (especially for students and new users):
 """
 
 from typing import List, Tuple, Dict, Any, Optional
+import os
 import numpy as np
 from .elements import ELEMENT_DATA, normalize_symbol
+
+
+def detect_cpu_cores() -> int:
+    """Return the detected number of logical CPU cores on this machine (at least 1)."""
+    try:
+        return max(1, int(os.cpu_count() or 1))
+    except Exception:
+        return 1
+
+
+def predict_default_multiplicity(symbols: List[str], charge: int = 0) -> int:
+    """Predict lowest valid spin multiplicity (1 for even electron count, 2 for odd)."""
+    if not symbols:
+        return 1
+    total_z = 0
+    for s in symbols:
+        ns = normalize_symbol(s)
+        total_z += int(ELEMENT_DATA.get(ns, {}).get("atomic_number", 1))
+    n_electrons = total_z - int(charge)
+    if n_electrons <= 0:
+        return 1
+    return 1 if (n_electrons % 2 == 0) else 2
 
 
 def check_calculation_sanity(

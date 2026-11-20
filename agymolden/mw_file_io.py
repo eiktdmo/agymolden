@@ -175,6 +175,10 @@ class FileIOMixin:
                 self.sparkline_trajectory.set_data([])
             if hasattr(self, "table_orbitals"):
                 self.table_orbitals.setRowCount(0)
+            if hasattr(self, "mo_ladder_widget") and self.mo_ladder_widget:
+                self.mo_ladder_widget.set_orbitals([], homo_idx=None)
+            if hasattr(self, "dos_widget") and self.dos_widget:
+                self.dos_widget.set_orbitals([], homo_idx=None)
             if hasattr(self, "lbl_mo_status") and self.lbl_mo_status:
                 self.lbl_mo_status.setText("No Molecular Orbitals loaded.")
             if hasattr(self, "lbl_mo_gap_badge") and self.lbl_mo_gap_badge:
@@ -440,8 +444,13 @@ class FileIOMixin:
         dlg = MultiwfnAnalysisDialog(self, molden_path=molden_path, viewer=self.viewer)
         dlg.exec()
 
-    def _on_open_volumetric_dialog(self):
+    def _on_open_volumetric_dialog(self, target_tab: Optional[str] = None):
         """Open Volumetric Grid & Isosurface Controller Dialog."""
+        if target_tab == "esp":
+            from .controllers import OrbitalController
+            if getattr(self, "_active_molden_path", None) and os.path.isfile(str(self._active_molden_path)):
+                OrbitalController(self).quick_view_esp_map()
+                return
         from .dialog_volumetric import VolumetricSurfaceDialog
         dlg = getattr(self, "_volumetric_dlg", None)
         if dlg is None:
@@ -490,7 +499,7 @@ class FileIOMixin:
         if hasattr(self, "_volumetric_dlg"):
             self._volumetric_dlg.load_molden_path(path)
             self._remember_file(path)
-            actual_path = self._volumetric_dlg.current_molden_path or path
+            actual_path = path
             if os.path.isfile(actual_path):
                 try:
                     self.load_orbitals_from_molden(actual_path, auto_render=False)

@@ -522,10 +522,23 @@ def parse_molden_file(path: str) -> MoldenFileData:
             except ValueError:
                 pass
         elif current_section == "MO":
-            if line.upper().startswith("SYM=") or (line.upper().startswith("ENE=") and not (i > 0 and lines[i-1].strip().upper().startswith("SYM="))):
-                # A new orbital starts when we encounter Sym= (or Ene= when not preceded by Sym=)
-                sym_val = line.split("=")[1].strip() if line.upper().startswith("SYM=") else "1a"
-                init_ene = float(line.split("=")[1].strip()) if line.upper().startswith("ENE=") else 0.0
+            if "=" in line:
+                key_part, val_part = line.split("=", 1)
+                key_up = key_part.strip().upper()
+                val_str = val_part.strip()
+            else:
+                key_up, val_str = "", ""
+
+            if key_up in ("SYM", "ENE"):
+                # Start a new orbital block
+                sym_val = val_str if key_up == "SYM" else "1a"
+                try:
+                    init_ene = float(val_str.replace("D", "E").replace("d", "e")) if key_up == "ENE" else 0.0
+                except ValueError:
+                    init_ene = 0.0
+                seen_ene = (key_up == "ENE")
+                seen_sym = (key_up == "SYM")
+                seen_coeff = False
                 mo = MoldenMO(sym=sym_val, energy=init_ene, spin="Alpha", occupancy=0.0, coefficients={})
                 i += 1
                 while i < len(lines):
@@ -536,27 +549,42 @@ def parse_molden_file(path: str) -> MoldenFileData:
                     if sub.startswith("["):
                         i -= 1
                         break
-                    # If next MO starts with Sym= (or Ene= without Sym=), break out
-                    if sub.upper().startswith("SYM="):
-                        i -= 1
-                        break
-                    if sub.upper().startswith("ENE="):
-                        if mo.energy != 0.0 or sub.upper().startswith("ENE=") and not line.upper().startswith("SYM="):
-                            # This is a new orbital's Ene=
+                    if "=" in sub:
+                        s_key, s_val = sub.split("=", 1)
+                        s_key_up = s_key.strip().upper()
+                        s_val_str = s_val.strip()
+                    else:
+                        s_key_up, s_val_str = "", ""
+
+                    if s_key_up == "SYM":
+                        if seen_sym or seen_coeff:
                             i -= 1
                             break
-                        else:
-                            mo.energy = float(sub.split("=")[1].strip())
-                    elif sub.upper().startswith("SPIN="):
-                        mo.spin = sub.split("=")[1].strip()
-                    elif sub.upper().startswith("OCCUP="):
-                        mo.occupancy = float(sub.split("=")[1].strip())
+                        mo.sym = s_val_str or mo.sym
+                        seen_sym = True
+                    elif s_key_up == "ENE":
+                        if seen_ene or seen_coeff:
+                            i -= 1
+                            break
+                        try:
+                            mo.energy = float(s_val_str.replace("D", "E").replace("d", "e"))
+                        except ValueError:
+                            pass
+                        seen_ene = True
+                    elif s_key_up == "SPIN":
+                        mo.spin = s_val_str
+                    elif s_key_up.startswith("OCC"):
+                        try:
+                            mo.occupancy = float(s_val_str.replace("D", "E").replace("d", "e"))
+                        except ValueError:
+                            pass
                     else:
                         # Coefficient line: AO_Index Value
-                        ctoks = sub.split()
+                        ctoks = sub.replace("D", "E").replace("d", "e").split()
                         if len(ctoks) >= 2:
                             try:
                                 mo.coefficients[int(ctoks[0])] = float(ctoks[1])
+                                seen_coeff = True
                             except ValueError:
                                 pass
                     i += 1
@@ -1074,14 +1102,27 @@ def _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr):
         if cached is not None:
             return cached
 
+    res = None
     try:
         res = _load_pyscf_molden(molden_path)
     except Exception:
-        return None
+        log.debug("PySCF molden.load failed for %s; trying pure-NumPy fallback", molden_path, exc_info=True)
+        res = None
+    if not res or not getattr(res[0], "_basis", None) or res[0].natm == 0:
+        try:
+            res = _load_fallback_molden(molden_path)
+        except Exception:
+            log.debug("Fallback molden loader failed for %s", molden_path, exc_info=True)
+            return None
     if not res:
         return None
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None
 
     if isinstance(mol, _FallbackMol):
@@ -1436,7 +1477,11 @@ def evaluate_molden_orbital_grid(
         return None
     res, mol, c, coords, ao_val = ctx["res"], ctx["mol"], ctx["cube"], ctx["coords"], ctx["ao_val"]
 
+    if len(res) < 3 or res[2] is None:
+        return None
     mo_coeff = np.asarray(res[2])
+    if mo_coeff.ndim < 2 or mo_coeff.size == 0:
+        return None
     mo_energy = np.asarray(res[1]) if len(res) > 1 and res[1] is not None else None
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else None
     irrep_labels = res[4] if len(res) > 4 else None
@@ -1532,6 +1577,11 @@ def compute_molden_esp_grid(
 
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None
 
     mo_coeff = np.asarray(res[2])
@@ -1912,6 +1962,11 @@ def compute_molden_elf_grid(
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
         return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
+        return None
 
     mo_coeff = np.asarray(res[2])
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else np.zeros(mo_coeff.shape[-1])
@@ -2007,6 +2062,11 @@ def compute_molden_localized_orbitals(
 
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None
 
     mo_coeff = np.asarray(res[2])
@@ -2152,6 +2212,11 @@ def compute_molden_nci_rdg(
 
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None
 
     mo_coeff = np.asarray(res[2])
@@ -2305,6 +2370,11 @@ def compute_molden_alie_mapped_density(
 
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None
+    if len(res) < 3 or res[2] is None:
+        return None
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None
 
     mo_coeff = np.asarray(res[2])
@@ -2509,6 +2579,11 @@ def compute_molden_chelpg_charges(
 
     mol = res[0]
     if not getattr(mol, "_basis", None) or mol.natm == 0:
+        return None, 0.0
+    if len(res) < 3 or res[2] is None:
+        return None, 0.0
+    mo_c_arr = np.asarray(res[2])
+    if mo_c_arr.ndim < 2 or mo_c_arr.size == 0:
         return None, 0.0
 
     mo_coeff = np.asarray(res[2])

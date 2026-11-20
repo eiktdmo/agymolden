@@ -61,7 +61,6 @@ excludes = [
     'pandas',
     'IPython',
     'pytest',
-    'rdkit',
     'basis_set_exchange',
     'PyQt6.QtWebEngineCore',
     'PyQt6.QtWebEngineWidgets',

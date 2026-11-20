@@ -7,7 +7,7 @@ Provides an intuitive UI for:
 3. Live preview and 1-click force field relaxation.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 
 from PyQt6 import QtWidgets, QtGui, QtCore

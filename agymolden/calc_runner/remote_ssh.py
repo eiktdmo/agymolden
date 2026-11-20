@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any
 
+import numpy as np
+
 from PyQt6 import QtCore, QtWidgets
 
 from .base import BaseCalcRunner, JobStatus, OptimizationStep

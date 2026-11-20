@@ -9,6 +9,7 @@ Provides:
 """
 
 import math
+import os
 from typing import List, Optional, Tuple
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets

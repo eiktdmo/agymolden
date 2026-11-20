@@ -22,7 +22,7 @@ from OpenGL.GL import (
     glDepthFunc, glDepthMask, glDisable, GL_LESS, GL_TRUE,
     GL_CULL_FACE, GL_SCISSOR_TEST, GL_STENCIL_TEST,
     glPolygonMode, GL_FRONT_AND_BACK, GL_LINE, GL_FILL,
-    glCullFace, GL_FRONT, GL_BACK,
+    glCullFace, GL_FRONT, GL_BACK, GL_RENDERER, glGetString,
 )
 
 from .aromatic import find_delocalized_bonds
