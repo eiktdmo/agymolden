@@ -1,15 +1,27 @@
 """Molecular force field geometry optimization and valence hydrogen completion algorithms."""
+import logging
 
 import math
 from typing import List, Tuple, Dict, Optional, Set, Any
 from collections import defaultdict
 import numpy as np
 
-try:
-    from scipy.spatial import cKDTree
-    _HAS_CKDTREE = True
-except ImportError:
-    _HAS_CKDTREE = False
+import importlib.util
+
+_CKDTREE_CLS = None
+_HAS_CKDTREE = importlib.util.find_spec("scipy.spatial") is not None
+
+
+def _get_ckdtree():
+    """Lazy-import scipy.spatial.cKDTree on first use to avoid startup import overhead."""
+    global _CKDTREE_CLS, _HAS_CKDTREE
+    if _CKDTREE_CLS is None and _HAS_CKDTREE:
+        try:
+            from scipy.spatial import cKDTree as _cKDTree
+            _CKDTREE_CLS = _cKDTree
+        except ImportError:
+            _HAS_CKDTREE = False
+    return _CKDTREE_CLS
 
 from .elements import get_cov_radius, get_vdw_radius, estimate_bond_length
 
@@ -164,8 +176,9 @@ def detect_connectivity(
 
     if n >= 40:
         # High-performance spatial indexing (cKDTree or O(N) uniform spatial hash partitioning)
-        if _HAS_CKDTREE:
-            tree = cKDTree(coords)
+        ckdtree_cls = _get_ckdtree() if _HAS_CKDTREE else None
+        if ckdtree_cls is not None:
+            tree = ckdtree_cls(coords)
             candidate_pairs = tree.query_pairs(r=4.8)
             ball_query = tree.query_ball_point
         else:
@@ -905,7 +918,7 @@ def optimize_geometry_rdkit_mmff(
             return np.array(opt_c, dtype=np.float64), float(e)
 
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
     return None
 
 

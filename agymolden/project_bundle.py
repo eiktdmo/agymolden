@@ -5,10 +5,13 @@ QM inputs, and camera/visualization state in an open, portable JSON/ZIP format.
 """
 
 import json
+import logging
 import os
 import zipfile
 from typing import Dict, Any, Optional, List
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 from .zmatrix import ZAtom, cartesian_to_zmatrix, zmatrix_to_cartesian
 
@@ -59,12 +62,17 @@ def save_project_bundle(
     }
 
     tmp_path = filepath + ".tmp"
-    with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("project.json", json.dumps(manifest, indent=2))
-
-    if os.path.exists(filepath):
-        os.remove(filepath)
-    os.rename(tmp_path, filepath)
+    try:
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps(manifest, indent=2))
+        os.replace(tmp_path, filepath)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
     return True
 
 
@@ -113,4 +121,5 @@ def load_project_bundle(filepath: str) -> Optional[Dict[str, Any]]:
             "metadata": data.get("metadata", {}),
         }
     except Exception:
+        log.warning("Failed to load project bundle %s", filepath, exc_info=True)
         return None

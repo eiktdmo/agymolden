@@ -15,7 +15,8 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.setWindowTitle("⚙️ AgyMolden Preferences")
         self.resize(520, 380)
 
-        self.settings = QtCore.QSettings("AgyMolden", "Preferences")
+        from .session_state import get_settings
+        self.settings = get_settings("Preferences")
         self._init_ui()
         self._load_settings()
 

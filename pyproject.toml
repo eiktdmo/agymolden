@@ -36,8 +36,6 @@ dependencies = [
 
 [project.optional-dependencies]
 all = [
-    "scikit-image>=0.19",
-    "cclib>=1.7",
     "spglib>=2.0",
     "ase>=3.22",
     "rdkit>=2022.03",
@@ -70,7 +68,7 @@ include = ["agymolden*"]
 exclude = ["*.pyc", "__pycache__*", "tests*", "dist*", "build*"]
 
 [tool.setuptools.package-data]
-agymolden = ["resources/*.svg"]
+agymolden = ["resources/*.svg", "data/*.json", "builtin_plugins/*.py"]
 
 [tool.setuptools.dynamic]
 version = { attr = "agymolden.__version__" }

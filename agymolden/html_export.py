@@ -6,6 +6,7 @@ optimization trajectories in full 3D WebGL without requiring internet access,
 external server processes, or installing Python.
 """
 
+import html as _html
 import json
 import math
 from typing import List, Tuple, Optional, Dict, Any
@@ -93,14 +94,14 @@ def generate_interactive_html(
         "qm_summary": qm_summary or {},
         "cam_dist": cam_dist,
     }
-    payload_json = json.dumps(data_payload)
+    payload_json = json.dumps(data_payload).replace("</", "<\\/")
 
     # Summary Card HTML content
     summary_html = ""
     if qm_summary:
         summary_rows = []
         if "program" in qm_summary:
-            summary_rows.append(f"<div class='prop-row'><span>Program:</span><b>{qm_summary['program']}</b></div>")
+            summary_rows.append(f"<div class='prop-row'><span>Program:</span><b>{_html.escape(str(qm_summary['program']))}</b></div>")
         if "energy_ha" in qm_summary:
             summary_rows.append(f"<div class='prop-row'><span>Total Energy:</span><b>{qm_summary['energy_ha']:.6f} Ha</b></div>")
         if "dipole_debye" in qm_summary:
@@ -139,7 +140,7 @@ def generate_interactive_html(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>{title} - AgyMolden 3D</title>
+<title>{_html.escape(str(title))} - AgyMolden 3D</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
@@ -230,7 +231,7 @@ def generate_interactive_html(
 </head>
 <body>
 <header>
-  <h1><span>⚛️ {title}</span> <span class="badge">{n_atoms} Atoms</span></h1>
+  <h1><span>⚛️ {_html.escape(str(title))}</span> <span class="badge">{n_atoms} Atoms</span></h1>
   <div style="display:flex; gap:8px;">
     <button class="btn btn-action" id="btnDownload">📥 Download .XYZ</button>
   </div>

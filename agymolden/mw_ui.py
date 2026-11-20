@@ -276,6 +276,21 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_quick_stamp.setMenu(menu_stamp)
         view_ctrls.addWidget(self.btn_quick_stamp)
 
+        btn_h_ribbon = QtWidgets.QToolButton()
+        btn_h_ribbon.setText("💧 Add H")
+        btn_h_ribbon.setToolTip("Complete valence with hydrogens (Ctrl+H)")
+        btn_h_ribbon.setStyleSheet("background-color: #334155; color: white; font-weight: 600; padding: 2px 6px;")
+        btn_h_ribbon.clicked.connect(self._on_add_hydrogens)
+        view_ctrls.addWidget(btn_h_ribbon)
+
+        self.btn_clean_selection = QtWidgets.QPushButton("⚡ Clean")
+        self.btn_clean_selection.setToolTip(
+            "Clean / pre-optimize selected atoms with UFF (freezes unselected atoms), or optimize whole molecule if none selected"
+        )
+        self.btn_clean_selection.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 2px 8px;")
+        self.btn_clean_selection.clicked.connect(self._on_clean_selection)
+        view_ctrls.addWidget(self.btn_clean_selection)
+
         self.chk_auto_h = QtWidgets.QCheckBox("Adjust H")
         self.chk_auto_h.setChecked(True)
         self.chk_auto_h.setStyleSheet("font-weight: 600; padding: 2px 4px;")
@@ -1405,9 +1420,10 @@ class UIMixin(UIInspectorTabsMixin):
         splitter.addWidget(right_container)
 
         # Splitter dynamic sizing: responsive in full window view
-        splitter.setStretchFactor(0, 5) # 3D viewport
-        splitter.setStretchFactor(1, 6) # ZMAT editor controls
-        splitter.setSizes([600, 680])
+        # 3D Viewport gets ~65% width by default, inspector panel ~35%
+        splitter.setStretchFactor(0, 7)
+        splitter.setStretchFactor(1, 4)
+        splitter.setSizes([820, 460])
 
         # Populate fragment connection atom options for default fragment without setting clipboard memory
         frag = FRAGMENTS.get(self.combo_fragment.currentText())
@@ -1568,6 +1584,12 @@ class UIMixin(UIInspectorTabsMixin):
         act_export_bundle.setToolTip("Export complete Supporting Information (SI) package: XYZ, ZMAT, Summary JSON, Methods Markdown, and calculation logs (Ctrl+Shift+S)")
         act_export_bundle.triggered.connect(self._on_export_reproducibility_bundle)
         menu_export.addAction(act_export_bundle)
+
+        menu_export.addSeparator()
+        act_open_agemacs = QtGui.QAction("🚀 Open / Export to &agemacs...", self)
+        act_open_agemacs.setToolTip("Open the current molecule or file in agemacs")
+        act_open_agemacs.triggered.connect(self._on_open_in_agemacs)
+        menu_export.addAction(act_open_agemacs)
 
         menu_file.addSeparator()
 
@@ -2478,6 +2500,11 @@ class UIMixin(UIInspectorTabsMixin):
         act_view_log.triggered.connect(self._on_view_diagnostic_log)
         menu_help.addAction(act_view_log)
 
+        act_diag_bundle = QtGui.QAction("📦 Export Diagnostic &Bundle (.zip)...", self)
+        act_diag_bundle.setToolTip("Export sanitized environment info, QM detection status, and agymolden.log as a zip for support")
+        act_diag_bundle.triggered.connect(self._on_export_diagnostic_bundle)
+        menu_help.addAction(act_diag_bundle)
+
         act_manual = QtGui.QAction("📖 Open Full User &Manual...", self)
         act_manual.setShortcut("Shift+F1")
         act_manual.triggered.connect(self._on_open_manual)
@@ -2549,14 +2576,6 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_redo.clicked.connect(self.redo)
         toolbar.addWidget(self.btn_redo)
 
-        toolbar.addSeparator()
-
-        btn_h = QtWidgets.QToolButton()
-        btn_h.setText("💧 Add H")
-        btn_h.setToolTip("Complete valence with hydrogens (Ctrl+H)")
-        btn_h.clicked.connect(self._on_add_hydrogens)
-        toolbar.addWidget(btn_h)
-
         toolbar_qm = QtWidgets.QToolBar("Calculations & Surfaces")
         toolbar_qm.setObjectName("QMAndSurfacesToolbar")
         toolbar_qm.setIconSize(QtCore.QSize(18, 18))
@@ -2610,8 +2629,8 @@ class UIMixin(UIInspectorTabsMixin):
         toolbar_qm.addWidget(btn_orbitals)
 
         btn_view_log_tb = QtWidgets.QToolButton()
-        btn_view_log_tb.setText("📄 View Log")
-        btn_view_log_tb.setToolTip("Open Calculation Output Log & Results Viewer (F2)")
+        btn_view_log_tb.setText("📄 Output Viewer")
+        btn_view_log_tb.setToolTip("Open QM Calculation Output Log & Results Viewer (F2)")
         btn_view_log_tb.clicked.connect(self._on_view_qm_output_file)
         toolbar_qm.addWidget(btn_view_log_tb)
 
@@ -2876,6 +2895,41 @@ class UIMixin(UIInspectorTabsMixin):
         from .dialog_lab_mode import LabExerciseDialog
         dlg = LabExerciseDialog(self)
         dlg.show()
+
+    def _on_open_in_agemacs(self):
+        """Open the current file or exported XYZ geometry in agemacs."""
+        import os
+        import tempfile
+        from .companion import send_to_agemacs
+
+        targets = []
+        cur = getattr(self, "current_file", None)
+        if cur and os.path.exists(cur):
+            targets.append(cur)
+        elif getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
+            tmp_path = os.path.join(tempfile.gettempdir(), "agymolden_export.xyz")
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                fh.write(f"{len(self.zatoms)}\nExported from AgyMolden\n")
+                for atom, xyz in zip(self.zatoms, self.coords):
+                    sym = getattr(atom, "element", "X")
+                    fh.write(f"{sym:<3s} {xyz[0]:14.8f} {xyz[1]:14.8f} {xyz[2]:14.8f}\n")
+            targets.append(tmp_path)
+
+        if not targets:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Open in agemacs",
+                "No molecule or file is currently loaded to send to agemacs.",
+            )
+            return
+
+        if not send_to_agemacs(targets, self):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Open in agemacs",
+                "Could not find 'agemacs' on PATH or in standard project folders.\n\nFiles ready to open:\n"
+                + "\n".join(targets),
+            )
 
 
     # Core logic

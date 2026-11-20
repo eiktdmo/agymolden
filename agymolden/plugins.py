@@ -60,7 +60,11 @@ def execute_plugin_script(script_text: str, window: Any, filename: str = "<plugi
             window._push_undo_state()
         window.coords = arr
         if hasattr(window, "viewer") and window.viewer:
-            window.viewer.set_coords(arr)
+            if hasattr(window.viewer, "update_coords"):
+                user_bonds = window._current_explicit_bonds() if hasattr(window, "_current_explicit_bonds") else None
+                window.viewer.update_coords(arr, user_bonds=user_bonds)
+            elif hasattr(window.viewer, "set_coords"):
+                window.viewer.set_coords(arr)
         if hasattr(window, "table_widget") and window.table_widget:
             window.table_widget.sync_coords_to_table(arr)
         if hasattr(window, "_sync_raw_text"):
@@ -77,7 +81,7 @@ def execute_plugin_script(script_text: str, window: Any, filename: str = "<plugi
         if hasattr(window, "table_widget") and window.table_widget:
             window.table_widget.load_zatoms(zatoms)
         if hasattr(window, "viewer") and window.viewer:
-            window.viewer.set_molecule(zatoms, arr)
+            window.viewer.set_molecule(list(new_symbols), arr)
         if hasattr(window, "_sync_raw_text"):
             window._sync_raw_text()
 
@@ -94,6 +98,10 @@ def execute_plugin_script(script_text: str, window: Any, filename: str = "<plugi
         "set_coords": set_coords,
         "set_molecule": set_molecule,
     }
+
+    from .plugin_api import verify_plugin_trust
+    if filename not in ("<plugin>", "<inline>") and not verify_plugin_trust(filename, script_text=script_text, parent=window):
+        raise PermissionError(f"Execution of untrusted plugin script cancelled: {filename}")
 
     compiled = compile(script_text, filename, "exec")
     exec(compiled, script_globals)

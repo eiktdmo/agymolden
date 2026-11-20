@@ -50,7 +50,7 @@ def _log_startup_environment() -> None:
         from PyQt6.QtCore import PYQT_VERSION_STR
         qt_ver = PYQT_VERSION_STR
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     opts = {}
     for pkg in ("rdkit", "pyscf", "skimage", "cclib"):
@@ -200,7 +200,9 @@ def main(argv=None):
     QtGui.QSurfaceFormat.setDefaultFormat(fmt)
     app = QtWidgets.QApplication([sys.argv[0]] + qt_args)
     from agymolden.session_state import install_file_dialog_session_memory
+    from agymolden.ui_safeguards import install_low_resolution_safeguards
     install_file_dialog_session_memory()
+    install_low_resolution_safeguards(app)
     app.setApplicationName("AgyMolden")
     app.setOrganizationName("AgyMolden")
     app.setApplicationVersion(__version__)
@@ -218,6 +220,7 @@ def main(argv=None):
         if not args.file:
             sys.stderr.write("Error: --render-image requires an input file (e.g., agymolden mol.xyz --render-image out.png)\n")
             sys.exit(1)
+        window.setProperty("_skip_screen_clamp", True)
         window.resize(args.width, args.height)
         window.show()
         window.open_path(args.file)

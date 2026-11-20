@@ -11,6 +11,7 @@ Features:
 """
 
 from __future__ import annotations
+import logging
 
 import math
 from typing import Dict, List, Optional, Tuple
@@ -372,7 +373,7 @@ class HuckelTeachingDialog(QtWidgets.QDialog):
             try:
                 self.fig.tight_layout()
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
         self.canvas.draw()
 
         color = "#4ade80" if "Aromatic" in res.aromaticity_status else ("#f43f5e" if "Antiaromatic" in res.aromaticity_status else "#facc15")

@@ -47,4 +47,8 @@ scratch_calculations/
 # Local scratch outputs (moved from project root)
 scratch/
 orca_calc*
+li2orca_calc*
+*.bas[0-9]
+*.tmp
+*.opt
 legacy_dist_archive/

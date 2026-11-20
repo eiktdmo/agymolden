@@ -11,6 +11,7 @@ Provides:
 """
 
 from __future__ import annotations
+import logging
 
 import os
 from typing import Dict, List, Optional
@@ -68,7 +69,7 @@ class NMRDialog(QtWidgets.QDialog):
             if res.nmr_shieldings:
                 self.shieldings = res.nmr_shieldings
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     def _init_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)

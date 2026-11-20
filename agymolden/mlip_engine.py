@@ -131,3 +131,71 @@ def optimize_geometry_mlip(
     )
     props["mlip_backend"] = "Built-in Hybrid SCC-TB + D3"
     return opt_coords, final_e, props
+
+
+def batch_energies_and_forces_mlip(
+    symbols: List[str],
+    coords_list: List[np.ndarray],
+    user_bonds: Optional[List[Tuple[int, int]]] = None,
+) -> List[Dict]:
+    """Evaluate single-point energies and forces for a batch of conformers/frames.
+
+    Each frame is evaluated with per-frame error isolation so one invalid
+    frame does not abort the entire batch.
+    """
+    if not coords_list:
+        return []
+
+    n_atoms = len(symbols)
+    results: List[Dict] = []
+
+    for idx, frame in enumerate(coords_list):
+        try:
+            arr = np.asarray(frame, dtype=np.float64)
+            if arr.shape != (n_atoms, 3):
+                raise ValueError(
+                    f"Frame {idx} has shape {arr.shape}, expected ({n_atoms}, 3)"
+                )
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(f"Frame {idx} contains non-finite coordinates")
+
+            props = compute_semiempirical_properties(
+                symbols,
+                arr,
+                bonds=user_bonds,
+            )
+            energy = float(props.get("energy", 0.0))
+            forces = props.get("forces")
+            if forces is not None:
+                forces_arr = np.asarray(forces, dtype=np.float64)
+                max_force = (
+                    float(np.max(np.linalg.norm(forces_arr, axis=1)))
+                    if len(forces_arr) > 0
+                    else 0.0
+                )
+            else:
+                forces_arr = None
+                max_force = None
+
+            results.append(
+                {
+                    "index": idx,
+                    "energy": energy,
+                    "forces": forces_arr,
+                    "max_force": max_force,
+                    "error": None,
+                }
+            )
+        except Exception as exc:
+            log.warning("Batch MLIP evaluation failed on frame %d: %s", idx, exc)
+            results.append(
+                {
+                    "index": idx,
+                    "energy": None,
+                    "forces": None,
+                    "max_force": None,
+                    "error": str(exc),
+                }
+            )
+
+    return results

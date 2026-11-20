@@ -7,6 +7,10 @@ from PyQt6 import QtCore, QtWidgets
 
 log = logging.getLogger(__name__)
 
+# Keep strong references to running background QThreads until their finished signal fires
+# so parentless dialogs or canceled jobs never destroy a QThread while it is still running.
+_ACTIVE_WORKERS: set = set()
+
 # When True, jobs run inline on the calling thread (used by unit tests that
 # need deterministic, immediate results). Never enabled in the real program.
 SYNCHRONOUS = False
@@ -66,10 +70,6 @@ def run_in_background(
         dlg.reset()
         dlg.close()
         dlg.deleteLater()
-        # Ensure event loop processes the close immediately to avoid modal lock
-        app = QtWidgets.QApplication.instance()
-        if app is not None:
-            app.processEvents()
 
     def finish(callback, payload):
         if state["finished"]:
@@ -87,13 +87,9 @@ def run_in_background(
     worker.succeeded.connect(lambda r: finish(on_done, r))
     worker.failed.connect(lambda e: finish(on_error, e))
     dlg.canceled.connect(cancel)
-    # keep the QThread alive until it truly ends, then free it
+    # Keep the QThread alive until it truly ends, then free it
+    _ACTIVE_WORKERS.add(worker)
+    worker.finished.connect(lambda w=worker: _ACTIVE_WORKERS.discard(w))
     worker.finished.connect(worker.deleteLater)
-    holder = parent if parent is not None else dlg
-    holder._active_workers = getattr(holder, "_active_workers", [])
-    holder._active_workers.append(worker)
-    worker.finished.connect(
-        lambda: holder._active_workers.remove(worker) if worker in getattr(holder, "_active_workers", []) else None
-    )
     worker.start()
     dlg.show()

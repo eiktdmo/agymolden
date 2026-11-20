@@ -87,6 +87,48 @@ class CalculationsMixin:
             self.btn_calc_vibrations.setText(f"⚡ Calculate Frequencies ({label})")
         self.statusBar().showMessage(f"Selected calculation engine: {label}", 3500)
 
+    def _on_clean_selection(self):
+        """Pre-optimize only the selected atoms (freezing unselected ones), or optimize all if none selected."""
+        n = len(self.zatoms)
+        if n < 2:
+            return
+        sel = [i for i in getattr(self.viewer, "multi_selected", []) if 0 <= i < n]
+        if not sel and getattr(self.viewer, "selected_atom_idx", None) is not None:
+            idx = self.viewer.selected_atom_idx
+            if 0 <= idx < n:
+                sel = [idx]
+        if not sel or len(sel) >= n:
+            self._on_optimize_geometry()
+            return
+
+        self._push_undo_state()
+        symbols = [a.symbol for a in self.zatoms]
+        user_bonds = self._current_explicit_bonds()
+        bo = dict(getattr(self.viewer, "bond_orders", {}))
+        frozen = {i for i in range(n) if i not in set(sel)}
+        is_strict = bool(getattr(self, "strict_topology", False) or user_bonds)
+        try:
+            opt_coords, final_e = optimize_geometry_force_field(
+                symbols,
+                np.array(self.coords, copy=True),
+                user_bonds=user_bonds,
+                max_iter=120,
+                strict_bonds=is_strict,
+                user_bond_orders=bo,
+                method="uff",
+                frozen_indices=frozen,
+            )
+            self.coords = opt_coords
+            self.zatoms = cartesian_to_zmatrix(symbols, opt_coords, user_bonds=user_bonds, strict_bonds=is_strict)
+            self.viewer.update_coords(opt_coords, user_bonds=user_bonds)
+            self._refresh_table_and_text()
+            self.statusBar().showMessage(
+                f"⚡ Cleaned {len(sel)} selected atom(s) (E = {final_e:.2f} kcal/mol)",
+                3500,
+            )
+        except Exception as e:
+            dialog_service.error(self, "Clean Selection Error", str(e), exc=e)
+
     def _on_optimize_geometry(self):
         """Optimize molecular geometry using selected force field (UFF/MMFF94s), Semiempirical QM, or MLIP."""
         if len(self.zatoms) < 2:
@@ -1213,7 +1255,7 @@ class CalculationsMixin:
                     f"Hardness (η): {hardness:.2f} eV  |  μ: {mu_chem:+.2f} eV{term_str}"
                 )
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     def _on_mo_source_combo_changed(self, idx: int):
         if not hasattr(self, "combo_mo_file_source") or idx < 0:
@@ -1513,7 +1555,7 @@ class CalculationsMixin:
                 dlg._refresh_table()
                 dlg._recalculate()
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
         dlg.exec()
 
     def _on_open_nbo_dialog(self):
@@ -1597,7 +1639,7 @@ class CalculationsMixin:
             try:
                 os.unlink(mpath)
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
             return mf, mdata
 
         def _on_done(result):

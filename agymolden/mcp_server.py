@@ -20,10 +20,13 @@ Supported Tools:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import os
 from typing import Any, Dict, List, Optional
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 
 def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -143,6 +146,44 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                                 },
                             },
                         },
+                        {
+                            "name": "optimize_geometry",
+                            "description": "Optimizes the molecular geometry using the built-in UFF or MMFF94s force field and returns the optimized XYZ and energy.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "method": {"type": "string", "default": "UFF", "enum": ["UFF", "MMFF94s"]},
+                                    "max_iter": {"type": "integer", "default": 200},
+                                    "xyz": {"type": "string", "description": "Optional inline XYZ structure"},
+                                },
+                            },
+                        },
+                        {
+                            "name": "detect_point_group",
+                            "description": "Detects the molecular point group symmetry (e.g., C2v, Td, Oh, D3h) and symmetry elements.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "tolerance": {"type": "number", "default": 0.1},
+                                    "xyz": {"type": "string", "description": "Optional inline XYZ structure"},
+                                },
+                            },
+                        },
+                        {
+                            "name": "validate_orca_input",
+                            "description": "Runs AgyMolden pre-flight chemistry and executable checks for an ORCA calculation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "functional": {"type": "string", "default": "B3LYP"},
+                                    "basis": {"type": "string", "default": "def2-SVP"},
+                                    "job_type": {"type": "string", "default": "Opt"},
+                                    "charge": {"type": "integer", "default": 0},
+                                    "multiplicity": {"type": "integer", "default": 1},
+                                    "xyz": {"type": "string", "description": "Optional inline XYZ structure"},
+                                },
+                            },
+                        },
                     ]
                 },
             }
@@ -156,11 +197,16 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                 try:
                     from .zmatrix import parse_xyz
                     parsed_syms, parsed_crds = parse_xyz(str(args["xyz"]), is_path=False)
-                    if parsed_syms and len(parsed_crds) == len(parsed_syms):
-                        symbols = parsed_syms
-                        coords = np.asarray(parsed_crds, dtype=np.float64)
-                except Exception:
-                    pass
+                    if not parsed_syms or len(parsed_crds) != len(parsed_syms):
+                        raise ValueError("XYZ payload produced an empty or mismatched coordinate set.")
+                    symbols = parsed_syms
+                    coords = np.asarray(parsed_crds, dtype=np.float64)
+                except Exception as exc:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {"code": -32602, "message": f"Invalid 'xyz' parameter: {exc}"},
+                    }
 
             if tool_name == "get_molecule_info":
                 return {
@@ -302,6 +348,98 @@ def handle_mcp_request(request: Dict[str, Any], context_molecule: Optional[Dict[
                     "result": {"content": [{"type": "text", "text": "\n".join(lines)}]},
                 }
 
+            elif tool_name == "optimize_geometry":
+                from .forcefield import optimize_geometry_force_field
+                from .chem_identifiers import format_xyz_string
+                method_ff = str(args.get("method", "UFF"))
+                max_iter = max(1, min(2000, int(args.get("max_iter", 200))))
+                opt_coords, e_kcal = optimize_geometry_force_field(
+                    symbols, coords, method=method_ff, max_iter=max_iter
+                )
+                rmsd = float(np.sqrt(np.mean(np.sum((opt_coords - coords) ** 2, axis=1)))) if len(coords) > 0 else 0.0
+                xyz_str = format_xyz_string(symbols, opt_coords, comment=f"Optimized ({method_ff}, E={e_kcal:.3f} kcal/mol)")
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({
+                                    "method": method_ff,
+                                    "energy_kcal_mol": float(e_kcal),
+                                    "rmsd_angstrom": rmsd,
+                                    "xyz": xyz_str,
+                                }, indent=2),
+                            }
+                        ]
+                    },
+                }
+
+            elif tool_name == "detect_point_group":
+                from .symmetry import find_symmetry_operations
+                tol = float(args.get("tolerance", 0.1))
+                pg_res = find_symmetry_operations(symbols, coords, tolerance=tol)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({
+                                    "point_group": pg_res.symbol,
+                                    "tolerance": tol,
+                                    "num_operations": len(getattr(pg_res, "operations", [])),
+                                }, indent=2),
+                            }
+                        ]
+                    },
+                }
+
+            elif tool_name == "validate_orca_input":
+                from .calc_runner.preflight import validate_qm_calculation
+                from .qm_detect import detect_qm_executable
+                from .qm_input_generator import QMCalculationParameters
+                params_qm = QMCalculationParameters(
+                    job_type=str(args.get("job_type", "Opt")),
+                    method=str(args.get("functional", "B3LYP")),
+                    basis=str(args.get("basis", "def2-SVP")),
+                    charge=int(args.get("charge", 0)),
+                    multiplicity=int(args.get("multiplicity", 1)),
+                )
+                exe_info = detect_qm_executable("orca")
+                report = validate_qm_calculation(
+                    code_key="orca",
+                    symbols=symbols,
+                    coords=coords,
+                    params=params_qm,
+                    executable_info=exe_info,
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({
+                                    "orca_found": exe_info.found,
+                                    "orca_path": exe_info.resolved_path,
+                                    "is_valid": getattr(report, "is_valid", len(report.issues) == 0),
+                                    "issues": [
+                                        {
+                                            "severity": getattr(iss, "severity", "warning"),
+                                            "message": getattr(iss, "message", str(iss)),
+                                        }
+                                        for iss in getattr(report, "issues", [])
+                                    ],
+                                }, indent=2),
+                            }
+                        ]
+                    },
+                }
+
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -333,7 +471,18 @@ def run_mcp_server_stdio(context_molecule: Optional[Dict[str, Any]] = None):
         try:
             req = json.loads(line_clean)
             resp = handle_mcp_request(req, context_molecule)
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
-        except Exception:
-            pass
+        except json.JSONDecodeError as exc:
+            resp = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": f"Parse error: {exc}"},
+            }
+        except Exception as exc:
+            log.debug("MCP stdio request error", exc_info=True)
+            resp = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32603, "message": f"Internal error: {exc}"},
+            }
+        sys.stdout.write(json.dumps(resp) + "\n")
+        sys.stdout.flush()

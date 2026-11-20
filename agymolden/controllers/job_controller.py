@@ -140,14 +140,15 @@ class JobController:
         from ..calc_runner.dialog_file_transfer import RemoteFileManagerDialog
 
         hosts = get_all_remote_hosts()
-        settings = QtCore.QSettings("AgyMolden", "RemoteProfiles")
+        from ..session_state import get_settings
+        settings = get_settings("RemoteProfiles")
         last_prof = settings.value("last_verified_profile", "")
         host_cfg = None
 
         if last_prof:
             host_cfg = RemoteHostConfig(
                 hostname=settings.value(f"{last_prof}/hostname", ""),
-                user=settings.value(f"{last_prof}/user", "andres"),
+                user=settings.value(f"{last_prof}/user", os.environ.get("USER", "")),
                 identity_file=settings.value(f"{last_prof}/identity_file", ""),
                 remote_workdir=settings.value(f"{last_prof}/remote_workdir", "~/agymolden_scratch"),
                 remote_python=settings.value(f"{last_prof}/remote_python", "python3"),

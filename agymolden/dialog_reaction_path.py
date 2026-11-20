@@ -3,6 +3,7 @@ Dialog for Reaction Path Interpolation and Transition State (TS) Guess Generatio
 Supports Image-Dependent Pair Potential (IDPP), Kabsch alignment, live 3D animation,
 and input generation for ORCA NEB-TS and Gaussian QST2/QST3.
 """
+import logging
 
 import os
 from typing import List, Optional, Tuple
@@ -289,7 +290,7 @@ class ReactionPathDialog(QtWidgets.QDialog):
             if syms and len(coords) == len(syms):
                 return syms, coords
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
         return [], np.empty((0, 3))
 
     def _update_status(self):

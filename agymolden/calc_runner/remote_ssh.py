@@ -161,7 +161,7 @@ def get_all_remote_hosts() -> List[RemoteHostConfig]:
             cfg = RemoteHostConfig(
                 alias=settings.value(f"{group}/alias", h_name),
                 hostname=h_name,
-                user=settings.value(f"{group}/user", "andres"),
+                user=settings.value(f"{group}/user", os.environ.get("USER", "")),
                 identity_file=settings.value(f"{group}/identity_file", ""),
                 remote_workdir=settings.value(f"{group}/remote_workdir", "~/agymolden_scratch"),
                 remote_python=settings.value(f"{group}/remote_python", "python3"),
@@ -276,20 +276,29 @@ def generate_slurm_script(
     """Generate a standard SLURM batch job submission script (.slurm)."""
     clean_dir = remote_workdir.replace("~/", "") if remote_workdir.startswith("~/") else remote_workdir
     stem = os.path.splitext(os.path.basename(input_file))[0]
-    part_line = f"#SBATCH --partition={partition}\n" if partition else ""
+    safe_job_name = re.sub(r"[\r\n]+", "_", (job_name or stem)).strip()
+    safe_part = re.sub(r"[\r\n]+", "", partition).strip()
+    safe_mem = re.sub(r"[\r\n]+", "", mem).strip()
+    safe_walltime = re.sub(r"[\r\n]+", "", walltime).strip()
+    part_line = f"#SBATCH --partition={safe_part}\n" if safe_part else ""
+    q_dir = shlex.quote(clean_dir) if clean_dir else "."
+    q_py = shlex.quote(remote_python)
+    q_script = shlex.quote(remote_script)
+    q_flags = " ".join(shlex.quote(str(f)) for f in extra_flags)
+    q_in = shlex.quote(os.path.basename(input_file))
     return (
         "#!/bin/bash\n"
-        f"#SBATCH --job-name={job_name or stem}\n"
+        f"#SBATCH --job-name={safe_job_name}\n"
         f"#SBATCH --output={stem}.out\n"
         f"#SBATCH --error={stem}.err\n"
         "#SBATCH --nodes=1\n"
-        f"#SBATCH --cpus-per-task={cpus}\n"
-        f"#SBATCH --mem={mem}\n"
-        f"#SBATCH --time={walltime}\n"
+        f"#SBATCH --cpus-per-task={int(cpus)}\n"
+        f"#SBATCH --mem={safe_mem}\n"
+        f"#SBATCH --time={safe_walltime}\n"
         f"{part_line}"
         "\n"
-        f"cd {clean_dir}\n"
-        f"{nice_prefix}{remote_python} -u {remote_script} {' '.join(extra_flags)} {os.path.basename(input_file)}\n"
+        f"cd {q_dir}\n"
+        f"{nice_prefix}{q_py} -u {q_script} {q_flags} {q_in}\n"
     )
 
 
@@ -366,7 +375,7 @@ class RemoteSshRunner(BaseCalcRunner):
                 scp_cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
             else:
                 scp_cmd.extend(["-o", "BatchMode=yes"])
-            scp_cmd.extend([self.input_file, f"{target}:{clean_rem_dir}/{base_in}"])
+            scp_cmd.extend([self.input_file, f"{target}:{shlex.quote(f'{clean_rem_dir}/{base_in}')}"])
             full_scp, scp_env = _wrap_ssh_command(scp_cmd, self.host_cfg.password)
             try:
                 r_scp = subprocess.run(full_scp, capture_output=True, text=True, timeout=15, env=scp_env)
@@ -429,7 +438,7 @@ class RemoteSshRunner(BaseCalcRunner):
                     scp_slurm_cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
                 else:
                     scp_slurm_cmd.extend(["-o", "BatchMode=yes"])
-                scp_slurm_cmd.extend([local_slurm_path, f"{target}:{clean_rem_dir}/{slurm_file}"])
+                scp_slurm_cmd.extend([local_slurm_path, f"{target}:{shlex.quote(f'{clean_rem_dir}/{slurm_file}')}"])
                 full_scp_slurm, scp_slurm_env = _wrap_ssh_command(scp_slurm_cmd, self.host_cfg.password)
                 try:
                     r_slurm_scp = subprocess.run(full_scp_slurm, capture_output=True, text=True, timeout=15, env=scp_slurm_env)
@@ -470,10 +479,12 @@ class RemoteSshRunner(BaseCalcRunner):
                     remote_cmd = f"cd {q_rem_dir} && touch {q_remote_log} && tail -n +1 -f {q_remote_log}"
             else:
                 flags_str = " ".join(shlex.quote(f) for f in self.extra_flags)
+                q_py = shlex.quote(self.host_cfg.remote_python)
+                q_script = shlex.quote(self.remote_script)
                 if self.host_cfg.use_nohup:
-                    exec_body = f"nohup {nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {flags_str} {q_base_in} 2>&1 | tee {q_remote_log}"
+                    exec_body = f"nohup {nice_prefix}{q_py} -u {q_script} {flags_str} {q_base_in} 2>&1 | tee {q_remote_log}"
                 else:
-                    exec_body = f"{nice_prefix}{self.host_cfg.remote_python} -u {self.remote_script} {flags_str} {q_base_in}"
+                    exec_body = f"{nice_prefix}{q_py} -u {q_script} {flags_str} {q_base_in}"
                 remote_cmd = f"cd {q_rem_dir} && {exec_body}"
 
             ssh_args.extend([target, remote_cmd])

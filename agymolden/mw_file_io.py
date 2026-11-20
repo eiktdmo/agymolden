@@ -72,8 +72,9 @@ log = logging.getLogger(__name__)
 
 
 class FileIOMixin:
-    def _settings(self) -> QtCore.QSettings:
-        return QtCore.QSettings("AgyMolden", "AgyMolden")
+    def _settings(self):
+        from .session_state import get_settings
+        return get_settings("AgyMolden")
 
     def _last_dir(self) -> str:
         from .session_state import get_last_dir
@@ -531,15 +532,63 @@ class FileIOMixin:
                 except Exception:
                     log.debug("Ignored exception loading vibrations from Molden", exc_info=True)
 
+    def open_paths(self, paths: List[str]):
+        """Open one or more dropped/selected files, loading structures before surface/orbital overlays."""
+        valid = [p for p in paths if p and os.path.isfile(p)]
+        if not valid:
+            return
+        overlay_exts = (".cube", ".molden", ".molden.input", ".molf", ".gbw")
+        primary = [p for p in valid if not p.lower().endswith(overlay_exts)]
+        overlays = [p for p in valid if p.lower().endswith(overlay_exts)]
+        ordered = primary + overlays
+        for p in ordered:
+            self.open_path(p)
+        if len(ordered) > 1 and hasattr(self, "statusBar"):
+            self.statusBar().showMessage(f"Loaded {len(ordered)} files via drag & drop.", 4500)
+
+    def _extract_dropped_paths(self, mime_data) -> List[str]:
+        """Extract existing local file paths from Qt QMimeData (URLs or file:// text)."""
+        paths: List[str] = []
+        if mime_data is None:
+            return paths
+        if mime_data.hasUrls():
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    lp = url.toLocalFile()
+                    if lp and os.path.isfile(lp) and lp not in paths:
+                        paths.append(lp)
+        elif mime_data.hasText():
+            for raw_line in mime_data.text().splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("file://"):
+                    lp = QtCore.QUrl(line).toLocalFile()
+                else:
+                    lp = line
+                if lp and os.path.isfile(lp) and lp not in paths:
+                    paths.append(lp)
+        return paths
+
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        if self._extract_dropped_paths(event.mimeData()):
             event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self._extract_dropped_paths(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                self.open_path(url.toLocalFile())
-                break
+        paths = self._extract_dropped_paths(event.mimeData())
+        if paths:
+            self.open_paths(paths)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def _on_open_qm_dialog(self, auto_enable_scan: bool = False, target_code: Optional[str] = None):
         """Open the multi-package QM calculation setup dialog (Gaussian, ORCA, PySCF, openLOWDIN, xTB)."""
@@ -2102,6 +2151,32 @@ class FileIOMixin:
         layout.addLayout(btn_row)
 
         dlg.exec()
+
+    def _on_export_diagnostic_bundle(self):
+        """Export sanitized environment, QM engine status, and log file to a .zip bundle."""
+        from .diagnostic_bundle import export_diagnostic_bundle
+
+        default_path = os.path.join(self._last_dir(), "agymolden_diagnostics.zip")
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Diagnostic Bundle",
+            default_path,
+            "ZIP Archive (*.zip);;All Files (*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        try:
+            saved = export_diagnostic_bundle(path)
+            self.statusBar().showMessage(f"Exported diagnostic bundle to {os.path.basename(saved)}", 4500)
+            dialog_service.info(
+                self,
+                "Diagnostic Bundle Exported",
+                f"Saved sanitized diagnostic bundle to:\n{saved}",
+            )
+        except Exception as e:
+            dialog_service.error(self, "Diagnostic Export Error", str(e), exc=e)
 
     def _on_open_example_gallery(self):
         """Open the Example Molecule & Calculation Gallery."""

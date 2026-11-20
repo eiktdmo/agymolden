@@ -1985,7 +1985,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
                     log_text = f.read()
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
         elif hasattr(self, "_job_monitor_dlg") and self._job_monitor_dlg:
             log_text = getattr(self._job_monitor_dlg, "raw_log_text", "")
 

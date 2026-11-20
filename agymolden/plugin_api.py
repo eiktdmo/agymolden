@@ -7,10 +7,11 @@ geometry modification, menu action registration, and event callbacks.
 
 from __future__ import annotations
 
-import os
 import glob
+import hashlib
 import json
 import logging
+import os
 import importlib.util
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Callable, Tuple
@@ -129,9 +130,14 @@ class PluginContext:
             log.info("[%s] %s", title, text)
             return
 
-        if hasattr(self._window, "dialogs") and hasattr(self._window.dialogs, "show_info"):
-            self._window.dialogs.show_info(self._window, title, text)
-        else:
+        if hasattr(self._window, "dialogs"):
+            if hasattr(self._window.dialogs, "info"):
+                self._window.dialogs.info(self._window, title, text)
+                return
+            if hasattr(self._window.dialogs, "show_info"):
+                self._window.dialogs.show_info(self._window, title, text)
+                return
+        if True:
             try:
                 from PyQt6 import QtWidgets
                 app = QtWidgets.QApplication.instance()
@@ -186,6 +192,78 @@ class PluginBase:
         pass
 
 
+def verify_plugin_trust(
+    filepath: str,
+    script_text: Optional[str] = None,
+    parent: Any = None,
+) -> bool:
+    """Verify user trust before executing an external plugin/script.
+
+    Built-in plugins under ``agymolden/builtin_plugins`` are always trusted.
+    External scripts are hashed (SHA-256) and checked against QSettings
+    ``TrustedPlugins/trusted_hashes``. In headless/test environments, execution
+    is allowed automatically unless ``AGYMOLDEN_ENFORCE_PLUGIN_TRUST=1``.
+    """
+    enforce = os.environ.get("AGYMOLDEN_ENFORCE_PLUGIN_TRUST") == "1"
+    if not enforce and (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        or os.environ.get("AGYMOLDEN_TRUST_ALL_PLUGINS") == "1"
+    ):
+        return True
+
+    builtin_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "builtin_plugins"))
+    if filepath and os.path.isfile(filepath):
+        abs_fp = os.path.normpath(os.path.abspath(filepath))
+        if abs_fp.startswith(builtin_dir + os.sep):
+            return True
+        if script_text is None:
+            with open(abs_fp, "r", encoding="utf-8", errors="replace") as f:
+                script_text = f.read()
+    elif script_text is None:
+        return False
+
+    digest = hashlib.sha256(script_text.encode("utf-8", errors="replace")).hexdigest()
+    try:
+        from .session_state import get_settings
+        settings = get_settings("TrustedPlugins")
+        raw = settings.value("trusted_hashes", "[]")
+        trusted = set(json.loads(raw) if isinstance(raw, str) else (raw or []))
+    except Exception:
+        settings = None
+        trusted = set()
+
+    if digest in trusted:
+        return True
+
+    try:
+        from PyQt6 import QtWidgets
+        app = QtWidgets.QApplication.instance()
+        if app is None or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            if enforce:
+                return False
+            return True
+        qparent = parent if isinstance(parent, QtWidgets.QWidget) else None
+        label = filepath or "<inline script>"
+        reply = QtWidgets.QMessageBox.question(
+            qparent,
+            "Trust External Plugin?",
+            f"AgyMolden is about to execute an external Python plugin/script:\n\n"
+            f"Path: {label}\nSHA-256: {digest[:16]}...\n\n"
+            "Only run scripts from sources you trust. Trust and remember this script?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            trusted.add(digest)
+            if settings is not None:
+                settings.setValue("trusted_hashes", json.dumps(sorted(trusted)))
+            return True
+        return False
+    except Exception:
+        log.debug("Plugin trust prompt fallback", exc_info=True)
+        return not enforce
+
+
 class PluginManager:
     """Singleton managing discovery, lifecycle, and invocation of AgyMolden plugins."""
 
@@ -215,6 +293,9 @@ class PluginManager:
     def load_plugin_from_file(self, filepath: str) -> Optional[PluginBase]:
         """Dynamically load and instantiate a PluginBase subclass from a python file."""
         if not os.path.isfile(filepath) or not filepath.endswith(".py"):
+            return None
+        if not verify_plugin_trust(filepath, parent=self.window):
+            log.warning("Skipped untrusted plugin: %s", filepath)
             return None
         mod_name = f"agymolden_plugin_{os.path.splitext(os.path.basename(filepath))[0]}"
         try:

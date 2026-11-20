@@ -17,7 +17,8 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         self.setMinimumSize(640, 460)
 
         self.current_step = 0
-        self.settings = QtCore.QSettings("AgyMolden", "Preferences")
+        from .session_state import get_settings
+        self.settings = get_settings("Preferences")
 
         self._init_ui()
 

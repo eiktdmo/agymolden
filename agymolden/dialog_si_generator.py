@@ -9,6 +9,7 @@ Provides:
 """
 
 from __future__ import annotations
+import logging
 
 import os
 from typing import List, Optional
@@ -209,7 +210,7 @@ class SIGeneratorDialog(QtWidgets.QDialog):
                 )
                 self.species_list.append(sp)
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         self._refresh_table()
         self._update_preview()

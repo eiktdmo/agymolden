@@ -82,7 +82,7 @@ class OrcaRunner(BaseCalcRunner):
                         except OSError:
                             pass
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         try:
             self._out_fh = open(self.log_file, "w", encoding="utf-8")

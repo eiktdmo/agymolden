@@ -220,6 +220,10 @@ class JobMonitorDialog(QtWidgets.QDialog):
 
         btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in agemacs")
         btn_open_agemacs.setToolTip("Open the current input/output files in agemacs")
+        btn_open_agemacs.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         btn_open_agemacs.clicked.connect(self._on_open_in_agemacs)
         bottom_layout.addWidget(btn_open_agemacs)
 

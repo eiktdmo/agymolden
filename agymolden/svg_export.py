@@ -12,6 +12,7 @@ from typing import List, Tuple, Dict, Optional, Any
 import numpy as np
 
 from .elements import ELEMENT_DATA
+from .svg_exporter import export_molecule_svg, ELEMENT_COLORS
 
 
 def _color_to_hex(val: Any) -> str:

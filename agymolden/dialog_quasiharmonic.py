@@ -10,6 +10,7 @@ Provides:
 """
 
 from __future__ import annotations
+import logging
 
 import os
 from typing import List, Optional
@@ -65,7 +66,7 @@ class QuasiHarmonicDialog(QtWidgets.QDialog):
             if res.vibrational_analysis and res.vibrational_analysis.frequencies:
                 self.frequencies = [float(f) for f in res.vibrational_analysis.frequencies if float(f) > 0]
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     def _init_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)

@@ -6,6 +6,7 @@ Provides 1-click batch snapshot generation for Molecular Orbitals (as in Gabedit
 - Batch PNG Snapshot Export (saves high-res individual images like MO_08_HOMO.png into a folder)
 - Interactive Orbital Slideshow / Gallery preview
 """
+import logging
 
 import os
 import math
@@ -338,7 +339,7 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
                             m_data.symbols, m_data.coords, title=os.path.basename(self._molden_path)
                         )
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         orig_surfaces = getattr(viewer, "active_isosurfaces", [])
         orig_clean = getattr(viewer, "export_clean_mode", False)

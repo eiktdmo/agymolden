@@ -516,7 +516,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                             if ang_n <= 32.0 or ang_n >= 60.0:  # Parallel or T-shaped
                                 ncis.append(("π-π Stacking", c1, c2, d_cent))
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         return ncis
 
@@ -588,6 +588,25 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
     def auto_center(self):
         """Reset camera pan and zoom to perfectly frame and center the molecule in the canvas."""
         self.fit_camera()
+        self.update()
+
+    def focus_on_selection(self):
+        """Center the camera pan on the selected atoms, or fall back to auto_center()."""
+        if self.coords is None or len(self.coords) == 0:
+            return
+        sel = [i for i in getattr(self, "selected_atoms", []) if 0 <= i < len(self.coords)]
+        if not sel:
+            self.auto_center()
+            return
+        mol_center = np.mean(self.coords, axis=0)
+        sel_center = np.mean(self.coords[sel], axis=0)
+        delta = sel_center - mol_center
+        # Project world-space offset into view space using current rotation
+        rot_mat = self.rot_quat.toRotationMatrix()
+        vx = rot_mat[0, 0] * delta[0] + rot_mat[0, 1] * delta[1] + rot_mat[0, 2] * delta[2]
+        vy = rot_mat[1, 0] * delta[0] + rot_mat[1, 1] * delta[1] + rot_mat[1, 2] * delta[2]
+        self.pan_x = -float(vx)
+        self.pan_y = -float(vy)
         self.update()
 
     def align_camera_standard(self):
@@ -844,6 +863,134 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * 4, ctypes.c_void_p(3 * 4))
 
         glBindVertexArray(0)
+        self._uniform_locs: Dict[str, int] = {}
+
+    def _uloc(self, name: str) -> int:
+        """Return cached GL uniform location for ``self.shader_program``."""
+        locs = getattr(self, "_uniform_locs", None)
+        if locs is None:
+            locs = {}
+            self._uniform_locs = locs
+        loc = locs.get(name)
+        if loc is None:
+            loc = glGetUniformLocation(self.shader_program, name)
+            locs[name] = loc
+        return loc
+
+    def _get_cached_sphere_props(self, is_white_bg: bool):
+        """Cache per-atom sphere radii and base RGB colors keyed by symbols and display style."""
+        key = (
+            tuple(self.symbols),
+            self.style_mode,
+            float(self.sphere_scale),
+            float(self.cylinder_radius),
+            bool(is_white_bg),
+        )
+        if getattr(self, "_cached_sphere_key", None) != key:
+            n = len(self.symbols)
+            radii = np.empty(n, dtype=np.float32)
+            colors = np.empty((n, 3), dtype=np.float32)
+            bg_mode = "white" if is_white_bg else "dark"
+            style = self.style_mode
+            if style == "Spacefill":
+                for i, sym in enumerate(self.symbols):
+                    radii[i] = get_vdw_radius(sym) * 0.75
+                    colors[i] = get_color(sym, bg_mode=bg_mode)
+            elif style == "Licorice / Tube":
+                r_tube = float(self.cylinder_radius) * 1.05
+                radii.fill(r_tube)
+                for i, sym in enumerate(self.symbols):
+                    colors[i] = get_color(sym, bg_mode=bg_mode)
+            elif style == "Wireframe":
+                radii.fill(0.05)
+                for i, sym in enumerate(self.symbols):
+                    colors[i] = get_color(sym, bg_mode=bg_mode)
+            else:
+                s_scale = float(self.sphere_scale)
+                for i, sym in enumerate(self.symbols):
+                    radii[i] = max(0.2, get_cov_radius(sym) * s_scale)
+                    colors[i] = get_color(sym, bg_mode=bg_mode)
+            self._cached_sphere_key = key
+            self._cached_sphere_props = (radii, colors)
+        return self._cached_sphere_props
+
+    def _build_sphere_instance_data(
+        self,
+        render_coords: np.ndarray,
+        charges_arr: Optional[np.ndarray],
+        is_white_bg: bool,
+        clean_export: bool,
+    ) -> np.ndarray:
+        """Pack (N, 8) float32 sphere instance buffer [x, y, z, radius, r, g, b, highlight]."""
+        n_atoms = len(self.symbols)
+        inst_data = np.empty((n_atoms, 8), dtype=np.float32)
+        radii, base_colors = self._get_cached_sphere_props(is_white_bg)
+        inst_data[:, 0:3] = render_coords
+        inst_data[:, 3] = radii
+        if charges_arr is not None and len(charges_arr) >= n_atoms:
+            for i in range(n_atoms):
+                inst_data[i, 4:7] = self._charge_to_rgb(charges_arr[i])
+        else:
+            inst_data[:, 4:7] = base_colors
+
+        inst_data[:, 7] = 0.0
+        if not clean_export:
+            for i in self.multi_selected:
+                if 0 <= i < n_atoms:
+                    inst_data[i, 7] = 2.0
+            sel_idx = self.selected_atom_idx
+            if sel_idx is not None and 0 <= sel_idx < n_atoms:
+                inst_data[sel_idx, 7] = 1.0
+            for i in self.picked_references:
+                if 0 <= i < n_atoms:
+                    inst_data[i, 7] = 3.0
+            role_map = {"target": 4.0, "bond": 5.0, "angle": 6.0, "dihedral": 7.0}
+            for i, role in self.highlighted_feature_atoms.items():
+                if 0 <= i < n_atoms and role in role_map:
+                    inst_data[i, 7] = role_map[role]
+        return inst_data
+
+    def _build_ghost_instance_data(
+        self,
+        render_coords: np.ndarray,
+        face_shifts: List[np.ndarray],
+        is_white_bg: bool,
+    ) -> np.ndarray:
+        """Pack vectorized (26*N, 8) float32 PBC ghost atom instance buffer."""
+        n_atoms = len(self.symbols)
+        if n_atoms == 0 or not face_shifts:
+            return np.empty((0, 8), dtype=np.float32)
+        shifts = np.asarray(face_shifts, dtype=np.float32)
+        n_shifts = len(shifts)
+        coords_f32 = np.asarray(render_coords, dtype=np.float32)
+        ghost_pos = (coords_f32[None, :, :] + shifts[:, None, :]).reshape(-1, 3)
+
+        bg_mode = "white" if is_white_bg else "dark"
+        s_scale = float(self.sphere_scale)
+        g_rad = np.array([max(0.18, get_cov_radius(sym) * s_scale * 0.85) for sym in self.symbols], dtype=np.float32)
+        g_col = np.array([get_color(sym, bg_mode=bg_mode) for sym in self.symbols], dtype=np.float32) * 0.75 + 0.25
+
+        ghost_arr = np.empty((n_shifts * n_atoms, 8), dtype=np.float32)
+        ghost_arr[:, 0:3] = ghost_pos
+        ghost_arr[:, 3] = np.tile(g_rad, n_shifts)
+        ghost_arr[:, 4:7] = np.tile(g_col, (n_shifts, 1))
+        ghost_arr[:, 7] = 0.0
+        return ghost_arr
+
+    def _get_cached_topo(self, n_rc: int):
+        """Return cached (delocalized_bonds, adj_graph), recomputing only when topology changes."""
+        bo_items = tuple(sorted(getattr(self, "bond_orders", {}).items()))
+        key = (n_rc, tuple(self.bonds), bo_items)
+        if getattr(self, "_cached_topo_key", None) != key:
+            deloc = self._delocalized_bonds()
+            adj_graph: Dict[int, List[int]] = {}
+            for u, w in self.bonds:
+                if 0 <= u < n_rc and 0 <= w < n_rc:
+                    adj_graph.setdefault(u, []).append(w)
+                    adj_graph.setdefault(w, []).append(u)
+            self._cached_topo_key = key
+            self._cached_topo_val = (deloc, adj_graph)
+        return self._cached_topo_val
 
     def _build_shader(self, v_src: str, f_src: str) -> int:
         def compile(src, s_type):
@@ -976,10 +1123,24 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             w, h = self.width(), self.height()
             is_white_vp = (getattr(self, "bg_color_mode", "dark") == "white" and not getattr(self, "transparent_bg", False))
 
+            recent_paths: List[str] = []
+            try:
+                from .session_state import get_settings
+                raw_rec = get_settings("AgyMolden").value("recent_files", []) or []
+                if isinstance(raw_rec, str):
+                    raw_rec = [raw_rec]
+                for rp in raw_rec:
+                    if isinstance(rp, str) and os.path.isfile(rp) and rp not in recent_paths:
+                        recent_paths.append(rp)
+                    if len(recent_paths) >= 3:
+                        break
+            except Exception:
+                logging.getLogger(__name__).debug("Ignored exception reading recent_files", exc_info=True)
+
             card_w = min(480, w - 40)
-            card_h = 195
+            card_h = 195 + (24 + len(recent_paths) * 19 if recent_paths else 0)
             card_x = (w - card_w) // 2
-            card_y = (h - card_h) // 2
+            card_y = max(10, (h - card_h) // 2)
 
             # Background card
             card_rect = QtCore.QRect(card_x, card_y, card_w, card_h)
@@ -1019,6 +1180,23 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.drawText(card_x + card_w - 95, sy, f"[{key}]")
                 sy += 21
 
+            if recent_paths:
+                sy += 4
+                painter.setFont(QtGui.QFont("DejaVu Sans", 8, QtGui.QFont.Weight.Bold))
+                painter.setPen(QtGui.QColor("#64748b" if is_white_vp else "#94a3b8"))
+                painter.drawText(card_x + 20, sy, "Recent Files:")
+                sy += 18
+                for rp in recent_paths:
+                    row_rect = QtCore.QRect(card_x + 16, sy - 13, card_w - 32, 18)
+                    self._welcome_hotspots.append((row_rect, f"recent:{rp}"))
+                    painter.setFont(QtGui.QFont("DejaVu Sans", 8))
+                    painter.setPen(QtGui.QColor("#0284c7" if is_white_vp else "#7dd3fc"))
+                    bname = os.path.basename(rp)
+                    painter.drawText(card_x + 24, sy, f"↺ {bname}")
+                    sy += 19
+
+            if getattr(self, "_drag_hover", False):
+                self._draw_drop_overlay(painter, w, h)
             painter.end()
             return
 
@@ -1029,16 +1207,16 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         proj_mat = self._get_projection_matrix()
         view_mat = self._get_view_matrix()
 
-        # Set uniforms
-        loc_proj = glGetUniformLocation(self.shader_program, "u_proj")
-        loc_view = glGetUniformLocation(self.shader_program, "u_view")
-        loc_model = glGetUniformLocation(self.shader_program, "u_model")
-        loc_norm = glGetUniformLocation(self.shader_program, "u_normal_mat")
-        loc_color = glGetUniformLocation(self.shader_program, "u_color")
-        loc_light = glGetUniformLocation(self.shader_program, "u_light_pos")
-        loc_view_pos = glGetUniformLocation(self.shader_program, "u_view_pos")
-        loc_hl = glGetUniformLocation(self.shader_program, "u_is_highlighted")
-        loc_use_inst = glGetUniformLocation(self.shader_program, "u_use_instancing")
+        # Set uniforms (cached locations)
+        loc_proj = self._uloc("u_proj")
+        loc_view = self._uloc("u_view")
+        loc_model = self._uloc("u_model")
+        loc_norm = self._uloc("u_normal_mat")
+        loc_color = self._uloc("u_color")
+        loc_light = self._uloc("u_light_pos")
+        loc_view_pos = self._uloc("u_view_pos")
+        loc_hl = self._uloc("u_is_highlighted")
+        loc_use_inst = self._uloc("u_use_instancing")
 
         c_x, c_y, c_z = 0.0, 0.0, 0.0
         if len(self.coords) > 0:
@@ -1059,15 +1237,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         glUniform3f(loc_light, light_world_pos[0], light_world_pos[1], light_world_pos[2])
         glUniform3f(loc_view_pos, cam_world_pos[0], cam_world_pos[1], cam_world_pos[2])
         glUniform1i(loc_use_inst, 0)
-        loc_pub_outline = glGetUniformLocation(self.shader_program, "u_publication_outline")
+        loc_pub_outline = self._uloc("u_publication_outline")
         if loc_pub_outline != -1:
             glUniform1i(loc_pub_outline, 1 if getattr(self, "show_publication_outlines", False) else 0)
 
-        loc_modern_glossy = glGetUniformLocation(self.shader_program, "u_modern_glossy")
+        loc_modern_glossy = self._uloc("u_modern_glossy")
         if loc_modern_glossy != -1:
             glUniform1i(loc_modern_glossy, 1 if getattr(self, "use_modern_shaders", False) else 0)
 
-        loc_depth_cue = glGetUniformLocation(self.shader_program, "u_depth_cue")
+        loc_depth_cue = self._uloc("u_depth_cue")
         if loc_depth_cue != -1:
             glUniform1i(loc_depth_cue, 1 if getattr(self, "use_depth_cueing", True) else 0)
 
@@ -1077,15 +1255,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             # Reference vectors for camera orientation
             right_cam, up_cam = self._get_camera_axes()
             view_cam = np.cross(right_cam, up_cam)
-            deloc = self._delocalized_bonds()
-
-            # Pre-compute adjacency graph for in-plane molecular vector calculation (GaussView / Chemcraft style)
             n_rc = len(render_coords)
-            adj_graph: Dict[int, List[int]] = {}
-            for u, w in self.bonds:
-                if 0 <= u < n_rc and 0 <= w < n_rc:
-                    adj_graph.setdefault(u, []).append(w)
-                    adj_graph.setdefault(w, []).append(u)
+            deloc, adj_graph = self._get_cached_topo(n_rc)
 
             cyl_instances = []
             for i1, i2 in self.bonds:
@@ -1359,42 +1530,7 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
         if n_atoms > 0:
             # Build instance data array: 8 float32 per atom [pos.xyz, rad, col.rgb, hl]
-            inst_data = np.empty((n_atoms, 8), dtype=np.float32)
-            for i, (sym, pos) in enumerate(zip(self.symbols, render_coords)):
-                cov_r = get_cov_radius(sym)
-                if self.style_mode == "Spacefill":
-                    rad = get_vdw_radius(sym) * 0.75
-                elif self.style_mode == "Licorice / Tube":
-                    rad = self.cylinder_radius * 1.05
-                elif self.style_mode == "Wireframe":
-                    rad = 0.05
-                else:
-                    rad = max(0.2, cov_r * self.sphere_scale)
-
-                c = self._charge_to_rgb(charges_arr[i]) if (charges_arr is not None and i < len(charges_arr)) else get_color(sym, bg_mode="white" if is_white_bg else "dark")
-                hl = 0
-                if not clean_export:
-                    if i in self.highlighted_feature_atoms:
-                        role = self.highlighted_feature_atoms[i]
-                        if role == "target":
-                            hl = 4  # Vibrant Gold
-                        elif role == "bond":
-                            hl = 5  # Vibrant Cyan
-                        elif role == "angle":
-                            hl = 6  # Bright Purple/Magenta
-                        elif role == "dihedral":
-                            hl = 7  # Bright Orange
-                    elif i in self.picked_references:
-                        hl = 3
-                    elif i == self.selected_atom_idx:
-                        hl = 1
-                    elif i in self.multi_selected:
-                        hl = 2
-
-                inst_data[i, 0:3] = pos
-                inst_data[i, 3] = rad
-                inst_data[i, 4:7] = c
-                inst_data[i, 7] = float(hl)
+            inst_data = self._build_sphere_instance_data(render_coords, charges_arr, is_white_bg, clean_export)
 
             if self.sphere_vao and self.sphere_inst_vbo:
                 glBindVertexArray(self.sphere_vao)
@@ -1413,30 +1549,15 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 ):
                     uc = self.unit_cell
                     M = uc.lattice_vectors
-                    # Shifts along unit cell faces ([-1, 0, 1] offsets)
-                    face_shifts = []
-                    for sx in (-1, 0, 1):
-                        for sy in (-1, 0, 1):
-                            for sz in (-1, 0, 1):
-                                if sx == 0 and sy == 0 and sz == 0:
-                                    continue
-                                face_shifts.append(sx * M[0] + sy * M[1] + sz * M[2])
-
-                    ghost_instances = []
-                    for shift_vec in face_shifts:
-                        for i, (sym, pos) in enumerate(zip(self.symbols, render_coords)):
-                            cov_r = get_cov_radius(sym)
-                            ghost_pos = pos + shift_vec
-                            c = get_color(sym, bg_mode="white" if is_white_bg else "dark")
-                            ghost_instances.append([
-                                float(ghost_pos[0]), float(ghost_pos[1]), float(ghost_pos[2]),
-                                float(max(0.18, cov_r * self.sphere_scale * 0.85)),
-                                float(c[0] * 0.75 + 0.25), float(c[1] * 0.75 + 0.25), float(c[2] * 0.75 + 0.25),
-                                0.0
-                            ])
-
-                    if ghost_instances:
-                        ghost_arr = np.array(ghost_instances, dtype=np.float32)
+                    face_shifts = [
+                        sx * M[0] + sy * M[1] + sz * M[2]
+                        for sx in (-1, 0, 1)
+                        for sy in (-1, 0, 1)
+                        for sz in (-1, 0, 1)
+                        if not (sx == 0 and sy == 0 and sz == 0)
+                    ]
+                    ghost_arr = self._build_ghost_instance_data(render_coords, face_shifts, is_white_bg)
+                    if len(ghost_arr) > 0:
                         glBindBuffer(GL_ARRAY_BUFFER, self.sphere_inst_vbo)
                         glBufferData(GL_ARRAY_BUFFER, ghost_arr.nbytes, ghost_arr, GL_DYNAMIC_DRAW)
                         glDrawElementsInstanced(GL_TRIANGLES, self.sphere_indices_count, GL_UNSIGNED_INT, None, len(ghost_instances))
@@ -2851,6 +2972,49 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#f8fafc"))
                 painter.drawText(pill_x + pill_pad_x, pill_y + pill_pad_y + p_fm.ascent(), pill_text)
 
+            # Live Distance / Angle / Dihedral Measurement HUD Pill (Bottom-Left Viewport)
+            hud_meas = getattr(self, "_hud_measurement_text", "")
+            if hud_meas and len(getattr(self, "multi_selected", [])) in (2, 3, 4):
+                painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
+                m_fm = painter.fontMetrics()
+                m_tw = m_fm.horizontalAdvance(hud_meas)
+                m_th = m_fm.height()
+                m_rect = QtCore.QRect(12, max(12, h - m_th - 22), m_tw + 20, m_th + 10)
+                is_white_vp = (self.bg_color_mode == "white" and not getattr(self, "transparent_bg", False))
+                painter.setBrush(QtGui.QColor(255, 255, 255, 225) if is_white_vp else QtGui.QColor(15, 23, 42, 220))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"), 1.3))
+                painter.drawRoundedRect(m_rect, 6, 6)
+                painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#f8fafc"))
+                painter.drawText(m_rect.x() + 10, m_rect.y() + 5 + m_fm.ascent(), hud_meas)
+
+            if getattr(self, "_drag_hover", False):
+                self._draw_drop_overlay(painter, w, h)
+
             painter.end()
+
+    def _draw_drop_overlay(self, painter: QtGui.QPainter, w: int, h: int) -> None:
+        """Draw a PyMOL/Chimera-style drop-target highlight when dragging files over the 3D viewport."""
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        pen = QtGui.QPen(QtGui.QColor("#38bdf8"), 2.5, QtCore.Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QColor(56, 189, 248, 22))
+        painter.drawRoundedRect(QtCore.QRect(8, 8, max(10, w - 16), max(10, h - 16)), 10, 10)
+
+        msg = "📂 Drop molecular / cube / orbital file(s) to open"
+        painter.setFont(QtGui.QFont("DejaVu Sans", 10, QtGui.QFont.Weight.Bold))
+        fm = painter.fontMetrics()
+        tw = fm.horizontalAdvance(msg)
+        th = fm.height()
+        bw = tw + 28
+        bh = th + 16
+        bx = (w - bw) // 2
+        by = max(18, h - bh - 24)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#38bdf8"), 1.5))
+        painter.setBrush(QtGui.QColor(15, 23, 42, 230))
+        painter.drawRoundedRect(QtCore.QRect(bx, by, bw, bh), 8, 8)
+        painter.setPen(QtGui.QColor("#f8fafc"))
+        painter.drawText(bx + 14, by + 8 + fm.ascent(), msg)
+        painter.restore()
 
     # Mouse & Keyboard interaction

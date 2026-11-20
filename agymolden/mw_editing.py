@@ -2245,7 +2245,7 @@ class EditingMixin:
                             }
                             self.statusBar().showMessage(f"Converted '{clip_text}' from clipboard to 3D fragment ({len(s_syms)} atoms)!", 4000)
                     except Exception:
-                        pass
+                        logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         if not frag:
             self.statusBar().showMessage("Clipboard / fragment memory is empty. Select atoms and press Ctrl+C first, or copy Cartesian XYZ coordinates.", 3500)
@@ -2281,7 +2281,7 @@ class EditingMixin:
                 ImportController(self).load_xyz_data(syms, coords, source_label="Clipboard XYZ")
                 return
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         # If not standard XYZ, try SMILES/InChI
         if len(clip_text) < 500 and not clip_text.startswith("{") and not clip_text.startswith("<"):
@@ -2295,7 +2295,7 @@ class EditingMixin:
                     )
                     return
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         QtWidgets.QMessageBox.warning(
             self,

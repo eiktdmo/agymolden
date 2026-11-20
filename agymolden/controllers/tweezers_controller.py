@@ -6,6 +6,7 @@ Dedicated controller encapsulating Molecular Tweezers operations:
 - Tweezers state toggles and cursor handling
 - Mouse release reconstruction of canonical Z-matrix geometry
 """
+import logging
 
 from typing import Any, Set
 import numpy as np
@@ -75,7 +76,7 @@ class TweezersController:
                     f"🧲 Tweezers: Translating selected {len(drag_indices)} atom(s)", 1000
                 )
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     def finish_atom_drag(self, atom_idx: int) -> None:
         """Called when mouse release completes atom dragging. Reconstructs canonical Z-matrix."""

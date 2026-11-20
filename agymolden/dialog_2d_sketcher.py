@@ -214,7 +214,7 @@ class SketchCanvas2D(QtWidgets.QWidget):
                 try:
                     Chem.Kekulize(mol, clearAromaticFlags=True)
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
                 AllChem.Compute2DCoords(mol)
                 conf = mol.GetConformer()
                 frag_syms = [a.GetSymbol() for a in mol.GetAtoms()]
@@ -223,7 +223,7 @@ class SketchCanvas2D(QtWidgets.QWidget):
                 for b in mol.GetBonds():
                     frag_bonds.append((b.GetBeginAtomIdx(), b.GetEndAtomIdx(), bo_map.get(b.GetBondType(), 1)))
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         if not frag_syms:
             if group_key.startswith("Ph"):
@@ -855,7 +855,7 @@ class MoleculeSketcher2DDialog(QtWidgets.QDialog):
                 try:
                     AllChem.UFFOptimizeMolecule(mol, maxIters=300)
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
                 conf = mol.GetConformer()
                 final_symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
                 final_coords = conf.GetPositions().astype(np.float64)

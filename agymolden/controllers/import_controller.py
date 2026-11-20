@@ -291,7 +291,7 @@ class ImportController:
                         self.mw.slider_trajectory.blockSignals(False)
                         self.mw.lbl_trajectory_step.setText(f"Step 1/{len(multi_frames)}")
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
         except Exception as e:
             dialog_service.error(self.mw, "Error Reading XYZ", str(e), exc=e)

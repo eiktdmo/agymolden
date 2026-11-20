@@ -953,7 +953,7 @@ def _compute_native_promolecular_grid(
             symbols = parsed.symbols
             coords = parsed.trajectory_coords[-1]
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     if not symbols or coords is None:
         try:

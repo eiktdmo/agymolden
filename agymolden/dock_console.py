@@ -6,6 +6,7 @@ APIs (`agy.*`) directly connected to the 3D viewport, undo stack, and event bus.
 """
 
 from typing import Optional, List, Any, Dict
+import html
 import io
 import sys
 import traceback
@@ -202,7 +203,7 @@ class PythonConsoleWidget(QtWidgets.QWidget):
     def _custom_print(self, *args, **kwargs):
         buf = io.StringIO()
         print(*args, file=buf, **kwargs)
-        text = buf.getvalue().rstrip()
+        text = html.escape(buf.getvalue().rstrip()).replace("\n", "<br>")
         self._append_html(f"<span style='color: #cbd5e1;'>{text}</span>")
 
     def _on_execute(self):
@@ -214,7 +215,7 @@ class PythonConsoleWidget(QtWidgets.QWidget):
         self.history_idx = len(self.history)
         self.txt_input.clear()
 
-        self._append_html(f"<span style='color: #38bdf8;'><b>&gt;&gt;&gt;</b></span> <span style='color: #f1f5f9;'>{cmd}</span>")
+        self._append_html(f"<span style='color: #38bdf8;'><b>&gt;&gt;&gt;</b></span> <span style='color: #f1f5f9;'>{html.escape(cmd)}</span>")
 
         # Try evaluating as an expression first, then fall back to exec
         try:
@@ -222,7 +223,7 @@ class PythonConsoleWidget(QtWidgets.QWidget):
                 code = compile(cmd, "<console>", "eval")
                 res = eval(code, self.namespace)
                 if res is not None:
-                    self._append_html(f"<span style='color: #34d399;'>{repr(res)}</span>")
+                    self._append_html(f"<span style='color: #34d399;'>{html.escape(repr(res))}</span>")
             except SyntaxError:
                 # Execute statement
                 exec(cmd, self.namespace)
@@ -230,5 +231,5 @@ class PythonConsoleWidget(QtWidgets.QWidget):
             err = traceback.format_exc().rstrip()
             # Show concise error trace
             lines = err.split("\n")
-            short_err = "\n".join(lines[-3:])
+            short_err = html.escape("\n".join(lines[-3:])).replace("\n", "<br>")
             self._append_html(f"<span style='color: #f87171;'>{short_err}</span>")

@@ -482,7 +482,8 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
         bin_name = code_key
 
     # Retrieve saved route if no custom route was explicitly passed
-    settings = QtCore.QSettings("AgyMolden", "QMExecutableRoutes")
+    from .session_state import get_settings
+    settings = get_settings("QMExecutableRoutes")
     route_to_try = (custom_route or "").strip() or settings.value(f"route_{key}", "")
 
     # 1. Test custom or stored route
@@ -606,15 +607,17 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
 
 def save_qm_route(code_key: str, route: str):
     """Persist user-specified command route for a QM code in QSettings."""
+    from .session_state import get_settings
     key = _normalize_code_key(code_key)
-    settings = QtCore.QSettings("AgyMolden", "QMExecutableRoutes")
+    settings = get_settings("QMExecutableRoutes")
     settings.setValue(f"route_{key}", route.strip())
 
 
 def get_qm_route(code_key: str) -> str:
     """Retrieve persisted command route for a QM code."""
+    from .session_state import get_settings
     key = _normalize_code_key(code_key)
-    settings = QtCore.QSettings("AgyMolden", "QMExecutableRoutes")
+    settings = get_settings("QMExecutableRoutes")
     return str(settings.value(f"route_{key}", "") or "")
 
 
@@ -649,7 +652,7 @@ def download_or_install_xtb_binary() -> Optional[str]:
                     save_qm_route("xtb", cand)
                     return cand
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
     return None
 
 

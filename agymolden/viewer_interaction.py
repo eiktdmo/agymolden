@@ -43,6 +43,10 @@ class ViewerInteractionMixin:
                         elif action_key == "cmd_palette" and hasattr(mw, "_on_open_command_palette"):
                             QtCore.QTimer.singleShot(0, mw._on_open_command_palette)
                             return
+                        elif action_key.startswith("recent:") and hasattr(mw, "open_path"):
+                            fpath = action_key[len("recent:"):]
+                            QtCore.QTimer.singleShot(0, lambda p=fpath: mw.open_path(p))
+                            return
 
             # Check if user clicked on the in-viewport "Clear 3D Surface" HUD button
             clear_rect = getattr(self, "clear_surface_rect", None)
@@ -645,21 +649,66 @@ class ViewerInteractionMixin:
         self.zoom = max(1.0, min(150.0, self.zoom - delta * 0.8))
         self.update()
 
+    @staticmethod
+    def _extract_dropped_files(mime_data) -> List[str]:
+        import os
+        paths: List[str] = []
+        if mime_data is None:
+            return paths
+        if mime_data.hasUrls():
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    lp = url.toLocalFile()
+                    if lp and os.path.isfile(lp) and lp not in paths:
+                        paths.append(lp)
+        elif mime_data.hasText():
+            for raw_line in mime_data.text().splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                lp = QtCore.QUrl(line).toLocalFile() if line.startswith("file://") else line
+                if lp and os.path.isfile(lp) and lp not in paths:
+                    paths.append(lp)
+        return paths
+
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
-        if event.mimeData().hasUrls():
+        if self._extract_dropped_files(event.mimeData()):
+            self._drag_hover = True
+            self.update()
             event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
+        if self._extract_dropped_files(event.mimeData()):
+            if not getattr(self, "_drag_hover", False):
+                self._drag_hover = True
+                self.update()
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent):
+        if getattr(self, "_drag_hover", False):
+            self._drag_hover = False
+            self.update()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event: QtGui.QDropEvent):
-        # Forward dropped file to MainWindow
-        main_win = self.window()
-        if hasattr(main_win, "open_path"):
-            for url in event.mimeData().urls():
-                if url.isLocalFile():
-                    main_win.open_path(url.toLocalFile())
-                    event.acceptProposedAction()
-                    return
+        self._drag_hover = False
+        self.update()
+        paths = self._extract_dropped_files(event.mimeData())
+        if paths:
+            main_win = self.window()
+            if hasattr(main_win, "open_paths"):
+                main_win.open_paths(paths)
+                event.acceptProposedAction()
+                return
+            elif hasattr(main_win, "open_path"):
+                for p in paths:
+                    main_win.open_path(p)
+                event.acceptProposedAction()
+                return
         super().dropEvent(event)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
@@ -816,6 +865,7 @@ class ViewerInteractionMixin:
             sum_vdw = get_vdw_radius(self.symbols[a]) + get_vdw_radius(self.symbols[b])
             bond_state = "Bonded" if d <= sum_cov * 1.25 else ("Non-covalent/VdW" if d <= sum_vdw else "Separated")
             msg = f"Distance ({self.symbols[a]}{a+1} - {self.symbols[b]}{b+1}): {d:.4f} Å [{bond_state}, Σr_cov={sum_cov:.2f} Å, Σr_vdw={sum_vdw:.2f} Å] [Selected: {atoms_str}]"
+            self._hud_measurement_text = f"📏 {self.symbols[a]}{a+1}–{self.symbols[b]}{b+1}: {d:.4f} Å"
         elif k == 3:
             a, b, c = self.multi_selected
             v1 = self.coords[a] - self.coords[b]
@@ -823,6 +873,7 @@ class ViewerInteractionMixin:
             cos_th = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-12)
             deg = math.degrees(math.acos(np.clip(cos_th, -1.0, 1.0)))
             msg = f"Angle ({self.symbols[a]}{a+1} - {self.symbols[b]}{b+1} - {self.symbols[c]}{c+1}): {deg:.2f}° [Selected: {atoms_str}]"
+            self._hud_measurement_text = f"📐 {self.symbols[a]}{a+1}–{self.symbols[b]}{b+1}–{self.symbols[c]}{c+1}: {deg:.2f}°"
         elif k == 4:
             a, b, c, d = self.multi_selected
             # Dihedral
@@ -837,13 +888,16 @@ class ViewerInteractionMixin:
             y = np.dot(np.cross(b1_u, v), w)
             deg = math.degrees(math.atan2(y, x))
             msg = f"Dihedral ({self.symbols[a]}{a+1} - {self.symbols[b]}{b+1} - {self.symbols[c]}{c+1} - {self.symbols[d]}{d+1}): {deg:.2f}° [Selected: {atoms_str}]"
+            self._hud_measurement_text = f"🔄 {self.symbols[a]}{a+1}–{self.symbols[b]}{b+1}–{self.symbols[c]}{c+1}–{self.symbols[d]}{d+1}: {deg:.2f}°"
         elif k > 4:
+            self._hud_measurement_text = ""
             # Check if group has a centroid or is a ring
             sel_pts = self.coords[self.multi_selected]
             centroid = np.mean(sel_pts, axis=0)
             rg = np.mean(np.linalg.norm(sel_pts - centroid, axis=1))
             msg = f"Selected {k} atoms: {atoms_str} | Centroid: ({centroid[0]:.2f}, {centroid[1]:.2f}, {centroid[2]:.2f}) Å (r_span={rg:.2f} Å) | Press Ctrl+C to copy"
         elif k == 1:
+            self._hud_measurement_text = ""
             idx = self.multi_selected[0]
             p = self.coords[idx]
             from .elements import get_cov_radius, get_vdw_radius, get_atomic_number
@@ -856,6 +910,7 @@ class ViewerInteractionMixin:
                 charge_info = f" | Charge: {charges_arr[idx]:+.3f} e"
             msg = f"Atom #{idx+1} {self.symbols[idx]} (Z={z}): pos=({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f}) Å | r_cov={cov:.2f} Å, r_vdw={vdw:.2f} Å{charge_info}"
         else:
+            self._hud_measurement_text = ""
             msg = "Shift+Click atoms to measure Dist (2), Angle (3), Dihedral (4) or group selection"
 
         self.measurement_updated.emit(msg)

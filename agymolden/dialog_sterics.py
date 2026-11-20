@@ -1,6 +1,7 @@
 """Interactive Steric & Catalysis Descriptors Dialog (%V_bur, Topographic Map, Sterimol)."""
 
 from __future__ import annotations
+import logging
 
 import os
 from typing import List, Optional
@@ -176,7 +177,7 @@ class StericsDialog(QtWidgets.QDialog):
             try:
                 ster_res = compute_sterimol(self.symbols, self.coords, atom_base_idx=c_idx, atom_substituent_idx=sub_idx)
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
         self._last_sterimol = ster_res
 
         self._render_topographic_map(vbur_res)

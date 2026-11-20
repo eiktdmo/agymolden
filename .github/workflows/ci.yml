@@ -25,6 +25,12 @@ jobs:
           ruff check .
           ruff format --check .
 
+      - name: Run Mypy Type Check (Core Modules)
+        continue-on-error: true
+        run: |
+          pip install mypy
+          mypy agymolden/molecule_model.py agymolden/zmatrix.py agymolden/mcp_server.py agymolden/project_bundle.py agymolden/session_state.py
+
   test:
     name: Test on ${{ matrix.os }} (Py ${{ matrix.python-version }})
     needs: lint

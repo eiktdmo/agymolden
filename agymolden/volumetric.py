@@ -390,7 +390,7 @@ def convert_gbw_to_molden_if_possible(gbw_path: str) -> Optional[str]:
                 if os.path.isfile(cand_2mkl):
                     orca_2mkl = cand_2mkl
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
     if not orca_2mkl:
         return None
 
