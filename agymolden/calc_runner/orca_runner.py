@@ -90,14 +90,40 @@ class OrcaRunner(BaseCalcRunner):
             log.warning(f"Could not open {self.log_file} for writing: {e}")
             self._out_fh = None
 
-        # Parse route command (allows user-specified custom binary or wrapper such as mpirun)
+        # Refresh binary route in case user configured it after OrcaRunner was instantiated
+        if not self.orca_bin or self.orca_bin == "orca":
+            self.orca_bin = find_orca_binary() or "orca"
+
+        # Parse route command (allows user-specified custom binary, folder, or wrapper such as mpirun)
         # Note: ORCA requires its full absolute path when running parallel (%pal nprocs N) jobs!
-        route_cmd = (self.orca_bin or "orca").split()
-        exec_bin = route_cmd[0]
+        import shlex
+        raw_bin = (self.orca_bin or "orca").strip()
+        expanded_raw = os.path.expanduser(raw_bin)
+        if os.path.isdir(expanded_raw):
+            for cand in (os.path.join(expanded_raw, "orca"), os.path.join(expanded_raw, "bin", "orca")):
+                if os.path.isfile(cand):
+                    expanded_raw = cand
+                    break
+        if os.path.isfile(expanded_raw):
+            route_cmd = [expanded_raw]
+        else:
+            try:
+                route_cmd = shlex.split(raw_bin)
+            except ValueError:
+                route_cmd = raw_bin.split()
+
+        exec_bin = os.path.expanduser(route_cmd[0]) if route_cmd else "orca"
         if not os.path.isabs(exec_bin):
             resolved = shutil.which(exec_bin)
             if resolved:
                 exec_bin = os.path.abspath(resolved)
+        if not (os.path.isfile(exec_bin) or shutil.which(exec_bin)):
+            self._set_status(
+                JobStatus.FAILED,
+                f"ORCA executable not found ('{exec_bin}'). Set its path in QM Engines or Quick ORCA.",
+            )
+            return False
+
         extra_args = [
             (os.path.abspath(shutil.which(tok)) if (tok.endswith("orca") and not os.path.isabs(tok) and shutil.which(tok)) else tok)
             for tok in route_cmd[1:]

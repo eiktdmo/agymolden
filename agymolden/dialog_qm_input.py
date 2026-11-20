@@ -368,6 +368,11 @@ class QMCalculationDialog(QtWidgets.QDialog):
         btn_browse_bin = QtWidgets.QPushButton("Browse Executable...")
         btn_browse_bin.clicked.connect(self._on_browse_executable)
         row_route.addWidget(btn_browse_bin)
+
+        btn_search_bin = QtWidgets.QPushButton("🔍 Search System")
+        btn_search_bin.setToolTip("Search home directory, /opt, /usr/local, and system folders for this executable")
+        btn_search_bin.clicked.connect(self._on_search_executable)
+        row_route.addWidget(btn_search_bin)
         form_exec.addRow("Executable / Command Route:", row_route)
 
         t4_layout.addLayout(form_exec)
@@ -651,6 +656,37 @@ class QMCalculationDialog(QtWidgets.QDialog):
         )
         if path:
             self.txt_custom_route.setText(path)
+
+    def _on_search_executable(self):
+        qm_name = self.combo_qm_code.currentText()
+        from .qm_detect import search_qm_executable_anywhere
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        try:
+            matches = search_qm_executable_anywhere(qm_name, timeout_sec=5.0)
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+        if matches:
+            if len(matches) == 1:
+                self.txt_custom_route.setText(matches[0])
+            else:
+                chosen, ok = QtWidgets.QInputDialog.getItem(
+                    self,
+                    f"{qm_name} Executables Found",
+                    "Multiple executables were found. Select one:",
+                    matches,
+                    0,
+                    False,
+                )
+                if ok and chosen:
+                    self.txt_custom_route.setText(chosen)
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Executable Search",
+                f"Could not automatically locate {qm_name} in your home directory, /opt, or /usr/local.\n"
+                "Please paste the full path (or its folder) or click 'Browse Executable...'.",
+            )
 
     def _populate_scan_defaults_from_selection(self):
         from .zmatrix import calculate_bond_distance, calculate_angle, calculate_dihedral

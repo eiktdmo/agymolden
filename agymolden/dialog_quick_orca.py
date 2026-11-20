@@ -407,6 +407,37 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         dir_row.addWidget(btn_browse)
         bot_layout.addRow("Directory:", dir_row)
 
+        # ORCA Executable / Route row (lets users paste, browse, or search anywhere on Linux/macOS/Win)
+        from agymolden.qm_detect import detect_qm_executable, get_qm_route
+        orca_init_info = detect_qm_executable("orca")
+        orca_row = QtWidgets.QHBoxLayout()
+        self.txt_orca_path = QtWidgets.QLineEdit(get_qm_route("orca"))
+        self.txt_orca_path.setPlaceholderText(
+            orca_init_info.resolved_path if orca_init_info.found else "Auto-detect failed — paste path, Browse..., or click Search"
+        )
+        self.txt_orca_path.setToolTip(
+            "Path to the 'orca' executable (or its folder, or full launch command). Saved automatically."
+        )
+        self.txt_orca_path.textChanged.connect(self._on_orca_path_changed)
+        orca_row.addWidget(self.txt_orca_path, stretch=1)
+
+        btn_orca_browse = QtWidgets.QPushButton("Browse...")
+        btn_orca_browse.setToolTip("Browse for the ORCA executable binary")
+        btn_orca_browse.clicked.connect(self._on_browse_orca)
+        orca_row.addWidget(btn_orca_browse)
+
+        btn_orca_search = QtWidgets.QPushButton("🔍 Search")
+        btn_orca_search.setToolTip("Search home directory, /opt, /usr/local, and system folders for ORCA")
+        btn_orca_search.clicked.connect(self._on_search_orca)
+        orca_row.addWidget(btn_orca_search)
+        bot_layout.addRow("ORCA Executable:", orca_row)
+
+        self.lbl_orca_status = QtWidgets.QLabel("")
+        self.lbl_orca_status.setWordWrap(True)
+        self.lbl_orca_status.setStyleSheet("font-size: 11px;")
+        bot_layout.addRow("", self.lbl_orca_status)
+        self._refresh_orca_status(orca_init_info)
+
         layout.addWidget(bottom_box)
 
         btn_box = QtWidgets.QHBoxLayout()
@@ -677,20 +708,74 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         if d:
             self.txt_dir.setText(d)
 
+    def _refresh_orca_status(self, info=None):
+        if info is None:
+            from agymolden.qm_detect import detect_qm_executable
+            info = detect_qm_executable("orca", custom_route=self.txt_orca_path.text().strip() or None)
+        if info.found:
+            self.lbl_orca_status.setText(f"<span style='color: #16a34a; font-weight: bold;'>{info.message}</span>")
+        else:
+            self.lbl_orca_status.setText(f"<span style='color: #d97706;'>{info.message}</span>")
+
+    def _on_orca_path_changed(self, text: str):
+        from agymolden.qm_detect import detect_qm_executable, save_qm_route
+        save_qm_route("orca", text.strip())
+        info = detect_qm_executable("orca", custom_route=text.strip() or None)
+        self._refresh_orca_status(info)
+        if self.parent() is not None and hasattr(self.parent(), "_update_env_badge"):
+            self.parent()._update_env_badge()
+
+    def _on_browse_orca(self):
+        p, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select ORCA Executable", os.path.expanduser("~"), "All Files (*)"
+        )
+        if p:
+            self.txt_orca_path.setText(p)
+
+    def _on_search_orca(self):
+        from agymolden.qm_detect import search_qm_executable_anywhere
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        try:
+            matches = search_qm_executable_anywhere("orca", timeout_sec=5.0)
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+        if matches:
+            if len(matches) == 1:
+                self.txt_orca_path.setText(matches[0])
+            else:
+                chosen, ok = QtWidgets.QInputDialog.getItem(
+                    self,
+                    "ORCA Executables Found",
+                    "Multiple ORCA executables were found. Select one:",
+                    matches,
+                    0,
+                    False,
+                )
+                if ok and chosen:
+                    self.txt_orca_path.setText(chosen)
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                "ORCA Search",
+                "Could not automatically locate an 'orca' executable in your home directory, /opt, or /usr/local.\n\n"
+                "Please paste the full path to your ORCA binary (or its folder) into the ORCA Executable field, or click 'Browse...'.",
+            )
+
     def _on_run_clicked(self):
         if not self.zatoms:
             QtWidgets.QMessageBox.warning(self, "No Molecule", "Please build or load a molecule first before running ORCA.")
             return
 
-        from agymolden.qm_detect import detect_qm_executable
-        info = detect_qm_executable("orca")
+        from agymolden.qm_detect import detect_qm_executable, get_qm_route
+        info = detect_qm_executable("orca", custom_route=self.txt_orca_path.text().strip() or None)
         if not info.found:
             msg = (
                 "<b>ORCA executable was not detected on your system.</b><br><br>"
-                "To run this calculation locally, ORCA must be installed and placed in your system PATH, "
-                "or configured in AgyMolden's QM Engine settings.<br><br>"
+                "To run this calculation locally, enter or browse to your ORCA executable in the "
+                "<b>ORCA Executable</b> field, click <b>🔍 Search</b>, or configure it in QM Engine settings.<br><br>"
                 "<b>Options:</b><br>"
-                "• Click <b>Configure Route</b> to browse for your ORCA executable folder.<br>"
+                "• Click <b>Configure Route</b> to browse/search for your ORCA executable.<br>"
                 "• Click <b>Save Input Only</b> to write the .inp deck to disk without running locally (e.g. to transfer to a supercomputer/cluster)."
             )
             dlg_box = QtWidgets.QMessageBox(self)
@@ -705,7 +790,11 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             if dlg_box.clickedButton() == btn_cfg:
                 from agymolden.qm_detect import QMEnginesStatusDialog
                 QMEnginesStatusDialog.show_dialog(self)
-                return
+                self.txt_orca_path.setText(get_qm_route("orca"))
+                info = detect_qm_executable("orca", custom_route=self.txt_orca_path.text().strip() or None)
+                self._refresh_orca_status(info)
+                if not info.found:
+                    return
             elif dlg_box.clickedButton() == btn_cancel:
                 return
 

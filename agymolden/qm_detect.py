@@ -11,9 +11,11 @@ import os
 import sys
 import glob
 import re
+import shlex
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Tuple, NamedTuple
+import time
+from typing import Dict, List, Optional, Tuple, NamedTuple, Set
 from PyQt6 import QtCore
 
 
@@ -35,30 +37,118 @@ def _glob_candidates(*patterns: str) -> List[str]:
     return out
 
 
+def _dedupe_paths(paths: List[str]) -> List[str]:
+    """Return non-empty paths in order without duplicates."""
+    seen: Set[str] = set()
+    out: List[str] = []
+    for p in paths:
+        if not p:
+            continue
+        norm = os.path.normpath(os.path.expanduser(p))
+        if norm not in seen:
+            seen.add(norm)
+            out.append(norm)
+    return out
+
+
+def _env_var_candidates(var_names: Tuple[str, ...], bin_names: Tuple[str, ...]) -> List[str]:
+    """Extract candidate executable paths from environment variables."""
+    out: List[str] = []
+    for var in var_names:
+        val = os.environ.get(var, "").strip()
+        if not val:
+            continue
+        expanded = os.path.expanduser(val)
+        if os.path.isfile(expanded):
+            out.append(expanded)
+        elif os.path.isdir(expanded):
+            for b in bin_names:
+                out.append(os.path.join(expanded, b))
+                out.append(os.path.join(expanded, "bin", b))
+    return out
+
+
+def _normalize_code_key(code_key: str) -> str:
+    """Map user-facing QM package names and aliases to canonical keys."""
+    k = (code_key or "").strip().lower()
+    if "orca" in k:
+        return "orca"
+    if "gaussian" in k or "g16" in k or "g09" in k or "g03" in k:
+        return "gaussian"
+    if "pyscf" in k:
+        return "pyscf"
+    if "openlowdin" in k or "lowdin" in k or "apmo" in k:
+        return "openlowdin"
+    if "xtb" in k:
+        return "xtb"
+    if "qchem" in k or "q-chem" in k:
+        return "qchem"
+    if "psi4" in k:
+        return "psi4"
+    return k
+
+
 def _probe_paths(key: str) -> List[str]:
-    """Candidate executables for a QM code: PATH first, then common install locations (no user-specific paths)."""
+    """Candidate executables for a QM code: env vars & PATH first, then common install locations."""
+    key = _normalize_code_key(key)
     if key == "orca":
-        return [shutil.which("orca") or ""] + _glob_candidates(
-            "~/orca*/orca", "~/programs/orca*/orca", "~/software/orca*/orca",
-            "/opt/orca*/orca", "/usr/local/orca*/orca", "/usr/local/bin/orca",
+        bin_names = ("orca.exe", "orca") if os.name == "nt" else ("orca",)
+        env_cands = _env_var_candidates(
+            ("ORCA_BIN", "ORCA_HOME", "ORCA_DIR", "EBROOTORCA"),
+            bin_names,
+        )
+        globs = _glob_candidates(
+            "~/orca*/orca", "~/orca*/bin/orca",
+            "~/Programs/orca*/orca", "~/Programs/orca*/bin/orca",
+            "~/programs/orca*/orca", "~/programs/orca*/bin/orca",
+            "~/Software/orca*/orca", "~/Software/orca*/bin/orca",
+            "~/software/orca*/orca", "~/software/orca*/bin/orca",
+            "~/Applications/orca*/orca", "~/Applications/orca*/bin/orca",
+            "~/apps/orca*/orca", "~/apps/orca*/bin/orca",
+            "~/Downloads/orca*/orca", "~/Desktop/orca*/orca",
+            "~/bin/orca", "~/.local/bin/orca",
+            "~/miniconda3/envs/*/bin/orca", "~/anaconda3/envs/*/bin/orca",
+            "~/mambaforge/envs/*/bin/orca", "~/miniforge3/envs/*/bin/orca",
+            "/opt/orca*/orca", "/opt/orca*/bin/orca", "/opt/conda/envs/*/bin/orca",
+            "/usr/local/orca*/orca", "/usr/local/orca*/bin/orca",
+            "/usr/local/share/orca*/orca",
+            "/usr/local/bin/orca", "/usr/bin/orca", "/snap/bin/orca",
+            "/software/orca*/orca", "/software/orca*/bin/orca",
+            "/apps/orca*/orca", "/apps/orca*/bin/orca",
             "C:/orca*/orca.exe", "C:/Program Files/orca*/orca.exe",
         )
+        return _dedupe_paths(env_cands + [shutil.which("orca") or ""] + globs)
     if key == "gaussian":
-        return [
+        bin_names = ("g16.exe", "g09.exe", "g03.exe") if os.name == "nt" else ("g16", "g09", "g03")
+        env_cands = _env_var_candidates(
+            ("g16root", "g09root", "g03root", "GAUSS_EXEDIR", "EBROOTGAUSSIAN"),
+            bin_names,
+        )
+        which_cands = [
             shutil.which("g16") or "",
             shutil.which("g16.exe") or "",
             shutil.which("g09") or "",
             shutil.which("g09.exe") or "",
             shutil.which("g03") or "",
             shutil.which("g03.exe") or "",
-        ] + _glob_candidates(
-            "~/g16/g16", "~/g09/g09", "~/programs/g16*/g16", "~/programs/gaussian*/g16*/g16",
-            "/opt/g16/g16", "/opt/g09/g09", "/usr/local/g16/g16", "/usr/local/g09/g09",
+        ]
+        globs = _glob_candidates(
+            "~/g16*/g16", "~/g09*/g09",
+            "~/Programs/g16*/g16", "~/Programs/g09*/g09", "~/Programs/gaussian*/g*/g*",
+            "~/programs/g16*/g16", "~/programs/g09*/g09", "~/programs/gaussian*/g*/g*",
+            "~/Software/g16*/g16", "~/Software/gaussian*/g*/g*",
+            "~/software/g16*/g16", "~/software/gaussian*/g*/g*",
+            "~/bin/g16", "~/bin/g09", "~/.local/bin/g16", "~/.local/bin/g09",
+            "/opt/g16*/g16", "/opt/g09*/g09", "/opt/gaussian*/g*/g*",
+            "/usr/local/g16*/g16", "/usr/local/g09*/g09", "/usr/local/gaussian*/g*/g*",
+            "/usr/local/bin/g16", "/usr/local/bin/g09", "/usr/bin/g16", "/usr/bin/g09",
+            "/software/gaussian*/g*/g*", "/apps/gaussian*/g*/g*",
             "C:/G16W/g16.exe", "C:/G09W/g09.exe", "C:/G03W/g03.exe",
             "C:/Program Files/G16W/g16.exe", "C:/Program Files (x86)/G16W/g16.exe",
             "C:/Program Files/G09W/g09.exe", "C:/Program Files (x86)/G09W/g09.exe",
             "C:/gaussian*/g*.exe", "D:/G16W/g16.exe", "D:/G09W/g09.exe",
         )
+        return _dedupe_paths(env_cands + which_cands + globs)
     if key == "pyscf":
         local_venvs = [
             sys.executable,
@@ -67,31 +157,86 @@ def _probe_paths(key: str) -> List[str]:
             shutil.which("python3") or "",
             shutil.which("python") or "",
         ]
-        envs = _glob_candidates("~/.venv/bin/python")
-        return [p for p in local_venvs + envs if p]
-    if key == "openlowdin":
-        return [shutil.which("openlowdin") or "", shutil.which("lowdin") or ""] + _glob_candidates(
-            "~/programs/openlowdin*/openlowdin", "/opt/openlowdin*/bin/openlowdin",
+        envs = _glob_candidates(
+            "~/.venv/bin/python",
+            "~/venv/bin/python",
+            "~/venvs/*/bin/python",
+            "~/miniconda3/bin/python",
+            "~/miniconda3/envs/*/bin/python",
+            "~/anaconda3/bin/python",
+            "~/anaconda3/envs/*/bin/python",
+            "~/mambaforge/envs/*/bin/python",
+            "~/miniforge3/envs/*/bin/python",
+            "~/.conda/envs/*/bin/python",
+            "/opt/conda/envs/*/bin/python",
+            "~/Programs/*/.venv/bin/python",
         )
+        return _dedupe_paths(local_venvs + envs)
+    if key == "openlowdin":
+        env_cands = _env_var_candidates(
+            ("OPENLOWDIN_HOME", "LOWDIN_HOME", "OPENLOWDIN_DIR"),
+            ("openlowdin", "lowdin"),
+        )
+        globs = _glob_candidates(
+            "~/openlowdin*/openlowdin", "~/openlowdin*/bin/openlowdin",
+            "~/Programs/openlowdin*/openlowdin", "~/Programs/openlowdin*/bin/openlowdin",
+            "~/programs/openlowdin*/openlowdin", "~/programs/openlowdin*/bin/openlowdin",
+            "~/Software/openlowdin*/openlowdin", "~/Software/openlowdin*/bin/openlowdin",
+            "~/software/openlowdin*/openlowdin", "~/software/openlowdin*/bin/openlowdin",
+            "~/bin/openlowdin", "~/.local/bin/openlowdin",
+            "/opt/openlowdin*/openlowdin", "/opt/openlowdin*/bin/openlowdin",
+            "/usr/local/openlowdin*/bin/openlowdin", "/usr/local/bin/openlowdin", "/usr/bin/openlowdin",
+            "/software/openlowdin*/bin/openlowdin", "/apps/openlowdin*/bin/openlowdin",
+        )
+        return _dedupe_paths(env_cands + [shutil.which("openlowdin") or "", shutil.which("lowdin") or ""] + globs)
     if key == "xtb":
-        return [shutil.which("xtb") or ""] + _glob_candidates(
+        bin_names = ("xtb.exe", "xtb") if os.name == "nt" else ("xtb",)
+        env_cands = _env_var_candidates(("XTBHOME", "XTB_HOME", "EBROOTXTB"), bin_names)
+        globs = _glob_candidates(
             "~/.agymolden/bin/xtb",
             "~/.agymolden/bin/xtb*/bin/xtb",
             "~/.agymolden/bin/xtb.exe",
-            "~/programs/xtb*/bin/xtb", "~/xtb*/bin/xtb", "/opt/xtb*/bin/xtb", "/usr/local/bin/xtb",
+            "~/Programs/xtb*/bin/xtb", "~/Programs/xtb*/xtb",
+            "~/programs/xtb*/bin/xtb", "~/Software/xtb*/bin/xtb", "~/software/xtb*/bin/xtb",
+            "~/xtb*/bin/xtb", "~/bin/xtb", "~/.local/bin/xtb",
+            "~/miniconda3/envs/*/bin/xtb", "~/anaconda3/envs/*/bin/xtb",
+            "~/mambaforge/envs/*/bin/xtb", "~/miniforge3/envs/*/bin/xtb",
+            "~/.conda/envs/*/bin/xtb", "/opt/conda/envs/*/bin/xtb",
+            "/opt/xtb*/bin/xtb", "/usr/local/xtb*/bin/xtb",
+            "/usr/local/bin/xtb", "/usr/bin/xtb", "/snap/bin/xtb",
+            "/software/xtb*/bin/xtb", "/apps/xtb*/bin/xtb",
         )
+        return _dedupe_paths(env_cands + [shutil.which("xtb") or ""] + globs)
     if key == "qchem":
-        return [shutil.which("qchem") or ""] + _glob_candidates(
-            "~/programs/qchem*/bin/qchem", "/opt/qchem*/bin/qchem",
+        env_cands = _env_var_candidates(("QC", "QCHEM_HOME", "EBROOTQCHEM"), ("qchem",))
+        globs = _glob_candidates(
+            "~/qchem*/bin/qchem", "~/qchem*/qchem",
+            "~/Programs/qchem*/bin/qchem", "~/programs/qchem*/bin/qchem",
+            "~/Software/qchem*/bin/qchem", "~/software/qchem*/bin/qchem",
+            "~/bin/qchem", "~/.local/bin/qchem",
+            "/opt/qchem*/bin/qchem", "/usr/local/qchem*/bin/qchem",
+            "/usr/local/bin/qchem", "/usr/bin/qchem",
+            "/software/qchem*/bin/qchem", "/apps/qchem*/bin/qchem",
         )
+        return _dedupe_paths(env_cands + [shutil.which("qchem") or ""] + globs)
     if key == "psi4":
-        return [shutil.which("psi4") or ""] + _glob_candidates(
+        env_cands = _env_var_candidates(("PSI4_HOME", "PSI_HOME", "EBROOTPSI4"), ("psi4",))
+        globs = _glob_candidates(
             "~/miniconda3/bin/psi4",
+            "~/miniconda3/envs/*/bin/psi4",
             "~/anaconda3/bin/psi4",
+            "~/anaconda3/envs/*/bin/psi4",
+            "~/mambaforge/envs/*/bin/psi4",
+            "~/miniforge3/envs/*/bin/psi4",
             "~/.conda/envs/*/bin/psi4",
-            "/usr/local/bin/psi4",
-            "/opt/psi4*/bin/psi4",
+            "/opt/conda/envs/*/bin/psi4",
+            "~/Programs/psi4*/bin/psi4", "~/programs/psi4*/bin/psi4",
+            "~/Software/psi4*/bin/psi4", "~/software/psi4*/bin/psi4",
+            "~/bin/psi4", "~/.local/bin/psi4",
+            "/usr/local/bin/psi4", "/usr/bin/psi4",
+            "/opt/psi4*/bin/psi4", "/software/psi4*/bin/psi4", "/apps/psi4*/bin/psi4",
         )
+        return _dedupe_paths(env_cands + [shutil.which("psi4") or ""] + globs)
     return [shutil.which(key) or ""]
 
 
@@ -122,6 +267,175 @@ def _check_python_pyscf(python_path: str) -> Tuple[bool, str]:
     except Exception:
         logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
     return False, ""
+
+
+def _target_binary_names(key: str) -> Tuple[str, ...]:
+    """Return executable filenames to look for during filesystem search."""
+    if key == "orca":
+        return ("orca.exe", "orca") if os.name == "nt" else ("orca",)
+    if key == "gaussian":
+        return ("g16.exe", "g09.exe", "g03.exe") if os.name == "nt" else ("g16", "g09", "g03")
+    if key == "pyscf":
+        return ("python.exe", "python3", "python") if os.name == "nt" else ("python3", "python")
+    if key == "openlowdin":
+        return ("openlowdin", "lowdin")
+    if key == "xtb":
+        return ("xtb.exe", "xtb") if os.name == "nt" else ("xtb",)
+    if key == "qchem":
+        return ("qchem",)
+    if key == "psi4":
+        return ("psi4",)
+    return (key,)
+
+
+def search_qm_executable_anywhere(
+    code_key: str,
+    search_roots: Optional[List[str]] = None,
+    max_depth: int = 6,
+    timeout_sec: float = 5.0,
+) -> List[str]:
+    """Search common system and user directories for a QM executable.
+
+    Performs fast probe checks first, then bounded-depth directory traversal
+    across user home and standard Linux/macOS/Windows install roots while
+    pruning large non-binary trees (.git, .venv, node_modules, .cache, etc.).
+    """
+    key = _normalize_code_key(code_key)
+    bin_names = _target_binary_names(key)
+    found: List[str] = []
+    seen_paths: Set[str] = set()
+
+    def _record(path: str) -> None:
+        norm = os.path.normpath(os.path.abspath(path))
+        if norm in seen_paths or not _check_binary(norm):
+            return
+        if key == "pyscf":
+            ok, _ = _check_python_pyscf(norm)
+            if not ok:
+                return
+        seen_paths.add(norm)
+        found.append(norm)
+
+    # 1. Fast known-location probes
+    for cand in _probe_paths(key):
+        _record(cand)
+
+    if key == "pyscf" and found:
+        return found
+
+    # 2. Fast system locate index if available on Linux/macOS (skip for generic python/pyscf)
+    if key != "pyscf" and os.name != "nt" and shutil.which("locate"):
+        for bname in bin_names:
+            try:
+                res = subprocess.run(
+                    ["locate", "-l", "15", "-b", f"\\{bname}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.5,
+                )
+                if res.returncode == 0:
+                    for line in res.stdout.splitlines():
+                        _record(line.strip())
+            except Exception:
+                logging.getLogger(__name__).debug("locate failed for %s", bname, exc_info=True)
+
+    # 3. Bounded-depth filesystem walk across user/system roots
+    if search_roots is None:
+        if os.name == "nt":
+            search_roots = [os.path.expanduser("~"), "C:/", "D:/", "C:/Program Files", "C:/Program Files (x86)"]
+        else:
+            search_roots = [
+                os.path.expanduser("~"),
+                "/opt",
+                "/usr/local",
+                "/software",
+                "/apps",
+                "/usr/bin",
+            ]
+
+    prune_dirs = {
+        ".git", ".hg", ".svn", ".venv", "venv", "__pycache__", "node_modules",
+        ".cache", ".mozilla", ".thunderbird", ".config", ".npm", ".cargo",
+        "Trash", "proc", "sys", "dev", "run", "tmp", "var",
+    }
+    visited_dirs: Set[Tuple[int, int]] = set()
+    deadline = time.monotonic() + max(0.5, timeout_sec)
+    bin_set = set(bin_names)
+
+    def _walk(dir_path: str, depth: int) -> None:
+        if depth > max_depth or time.monotonic() > deadline:
+            return
+        try:
+            st = os.stat(dir_path)
+            dir_id = (st.st_dev, st.st_ino)
+            if dir_id in visited_dirs:
+                return
+            visited_dirs.add(dir_id)
+        except OSError:
+            return
+
+        try:
+            with os.scandir(dir_path) as it:
+                subdirs: List[str] = []
+                for entry in it:
+                    if time.monotonic() > deadline:
+                        return
+                    try:
+                        if entry.name in bin_set and entry.is_file():
+                            _record(entry.path)
+                        elif entry.is_dir(follow_symlinks=False):
+                            if entry.name not in prune_dirs and not entry.name.startswith(".local/share/Trash"):
+                                subdirs.append(entry.path)
+                    except OSError:
+                        continue
+                # Prioritize directories whose name hints at the QM package
+                subdirs.sort(key=lambda p: (0 if key in os.path.basename(p).lower() else 1, os.path.basename(p).lower()))
+                for sub in subdirs:
+                    if time.monotonic() > deadline:
+                        return
+                    _walk(sub, depth + 1)
+        except OSError:
+            return
+
+    for root in search_roots:
+        if time.monotonic() > deadline:
+            break
+        expanded = os.path.expanduser(root)
+        if os.path.isdir(expanded):
+            _walk(expanded, 0)
+
+    # Sort newest/versioned paths first
+    found.sort(reverse=True)
+    return found
+
+
+def _resolve_custom_route(route_to_try: str, key: str) -> Tuple[str, str]:
+    """Resolve a user-supplied route (file path, directory, or command with args).
+
+    Returns (executable_token_or_path, normalized_route_string).
+    """
+    expanded = os.path.expanduser(route_to_try.strip())
+    bin_names = _target_binary_names(key)
+
+    # If the user pasted or browsed a directory (e.g. /opt/orca_6_0_1), look for binary inside
+    if os.path.isdir(expanded):
+        for b in bin_names:
+            for cand in (os.path.join(expanded, b), os.path.join(expanded, "bin", b)):
+                if os.path.isfile(cand):
+                    return cand, cand
+        return os.path.join(expanded, bin_names[0]), expanded
+
+    # If the entire string is an existing file path (handles spaces without quotes)
+    if os.path.isfile(expanded):
+        return expanded, expanded
+
+    # Otherwise parse as shell command (e.g. "mpirun -np 4 /opt/orca/orca")
+    try:
+        tokens = shlex.split(route_to_try)
+    except ValueError:
+        tokens = route_to_try.split()
+    first_token = os.path.expanduser(tokens[0]) if tokens else expanded
+    return first_token, route_to_try
 
 
 def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> QMExecutableInfo:
@@ -173,10 +487,11 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
 
     # 1. Test custom or stored route
     if route_to_try:
-        # If route contains arguments (e.g. "mpirun -np 4 /opt/orca/orca" or python path)
-        first_token = route_to_try.split()[0]
-        resolved_bin = shutil.which(first_token) or (first_token if os.path.isabs(first_token) else None)
-        
+        first_token, normalized_route = _resolve_custom_route(route_to_try, key)
+        resolved_bin = shutil.which(first_token) or (
+            first_token if (os.path.isabs(first_token) or os.path.isfile(first_token)) else None
+        )
+
         if key == "pyscf":
             ok, ver = _check_python_pyscf(first_token)
             if ok:
@@ -185,9 +500,9 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
                     display_name=disp,
                     binary_name=bin_name,
                     found=True,
-                    resolved_path=route_to_try,
+                    resolved_path=normalized_route,
                     version_str=ver,
-                    message=f"✔ Found PySCF ({ver}) at: {route_to_try}",
+                    message=f"✔ Found PySCF ({ver}) at: {normalized_route}",
                 )
             elif _check_binary(first_token):
                 return QMExecutableInfo(
@@ -195,7 +510,7 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
                     display_name=disp,
                     binary_name=bin_name,
                     found=False,
-                    resolved_path=route_to_try,
+                    resolved_path=normalized_route,
                     version_str="",
                     message=f"⚠️ Python binary exists at {first_token}, but 'import pyscf' failed.",
                 )
@@ -205,9 +520,19 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
                 display_name=disp,
                 binary_name=bin_name,
                 found=True,
-                resolved_path=route_to_try,
+                resolved_path=normalized_route,
                 version_str="",
-                message=f"✔ Configured route executable found: {route_to_try}",
+                message=f"✔ Configured route executable found: {normalized_route}",
+            )
+        elif resolved_bin and os.path.isfile(resolved_bin):
+            return QMExecutableInfo(
+                code_key=key,
+                display_name=disp,
+                binary_name=bin_name,
+                found=False,
+                resolved_path=normalized_route,
+                version_str="",
+                message=f"⚠️ File exists at '{resolved_bin}' but is not executable. Run: chmod +x \"{resolved_bin}\"",
             )
         elif shutil.which(first_token):
             return QMExecutableInfo(
@@ -215,9 +540,9 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
                 display_name=disp,
                 binary_name=bin_name,
                 found=True,
-                resolved_path=route_to_try,
+                resolved_path=normalized_route,
                 version_str="",
-                message=f"✔ Found command in PATH: {route_to_try}",
+                message=f"✔ Found command in PATH: {normalized_route}",
             )
         else:
             return QMExecutableInfo(
@@ -225,7 +550,7 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
                 display_name=disp,
                 binary_name=bin_name,
                 found=False,
-                resolved_path=route_to_try,
+                resolved_path=normalized_route,
                 version_str="",
                 message=f"⚠️ Specified route or binary not found: '{route_to_try}'",
             )
@@ -281,38 +606,14 @@ def detect_qm_executable(code_key: str, custom_route: Optional[str] = None) -> Q
 
 def save_qm_route(code_key: str, route: str):
     """Persist user-specified command route for a QM code in QSettings."""
-    key = code_key.lower()
-    if "orca" in key:
-        key = "orca"
-    elif "gaussian" in key or "g16" in key or "g09" in key:
-        key = "gaussian"
-    elif "pyscf" in key:
-        key = "pyscf"
-    elif "openlowdin" in key or "lowdin" in key or "apmo" in key:
-        key = "openlowdin"
-    elif "xtb" in key:
-        key = "xtb"
-    elif "qchem" in key:
-        key = "qchem"
+    key = _normalize_code_key(code_key)
     settings = QtCore.QSettings("AgyMolden", "QMExecutableRoutes")
     settings.setValue(f"route_{key}", route.strip())
 
 
 def get_qm_route(code_key: str) -> str:
     """Retrieve persisted command route for a QM code."""
-    key = code_key.lower()
-    if "orca" in key:
-        key = "orca"
-    elif "gaussian" in key or "g16" in key or "g09" in key:
-        key = "gaussian"
-    elif "pyscf" in key:
-        key = "pyscf"
-    elif "openlowdin" in key or "lowdin" in key or "apmo" in key:
-        key = "openlowdin"
-    elif "xtb" in key:
-        key = "xtb"
-    elif "qchem" in key:
-        key = "qchem"
+    key = _normalize_code_key(code_key)
     settings = QtCore.QSettings("AgyMolden", "QMExecutableRoutes")
     return str(settings.value(f"route_{key}", "") or "")
 
@@ -430,8 +731,44 @@ class QMEnginesStatusDialog(QtCore.QObject):
             tbl.setCellWidget(r, 3, btn_b)
             _refresh_row(r, key)
 
-        # Quick 1-Click Auto-Provision Bar for Open-Source Engines (xTB & PySCF)
+        # Quick 1-Click Auto-Provision & System Search Bar
         auto_row = QtWidgets.QHBoxLayout()
+        btn_search_sys = QtWidgets.QPushButton("🔍 Search System for Missing Engines")
+        btn_search_sys.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
+        btn_search_sys.setToolTip("Scan your home directory, /opt, /usr/local, and system folders for QM executables")
+
+        def _on_search_system():
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+            found_any = []
+            try:
+                for idx_c, c_key in enumerate(codes):
+                    cur_info = detect_qm_executable(c_key, custom_route=route_edits[c_key].text().strip() or None)
+                    if not cur_info.found:
+                        matches = search_qm_executable_anywhere(c_key, timeout_sec=4.0)
+                        if matches:
+                            route_edits[c_key].setText(matches[0])
+                            _refresh_row(idx_c, c_key)
+                            found_any.append(f"{cur_info.display_name}: {matches[0]}")
+            finally:
+                QtWidgets.QApplication.restoreOverrideCursor()
+
+            if found_any:
+                QtWidgets.QMessageBox.information(
+                    dlg,
+                    "Engines Found",
+                    "Discovered and populated:\n\n" + "\n".join(found_any) + "\n\nClick Save to remember these paths.",
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    dlg,
+                    "Search Complete",
+                    "No additional missing QM executables were found in standard or home directories.\n"
+                    "You can paste a custom path or click 'Browse...' to select the executable directly.",
+                )
+
+        btn_search_sys.clicked.connect(_on_search_system)
+        auto_row.addWidget(btn_search_sys)
+
         btn_auto_xtb = QtWidgets.QPushButton("⬇️ 1-Click Install GFN2-xTB (~/.agymolden/bin)")
         btn_auto_xtb.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
         btn_auto_xtb.setToolTip("Automatically download or provision the standalone Grimme GFN2-xTB binary into ~/.agymolden/bin")
@@ -461,6 +798,8 @@ class QMEnginesStatusDialog(QtCore.QObject):
         def _on_save():
             for k, ed in route_edits.items():
                 save_qm_route(k, ed.text().strip())
+            if parent is not None and hasattr(parent, "_update_env_badge"):
+                parent._update_env_badge()
             dlg.accept()
         btns.accepted.connect(_on_save)
         btns.rejected.connect(dlg.reject)

@@ -153,6 +153,19 @@ class GenericQMRunner(BaseCalcRunner):
         self.work_dir = work_dir or os.path.dirname(self.input_file)
         exe, args, self.log_file, use_stdin = self._resolve_command(self.input_file)
 
+        if not os.path.isabs(exe):
+            resolved_exe = shutil.which(exe)
+            if resolved_exe:
+                exe = os.path.abspath(resolved_exe)
+
+        if not (os.path.isfile(exe) or shutil.which(exe)):
+            self._set_status(
+                JobStatus.FAILED,
+                f"{self.program_name.upper()} executable not found ('{exe}'). "
+                "Set its path or search for it in QM Input Generator → Executable & Route or QM Engines.",
+            )
+            return False
+
         self.steps.clear()
         self._raw_log_buffer.clear()
         self._curr_cycle = 0

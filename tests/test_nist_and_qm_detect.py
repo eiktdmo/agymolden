@@ -10,6 +10,8 @@ from agymolden.qm_detect import (
     detect_qm_executable,
     save_qm_route,
     get_qm_route,
+    search_qm_executable_anywhere,
+    _probe_paths,
 )
 
 
@@ -62,3 +64,90 @@ def test_qm_detect_and_route_customization(tmp_path):
         assert get_qm_route("orca") == str(fake_bin)
     finally:
         save_qm_route("orca", original)
+
+
+def test_orca_directory_spaces_permissions_and_search(tmp_path, monkeypatch):
+    # 1. Directory route resolution (both <dir>/orca and <dir>/bin/orca)
+    orca_dir = tmp_path / "orca_6_0_1"
+    orca_dir.mkdir()
+    orca_bin = orca_dir / "orca"
+    orca_bin.write_text("#!/bin/sh\necho 'ORCA'\n")
+    orca_bin.chmod(0o755)
+
+    dir_info = detect_qm_executable("orca", custom_route=str(orca_dir))
+    assert dir_info.found is True
+    assert dir_info.resolved_path == str(orca_bin)
+
+    # 2. Path with spaces
+    spaced_dir = tmp_path / "My Programs" / "ORCA Suite"
+    spaced_dir.mkdir(parents=True)
+    spaced_bin = spaced_dir / "orca"
+    spaced_bin.write_text("#!/bin/sh\necho 'ORCA'\n")
+    spaced_bin.chmod(0o755)
+
+    spaced_info = detect_qm_executable("orca", custom_route=str(spaced_bin))
+    assert spaced_info.found is True
+    assert spaced_info.resolved_path == str(spaced_bin)
+
+    # 3. Non-executable file gives actionable chmod hint (POSIX)
+    if os.name != "nt":
+        noexec_bin = tmp_path / "orca_noexec"
+        noexec_bin.write_text("#!/bin/sh\necho 'ORCA'\n")
+        noexec_bin.chmod(0o644)
+        noexec_info = detect_qm_executable("orca", custom_route=str(noexec_bin))
+        assert noexec_info.found is False
+        assert "chmod +x" in noexec_info.message
+
+    # 4. search_qm_executable_anywhere finds nested binary
+    nested_dir = tmp_path / "custom_root" / "lab_tools" / "orca_release" / "bin"
+    nested_dir.mkdir(parents=True)
+    nested_bin = nested_dir / "orca"
+    nested_bin.write_text("#!/bin/sh\necho 'ORCA'\n")
+    nested_bin.chmod(0o755)
+
+    matches = search_qm_executable_anywhere("orca", search_roots=[str(tmp_path / "custom_root")], timeout_sec=2.0)
+    assert str(nested_bin) in matches
+
+    # 5. ORCA_HOME env var probing
+    monkeypatch.setenv("ORCA_HOME", str(orca_dir))
+    cands = _probe_paths("orca")
+    assert str(orca_bin) in cands
+
+
+def test_all_qm_packages_directory_search_and_routes(tmp_path, monkeypatch):
+    # Verify directory resolution, search, and route persistence across all QM packages
+    cases = [
+        ("gaussian", "g16", "g16root"),
+        ("xtb", "xtb", "XTBHOME"),
+        ("openlowdin", "openlowdin", "OPENLOWDIN_HOME"),
+        ("qchem", "qchem", "QCHEM_HOME"),
+        ("psi4", "psi4", "PSI4_HOME"),
+    ]
+    for code_key, bin_name, env_var in cases:
+        pkg_dir = tmp_path / f"{code_key}_pkg"
+        bin_dir = pkg_dir / "bin"
+        bin_dir.mkdir(parents=True)
+        exe = bin_dir / bin_name
+        exe.write_text("#!/bin/sh\necho ok\n")
+        exe.chmod(0o755)
+
+        # Directory custom route resolves <dir>/bin/<bin_name>
+        info = detect_qm_executable(code_key, custom_route=str(pkg_dir))
+        assert info.found is True, f"{code_key} directory resolution failed: {info}"
+        assert info.resolved_path == str(exe)
+
+        # Environment variable probing finds it
+        monkeypatch.setenv(env_var, str(pkg_dir))
+        assert str(exe) in _probe_paths(code_key)
+
+        # System search finds it under custom root
+        matches = search_qm_executable_anywhere(code_key, search_roots=[str(pkg_dir)], timeout_sec=2.0)
+        assert str(exe) in matches
+
+        # Route persistence normalizes all code keys (including psi4)
+        orig = get_qm_route(code_key)
+        try:
+            save_qm_route(code_key, str(exe))
+            assert get_qm_route(code_key) == str(exe)
+        finally:
+            save_qm_route(code_key, orig)
