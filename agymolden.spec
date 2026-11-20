@@ -16,6 +16,7 @@ hiddenimports = (
     + collect_submodules('pyscf.lib')
     + [
         'PyQt6.QtOpenGLWidgets',
+        'PyQt6.QtNetwork',
         'scipy.special',
         'scipy.spatial.transform',
         'skimage.measure',
@@ -67,7 +68,6 @@ excludes = [
     'PyQt6.QtQml',
     'PyQt6.QtQuick',
     'PyQt6.QtMultimedia',
-    'PyQt6.QtNetwork',
     'PyQt6.QtSql',
     'PyQt6.QtPdf',
     'PyQt6.QtDBus',
