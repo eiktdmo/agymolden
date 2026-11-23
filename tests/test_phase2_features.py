@@ -40,8 +40,21 @@ def test_slurm_script_generation():
     assert "#SBATCH --mem=16GB" in script
     assert "#SBATCH --time=48:00:00" in script
     assert "#SBATCH --partition=chem_cluster" in script
-    assert "cd scratch_dir" in script
+    # sbatch runs from inside the workdir, so a relative workdir must not be cd'd into again
+    assert "cd scratch_dir" not in script
     assert "nice -n 10 /opt/conda/bin/python -u newBRORSEN.v04.09.py --resume CH4.inp" in script
+
+
+def test_slurm_script_multiword_launcher_and_absolute_dir():
+    """A container launcher in remote_python must be split into words, not quoted as one name."""
+    script = generate_slurm_script(
+        job_name="h2", input_file="h2.inp",
+        remote_python="singularity exec '/opt/img dir/x.sif' python3",
+        remote_script="/opt/w/newBRORSEN.v04.10.py", extra_flags=["--decimal-comma"],
+        remote_workdir="/scratch/me/run",
+    )
+    assert "cd /scratch/me/run\n" in script
+    assert "singularity exec '/opt/img dir/x.sif' python3 -u /opt/w/newBRORSEN.v04.10.py --decimal-comma h2.inp" in script
 
 
 def test_remote_host_config_slurm_defaults():
