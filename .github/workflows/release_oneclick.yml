@@ -38,6 +38,7 @@ jobs:
         with:
           name: AgyMolden_OneClick_Bundle
           path: AgyMolden_OneClick_Bundle.zip
+          retention-days: 7
           if-no-files-found: error
 
       - name: Create GitHub Release

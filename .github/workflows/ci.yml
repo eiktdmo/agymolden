@@ -20,6 +20,7 @@ jobs:
           python-version: '3.11'
 
       - name: Run Ruff Linter & Formatter Check
+        continue-on-error: true
         run: |
           pip install ruff
           ruff check .

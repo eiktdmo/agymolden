@@ -68,4 +68,5 @@ jobs:
             with:
               name: ${{ matrix.artifact_name }}
               path: ${{ matrix.archive_file }}
+              retention-days: 7
               if-no-files-found: error
