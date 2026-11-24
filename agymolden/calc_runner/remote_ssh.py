@@ -260,6 +260,21 @@ def test_ssh_connectivity(host_cfg: RemoteHostConfig, timeout_sec: int = 4) -> T
         return False, str(e)
 
 
+def quote_command(cmd: str) -> str:
+    """Quote a launcher command word by word so multi-word launchers survive.
+
+    ``remote_python`` may be a plain interpreter (``python3``) or a full
+    launcher such as ``singularity exec /path/image.sif python3``; quoting it
+    as a single token would make the shell look for a program with that whole
+    string as its name.
+    """
+    try:
+        parts = shlex.split(cmd)
+    except ValueError:
+        parts = [cmd]
+    return " ".join(shlex.quote(p) for p in parts) if parts else shlex.quote(cmd)
+
+
 def generate_slurm_script(
     job_name: str,
     input_file: str,
@@ -281,8 +296,12 @@ def generate_slurm_script(
     safe_mem = re.sub(r"[\r\n]+", "", mem).strip()
     safe_walltime = re.sub(r"[\r\n]+", "", walltime).strip()
     part_line = f"#SBATCH --partition={safe_part}\n" if safe_part else ""
-    q_dir = shlex.quote(clean_dir) if clean_dir else "."
-    q_py = shlex.quote(remote_python)
+    # sbatch is run from inside the remote workdir, so the job already starts
+    # there (or in a scratch copy of it, on clusters whose prolog stages the
+    # submit dir to node-local scratch). Only cd for an absolute path; a
+    # relative one would be resolved a second time and fail.
+    cd_line = f"cd {shlex.quote(clean_dir)}\n" if clean_dir.startswith("/") else ""
+    q_py = quote_command(remote_python)
     q_script = shlex.quote(remote_script)
     q_flags = " ".join(shlex.quote(str(f)) for f in extra_flags)
     q_in = shlex.quote(os.path.basename(input_file))
@@ -297,7 +316,7 @@ def generate_slurm_script(
         f"#SBATCH --time={safe_walltime}\n"
         f"{part_line}"
         "\n"
-        f"cd {q_dir}\n"
+        f"{cd_line}"
         f"{nice_prefix}{q_py} -u {q_script} {q_flags} {q_in}\n"
     )
 
@@ -473,13 +492,16 @@ class RemoteSshRunner(BaseCalcRunner):
                         f"cd {q_rem_dir} && touch {q_remote_log} && "
                         f"(tail -n +1 -f {q_remote_log} & T_PID=$!; "
                         f"while squeue -j {slurm_job_id} 2>/dev/null | grep -q {slurm_job_id}; do sleep 2; done; "
-                        f"sleep 2; kill $T_PID 2>/dev/null)"
+                        f"sleep 2; kill $T_PID 2>/dev/null; "
+                        # Propagate the job's real exit code so a failed job is not shown as finished.
+                        f"RC=$(sacct -j {slurm_job_id} -n -X -P -o ExitCode 2>/dev/null | head -n1 | cut -d: -f1); "
+                        f"exit ${{RC:-0}})"
                     )
                 else:
                     remote_cmd = f"cd {q_rem_dir} && touch {q_remote_log} && tail -n +1 -f {q_remote_log}"
             else:
                 flags_str = " ".join(shlex.quote(f) for f in self.extra_flags)
-                q_py = shlex.quote(self.host_cfg.remote_python)
+                q_py = quote_command(self.host_cfg.remote_python)
                 q_script = shlex.quote(self.remote_script)
                 if self.host_cfg.use_nohup:
                     exec_body = f"nohup {nice_prefix}{q_py} -u {q_script} {flags_str} {q_base_in} 2>&1 | tee {q_remote_log}"
