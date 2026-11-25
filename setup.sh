@@ -14,7 +14,7 @@ echo
 
 # 1. Check for Python 3
 PYTHON_BIN=""
-for cmd in python3 python; do
+for cmd in /usr/bin/python3 /usr/local/bin/python3 python3 python; do
     if command -v "$cmd" >/dev/null 2>&1; then
         ver=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)
         major=$("$cmd" -c "import sys; print(sys.version_info.major)" 2>/dev/null || true)

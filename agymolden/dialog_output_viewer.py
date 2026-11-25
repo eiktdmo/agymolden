@@ -23,6 +23,12 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
         title = f"QM Output Viewer – {os.path.basename(self.file_path)}" if self.file_path else "QM Output Viewer"
         self.setWindowTitle(title)
+        if not isinstance(parent, QtWidgets.QDockWidget):
+            self.setWindowFlags(
+                self.windowFlags()
+                | QtCore.Qt.WindowType.WindowMinimizeButtonHint
+                | QtCore.Qt.WindowType.WindowMaximizeButtonHint
+            )
         self.resize(920, 640)
 
         self._init_ui()
@@ -38,11 +44,18 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         top_bar = QtWidgets.QHBoxLayout()
         top_bar.setSpacing(8)
 
-        lbl_path = QtWidgets.QLabel(f"<b>File:</b> {os.path.basename(self.file_path)}" if self.file_path else "<b>File:</b> None")
-        is_white = self.parent() and getattr(self.parent(), "viewer", None) and getattr(self.parent().viewer, "bg_color_mode", "") == "white"
+        self.lbl_path = QtWidgets.QLabel(f"<b>File:</b> {os.path.basename(self.file_path)}" if self.file_path else "<b>File:</b> None")
+        is_white = self._is_white_theme()
         path_col = "#0284c7" if is_white else "#38bdf8"
-        lbl_path.setStyleSheet(f"color: {path_col}; font-size: 12px;")
-        top_bar.addWidget(lbl_path)
+        self.lbl_path.setStyleSheet(f"color: {path_col}; font-size: 12px;")
+        if self.file_path:
+            self.lbl_path.setToolTip(self.file_path)
+        top_bar.addWidget(self.lbl_path)
+
+        self.btn_open_file = QtWidgets.QPushButton("📂 Open...")
+        self.btn_open_file.setToolTip("Open a different QM output or log file (.out, .log, .txt)")
+        self.btn_open_file.clicked.connect(self._on_open_file_clicked)
+        top_bar.addWidget(self.btn_open_file)
         top_bar.addStretch()
 
         top_bar.addWidget(QtWidgets.QLabel("🔍 Search:"))
@@ -179,7 +192,7 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         bot_bar.addStretch()
 
         btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(self.accept)
+        btn_close.clicked.connect(self._on_close_clicked)
         bot_bar.addWidget(btn_close)
 
         layout.addLayout(bot_bar)
@@ -207,6 +220,9 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
         self.file_path = os.path.abspath(path)
         self.setWindowTitle(f"QM Output Viewer – {os.path.basename(self.file_path)}")
+        if hasattr(self, "lbl_path"):
+            self.lbl_path.setText(f"<b>File:</b> {os.path.basename(self.file_path)}")
+            self.lbl_path.setToolTip(self.file_path)
 
         try:
             with open(self.file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -466,6 +482,33 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.file_path))
         else:
             QtWidgets.QMessageBox.information(self, "External Editor", "File path is not available on disk.")
+
+    def _on_open_file_clicked(self):
+        start_dir = os.path.dirname(self.file_path) if self.file_path else ""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select QM Output / Log File to View",
+            start_dir,
+            "QM Output Files (*.out *.log *.txt *.inp *.gjf);;All Files (*)",
+        )
+        if not path:
+            return
+        self.load_file(path)
+        p = self.parent()
+        while p is not None:
+            if isinstance(p, QtWidgets.QDockWidget):
+                p.setWindowTitle(f"📄 QM Output – {os.path.basename(path)}")
+                break
+            p = p.parent()
+
+    def _on_close_clicked(self):
+        p = self.parent()
+        while p is not None:
+            if isinstance(p, QtWidgets.QDockWidget):
+                p.hide()
+                return
+            p = p.parent()
+        self.accept()
 
     def _on_open_in_agemacs(self):
         from .companion import send_to_agemacs, send_text_to_agemacs

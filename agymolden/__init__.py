@@ -166,7 +166,7 @@ def main(argv=None):
     # Guard against Conda's bundled libstdc++.so.6 lacking GLIBCXX symbols needed by Mesa/OpenGL on Linux
     if (
         sys.platform.startswith("linux")
-        and os.environ.get("CONDA_PREFIX")
+        and (os.environ.get("CONDA_PREFIX") or "conda" in os.path.realpath(sys.executable).lower())
         and not os.environ.get("_AGYMOLDEN_LIBSTDCPP_CHECKED")
         and not os.environ.get("PYTEST_CURRENT_TEST")
         and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
@@ -189,6 +189,14 @@ def main(argv=None):
     _setup_logging(args.debug)
     _check_dependencies()
     _log_startup_environment()
+
+    # Prevent Conda's bundled libxkbcommon from failing to locate system XKB data on Linux/Wayland
+    if (
+        sys.platform.startswith("linux")
+        and not os.environ.get("XKB_CONFIG_ROOT")
+        and os.path.isdir("/usr/share/X11/xkb")
+    ):
+        os.environ["XKB_CONFIG_ROOT"] = "/usr/share/X11/xkb"
 
     from PyQt6 import QtWidgets, QtGui, QtCore
     from .main_window import MainWindow

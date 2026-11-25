@@ -6,7 +6,11 @@ import shutil
 import subprocess
 import sys
 from typing import List, Optional
-from PyQt6 import QtNetwork, QtWidgets
+from PyQt6 import QtWidgets
+try:
+    from PyQt6 import QtNetwork
+except ImportError:
+    QtNetwork = None  # type: ignore[assignment]
 
 
 def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = None) -> bool:
@@ -15,15 +19,16 @@ def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = No
     if not clean_targets:
         return False
 
-    sock = QtNetwork.QLocalSocket(parent)
-    sock.connectToServer("agemacs_companion_ipc")
-    if sock.waitForConnected(400):
-        payload = json.dumps({"action": "open", "files": clean_targets}).encode("utf-8")
-        sock.write(payload)
-        sock.flush()
-        sock.waitForBytesWritten(400)
-        sock.disconnectFromServer()
-        return True
+    if QtNetwork is not None:
+        sock = QtNetwork.QLocalSocket(parent)
+        sock.connectToServer("agemacs_companion_ipc")
+        if sock.waitForConnected(400):
+            payload = json.dumps({"action": "open", "files": clean_targets}).encode("utf-8")
+            sock.write(payload)
+            sock.flush()
+            sock.waitForBytesWritten(400)
+            sock.disconnectFromServer()
+            return True
 
     agemacs_bin = shutil.which("agemacs")
     if agemacs_bin:
@@ -83,6 +88,8 @@ def send_text_to_agemacs(
 
 def start_agymolden_ipc(window: QtWidgets.QMainWindow) -> None:
     """Start QLocalServer on 'agymolden_companion_ipc' to accept files from agemacs."""
+    if QtNetwork is None:
+        return
     try:
         server_name = "agymolden_companion_ipc"
         QtNetwork.QLocalServer.removeServer(server_name)

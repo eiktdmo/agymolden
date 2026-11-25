@@ -71,14 +71,17 @@ class QMOutputDock(WorkspaceDockWidget):
         from .dialog_output_viewer import QMOutputViewerDialog
 
         self.viewer_dlg = QMOutputViewerDialog(self, file_path=file_path)
+        self.viewer_dlg.setWindowFlags(QtCore.Qt.WindowType.Widget)
+        self.setMinimumHeight(200)
         self.setWidget(self.viewer_dlg)
 
     def load_file(self, path: str):
-        if hasattr(self.viewer_dlg, "load_file"):
+        if path and hasattr(self.viewer_dlg, "load_file"):
             self.viewer_dlg.load_file(path)
             self.setWindowTitle(f"📄 QM Output – {os.path.basename(path)}")
-            self.show()
-            self.raise_()
+        self.viewer_dlg.show()
+        self.show()
+        self.raise_()
 
 
 class DihedralScanDock(WorkspaceDockWidget):
@@ -213,15 +216,24 @@ class WorkspaceDockManager:
         return self.docks["job_monitor"] # type: ignore
 
     def get_or_create_output_viewer(self, file_path: str = "") -> QMOutputDock:
+        created = False
         if "output_viewer" not in self.docks:
             dock = QMOutputDock(self.mw, file_path=file_path)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
             if "job_monitor" in self.docks:
                 self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
             self.docks["output_viewer"] = dock
-        elif file_path:
-            self.docks["output_viewer"].load_file(file_path) # type: ignore
-        return self.docks["output_viewer"] # type: ignore
+            created = True
+        dock = self.docks["output_viewer"]  # type: ignore
+        if file_path:
+            dock.load_file(file_path)  # type: ignore
+        else:
+            dock.viewer_dlg.show()  # type: ignore
+            dock.show()
+            dock.raise_()
+        if created:
+            self.mw.resizeDocks([dock], [max(260, self.mw.height() // 3)], QtCore.Qt.Orientation.Vertical)
+        return dock  # type: ignore
 
     def get_or_create_console(self) -> PythonConsoleDock:
         if "python_console" not in self.docks:

@@ -649,6 +649,12 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_view_qm_log.clicked.connect(self._on_view_qm_output_file)
         qm_sum_layout.addWidget(self.btn_view_qm_log)
 
+        self.btn_qm_sum_agemacs = QtWidgets.QPushButton("🚀 Agemacs")
+        self.btn_qm_sum_agemacs.setStyleSheet("background-color: #0f766e; color: white; font-weight: bold; padding: 2px 8px; font-size: 11px;")
+        self.btn_qm_sum_agemacs.setToolTip("Open active QM output log or Molden file in Agemacs")
+        self.btn_qm_sum_agemacs.clicked.connect(self._on_send_qm_output_to_agemacs)
+        qm_sum_layout.addWidget(self.btn_qm_sum_agemacs)
+
         self.btn_copy_qm_summary = QtWidgets.QPushButton("📋 Copy Summary")
         self.btn_copy_qm_summary.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 2px 8px; font-size: 11px;")
         self.btn_copy_qm_summary.setToolTip("Copy calculation summary (Energy, HOMO-LUMO, Dipole, ZPE, H, G, Imaginary Modes) to clipboard")
@@ -1698,9 +1704,21 @@ class UIMixin(UIInspectorTabsMixin):
 
         menu_export.addSeparator()
         act_open_agemacs = QtGui.QAction("🚀 Open / Export to &agemacs...", self)
-        act_open_agemacs.setToolTip("Open the current molecule or file in agemacs")
+        act_open_agemacs.setToolTip("Open the current molecule or file in agemacs (Alt+Shift+A)")
         act_open_agemacs.triggered.connect(self._on_open_in_agemacs)
         menu_export.addAction(act_open_agemacs)
+
+        menu_agemacs_file = menu_file.addMenu("🚀 Send / Export to &Agemacs")
+        act_ag_open = QtGui.QAction("📄 Open Active File / Geometry in Agemacs", self)
+        act_ag_open.setShortcut("Alt+Shift+A")
+        act_ag_open.setToolTip("Open the current file or exported geometry in Agemacs (Alt+Shift+A)")
+        act_ag_open.triggered.connect(self._on_open_in_agemacs)
+        menu_agemacs_file.addAction(act_ag_open)
+        menu_agemacs_file.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
+        menu_agemacs_file.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
+        menu_agemacs_file.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
+        menu_agemacs_file.addSeparator()
+        menu_agemacs_file.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
 
         menu_file.addSeparator()
 
@@ -2515,7 +2533,10 @@ class UIMixin(UIInspectorTabsMixin):
 
         act_dock_log = QtGui.QAction("📄 QM &Output Log Viewer Dock", self)
         act_dock_log.setToolTip("Dock or show the QM output log viewer and QC Doctor panel")
-        act_dock_log.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.get_or_create_output_viewer().show())
+        act_dock_log.triggered.connect(
+            lambda: getattr(self, "dock_manager", None)
+            and self.dock_manager.get_or_create_output_viewer(getattr(self, "_last_loaded_qm_log_path", "") or "").show()
+        )
         menu_docks.addAction(act_dock_log)
 
         act_dock_console = QtGui.QAction("🐍 Python &Chemistry Console Dock", self)
@@ -2682,6 +2703,21 @@ class UIMixin(UIInspectorTabsMixin):
         btn_html.clicked.connect(self._on_export_html)
         toolbar.addWidget(btn_html)
 
+        self.btn_agemacs_menu = QtWidgets.QToolButton()
+        self.btn_agemacs_menu.setText("🚀 Agemacs ▾")
+        self.btn_agemacs_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_agemacs_menu.setToolTip("Open or export inputs, outputs, XYZ, Z-Matrix, or any file directly into Agemacs (Alt+Shift+A)")
+        self.btn_agemacs_menu.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
+        menu_agemacs = QtWidgets.QMenu(self)
+        menu_agemacs.addAction("📄 Open Active File / Geometry in Agemacs", self._on_open_in_agemacs)
+        menu_agemacs.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
+        menu_agemacs.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
+        menu_agemacs.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
+        menu_agemacs.addSeparator()
+        menu_agemacs.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
+        self.btn_agemacs_menu.setMenu(menu_agemacs)
+        toolbar.addWidget(self.btn_agemacs_menu)
+
         toolbar.addSeparator()
 
         self.btn_undo = QtWidgets.QToolButton()
@@ -2777,21 +2813,6 @@ class UIMixin(UIInspectorTabsMixin):
         btn_cmd_palette.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; padding: 2px 8px; border: 1px solid #4338ca; border-radius: 4px;")
         btn_cmd_palette.clicked.connect(self._on_open_command_palette)
         toolbar_qm.addWidget(btn_cmd_palette)
-
-        self.btn_agemacs_menu = QtWidgets.QToolButton()
-        self.btn_agemacs_menu.setText("🚀 Agemacs ▾")
-        self.btn_agemacs_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_agemacs_menu.setToolTip("Open or export inputs, outputs, XYZ, Z-Matrix, or any file directly into Agemacs")
-        self.btn_agemacs_menu.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
-        menu_agemacs = QtWidgets.QMenu(self)
-        menu_agemacs.addAction("📄 Open Active File / Geometry in Agemacs", self._on_open_in_agemacs)
-        menu_agemacs.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
-        menu_agemacs.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
-        menu_agemacs.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
-        menu_agemacs.addSeparator()
-        menu_agemacs.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
-        self.btn_agemacs_menu.setMenu(menu_agemacs)
-        toolbar_qm.addWidget(self.btn_agemacs_menu)
 
         toolbar_qm.addSeparator()
 
@@ -3039,14 +3060,15 @@ class UIMixin(UIInspectorTabsMixin):
         import os
         from .companion import send_to_agemacs, send_text_to_agemacs
 
-        cur = getattr(self, "current_file", None)
-        if cur and os.path.exists(cur):
-            if not send_to_agemacs([cur], self):
-                QtWidgets.QMessageBox.information(
-                    self, "Open in agemacs",
-                    f"Could not find 'agemacs' on PATH or in standard project folders.\n\nFile ready to open:\n{cur}",
-                )
-            return
+        for attr in ("current_file_path", "_last_loaded_qm_log_path", "current_file"):
+            cur = getattr(self, attr, None)
+            if cur and os.path.isfile(cur):
+                if not send_to_agemacs([cur], self):
+                    QtWidgets.QMessageBox.information(
+                        self, "Open in agemacs",
+                        f"Could not find 'agemacs' on PATH or in standard project folders.\n\nFile ready to open:\n{cur}",
+                    )
+                return
 
         if getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
             lines = [f"{len(self.zatoms)}", "Exported from AgyMolden"]
@@ -3084,8 +3106,11 @@ class UIMixin(UIInspectorTabsMixin):
     def _on_send_zmat_to_agemacs(self):
         """Export current Z-Matrix text directly to agemacs."""
         from .companion import send_text_to_agemacs
+        from .zmatrix import format_zmatrix_text
 
         txt = self.text_raw_zmat.toPlainText().strip() if hasattr(self, "text_raw_zmat") else ""
+        if not txt and getattr(self, "zatoms", None):
+            txt = format_zmatrix_text(self.zatoms).strip()
         if not txt:
             QtWidgets.QMessageBox.information(self, "Export Z-Matrix to Agemacs", "No Z-Matrix available.")
             return
@@ -3097,22 +3122,44 @@ class UIMixin(UIInspectorTabsMixin):
         import os
         from .companion import send_to_agemacs
 
-        for attr in ("current_qm_output_file", "current_molden_file", "current_file"):
+        candidates: List[str] = []
+        for attr in (
+            "_last_loaded_qm_log_path",
+            "_loaded_molden_path",
+            "current_qm_output_file",
+            "current_molden_file",
+            "current_file_path",
+            "current_file",
+        ):
             p = getattr(self, attr, None)
             if p and os.path.isfile(p):
-                if not send_to_agemacs([p], self):
-                    QtWidgets.QMessageBox.information(self, "Open in agemacs", f"Could not launch 'agemacs'.\n\nFile: {p}")
-                return
+                candidates.append(p)
+
+        monitors = []
+        if hasattr(self, "dock_manager") and "job_monitor" in getattr(self.dock_manager, "docks", {}):
+            monitors.append(self.dock_manager.docks["job_monitor"].monitor)
+        if getattr(self, "_job_monitor_dlg", None) is not None:
+            monitors.append(self._job_monitor_dlg)
+        for job_mon in monitors:
+            runner = getattr(job_mon, "runner", None)
+            if runner and getattr(runner, "log_file", None) and os.path.isfile(runner.log_file):
+                candidates.append(runner.log_file)
+
+        for p in candidates:
+            if not send_to_agemacs([p], self):
+                QtWidgets.QMessageBox.information(self, "Open in agemacs", f"Could not launch 'agemacs'.\n\nFile: {p}")
+            return
         QtWidgets.QMessageBox.information(self, "Open QM Log in Agemacs", "No QM output, log, or Molden file is currently loaded.")
 
     def _on_send_any_file_to_agemacs(self):
         """Browse for any input, output, or coordinate file and open it in agemacs."""
         from .companion import send_to_agemacs
 
+        start_dir = self._last_dir() if hasattr(self, "_last_dir") else ""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open File in Agemacs",
-            "",
+            start_dir,
             "Chemistry Files (*.inp *.gjf *.com *.out *.log *.xyz *.zmat *.molden *.molden.input);;All Files (*)",
         )
         if path and not send_to_agemacs([path], self):

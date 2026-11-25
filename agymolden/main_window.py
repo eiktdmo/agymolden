@@ -80,10 +80,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AgyMolden - Z-Matrix Molecular Builder")
-        # Fixed, screen-bounded window size: never grows with content
+        self.setWindowFlags(
+            self.windowFlags()
+            | QtCore.Qt.WindowType.WindowMinimizeButtonHint
+            | QtCore.Qt.WindowType.WindowMaximizeButtonHint
+        )
+        # Screen-bounded initial size without finite maximumSize so Windows Maximize remains enabled
         screen = QtWidgets.QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen is not None else QtCore.QRect(0, 0, 1280, 850)
-        self.setMaximumSize(avail.width(), avail.height())
         self.resize(min(1280, avail.width()), min(850, avail.height()))
         self.setAcceptDrops(True)
         self.setStyleSheet(DARK_THEME_QSS)
@@ -283,6 +287,12 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         geom = settings.value("main_window_geom")
         if geom:
             self.restoreGeometry(geom)
+        if not self.isMaximized():
+            screen = self.screen() or QtWidgets.QApplication.primaryScreen()
+            if screen is not None:
+                avail = screen.availableGeometry()
+                if self.width() > avail.width() or self.height() > avail.height():
+                    self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
         state = settings.value("main_window_state")
         if state:
             self.restoreState(state)

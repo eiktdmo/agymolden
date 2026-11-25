@@ -13,6 +13,11 @@ class OnboardingTourDialog(QtWidgets.QDialog):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Welcome to AgyMolden — Quick Tour & Onboarding")
+        self.setWindowFlags(
+            self.windowFlags()
+            | QtCore.Qt.WindowType.WindowMinimizeButtonHint
+            | QtCore.Qt.WindowType.WindowMaximizeButtonHint
+        )
         self.resize(720, 520)
         self.setMinimumSize(640, 460)
 
@@ -22,7 +27,48 @@ class OnboardingTourDialog(QtWidgets.QDialog):
 
         self._init_ui()
 
+    def _is_white_theme(self) -> bool:
+        """Return True if the parent viewer/app is using the light ('white') theme."""
+        p = self.parent()
+        while p is not None:
+            viewer = getattr(p, "viewer", None)
+            if viewer is not None and getattr(viewer, "bg_color_mode", ""):
+                return viewer.bg_color_mode == "white"
+            p = p.parent()
+        if self.palette().color(QtGui.QPalette.ColorRole.Window).lightness() >= 128:
+            return True
+        from .session_state import get_settings
+        return get_settings("AgyMolden").value("color_theme", "white") == "white"
+
+    def _theme_colors(self) -> Dict[str, str]:
+        if self._is_white_theme():
+            return {
+                "card_bg": "#f8fafc",
+                "card_border": "#cbd5e1",
+                "text_col": "#0f172a",
+                "heading_col": "#0369a1",
+                "sub_col": "#475569",
+                "pill_bg": "#e0f2fe",
+                "pill_fg": "#0369a1",
+                "btn_bg": "#e2e8f0",
+                "btn_fg": "#0f172a",
+                "btn_border": "#94a3b8",
+            }
+        return {
+            "card_bg": "#0f172a",
+            "card_border": "#334155",
+            "text_col": "#f1f5f9",
+            "heading_col": "#38bdf8",
+            "sub_col": "#cbd5e1",
+            "pill_bg": "#1e293b",
+            "pill_fg": "#38bdf8",
+            "btn_bg": "#1e293b",
+            "btn_fg": "#f1f5f9",
+            "btn_border": "#475569",
+        }
+
     def _init_ui(self):
+        colors = self._theme_colors()
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 16)
         main_layout.setSpacing(14)
@@ -35,9 +81,9 @@ class OnboardingTourDialog(QtWidgets.QDialog):
 
         title_box = QtWidgets.QVBoxLayout()
         self.lbl_title = QtWidgets.QLabel("Welcome to AgyMolden")
-        self.lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #0284c7;")
+        self.lbl_title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {colors['heading_col']};")
         self.lbl_subtitle = QtWidgets.QLabel("Interactive Quantum Chemistry & Molecular Modeling Workbench")
-        self.lbl_subtitle.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        self.lbl_subtitle.setStyleSheet(f"font-size: 12px; color: {colors['sub_col']};")
         title_box.addWidget(self.lbl_title)
         title_box.addWidget(self.lbl_subtitle)
         header.addLayout(title_box)
@@ -45,14 +91,15 @@ class OnboardingTourDialog(QtWidgets.QDialog):
 
         self.lbl_step_indicator = QtWidgets.QLabel("Step 1 of 4")
         self.lbl_step_indicator.setStyleSheet(
-            "background: #1e293b; color: #38bdf8; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;"
+            f"background: {colors['pill_bg']}; color: {colors['pill_fg']}; padding: 4px 10px; "
+            f"border-radius: 12px; font-weight: bold; font-size: 11px;"
         )
         header.addWidget(self.lbl_step_indicator)
         main_layout.addLayout(header)
 
         # Stacked pages for the tour steps
         self.pages_stack = QtWidgets.QStackedWidget()
-        self._create_pages()
+        self._create_pages(colors)
         main_layout.addWidget(self.pages_stack, 1)
 
         # Bottom navigation controls
@@ -78,16 +125,29 @@ class OnboardingTourDialog(QtWidgets.QDialog):
 
         main_layout.addLayout(bottom_row)
 
-    def _create_pages(self):
+    def _create_pages(self, colors: Optional[Dict[str, str]] = None):
+        if colors is None:
+            colors = self._theme_colors()
+        card_qss = (
+            f"QFrame {{ background-color: {colors['card_bg']}; border: 1px solid {colors['card_border']}; "
+            f"border-radius: 8px; padding: 14px; }} "
+            f"QLabel {{ color: {colors['text_col']}; background: transparent; border: none; }}"
+        )
+        heading_col = colors["heading_col"]
+        btn_qss = (
+            f"QPushButton {{ background-color: {colors['btn_bg']}; color: {colors['btn_fg']}; "
+            f"border: 1px solid {colors['btn_border']}; border-radius: 4px; padding: 5px 10px; font-weight: 600; }}"
+        )
+
         # Page 1: 3D Viewport & Navigation
         p1 = QtWidgets.QWidget()
         l1 = QtWidgets.QVBoxLayout(p1)
         l1.setSpacing(10)
         card1 = QtWidgets.QFrame()
-        card1.setStyleSheet("background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;")
+        card1.setStyleSheet(card_qss)
         cl1 = QtWidgets.QVBoxLayout(card1)
-        cl1.addWidget(QtWidgets.QLabel(
-            "<h3 style='color:#38bdf8; margin:0;'>1. Interactive 3D Canvas Navigation</h3>"
+        lbl1 = QtWidgets.QLabel(
+            f"<h3 style='color:{heading_col}; margin:0;'>1. Interactive 3D Canvas Navigation</h3>"
             "<p style='line-height: 1.5; font-size: 13px;'>"
             "AgyMolden provides a high-performance OpenGL molecular viewport with hardware-accelerated instanced rendering:"
             "</p>"
@@ -98,16 +158,20 @@ class OnboardingTourDialog(QtWidgets.QDialog):
             "<li><b>Spacebar:</b> Center and reset camera view.</li>"
             "<li><b>Ctrl+1, Ctrl+2, Ctrl+3:</b> Instant orthogonal standard projections (XY, XZ, YZ).</li>"
             "</ul>"
-        ))
+        )
+        lbl1.setWordWrap(True)
+        cl1.addWidget(lbl1)
 
         # Quick sample loading & workspace mode buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_water = QtWidgets.QPushButton("💧 Load Water (H₂O)")
+        btn_water.setStyleSheet(btn_qss)
         btn_water.clicked.connect(lambda: self._load_sample("h2o"))
         btn_benzene = QtWidgets.QPushButton("⬡ Load Benzene (C₆H₆)")
+        btn_benzene.setStyleSheet(btn_qss)
         btn_benzene.clicked.connect(lambda: self._load_sample("benzene"))
         btn_student = QtWidgets.QPushButton("🎓 Activate Student / Essentials Mode")
-        btn_student.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px; border-radius: 4px;")
+        btn_student.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
         btn_student.clicked.connect(lambda: self._activate_workspace_mode("student"))
         btn_row.addWidget(btn_water)
         btn_row.addWidget(btn_benzene)
@@ -124,10 +188,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         l2 = QtWidgets.QVBoxLayout(p2)
         l2.setSpacing(10)
         card2 = QtWidgets.QFrame()
-        card2.setStyleSheet("background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;")
+        card2.setStyleSheet(card_qss)
         cl2 = QtWidgets.QVBoxLayout(card2)
-        cl2.addWidget(QtWidgets.QLabel(
-            "<h3 style='color:#38bdf8; margin:0;'>2. Parametric Z-Matrix & Interactive Builder</h3>"
+        lbl2 = QtWidgets.QLabel(
+            f"<h3 style='color:{heading_col}; margin:0;'>2. Parametric Z-Matrix & Interactive Builder</h3>"
             "<p style='line-height: 1.5; font-size: 13px;'>"
             "Seamless bidirectional synchronization between 3D Cartesian coordinates and internal coordinates (Z-Matrix):"
             "</p>"
@@ -138,7 +202,9 @@ class OnboardingTourDialog(QtWidgets.QDialog):
             "<li><b>Metric Sliders:</b> Adjust bond lengths (<b>Alt+B</b>), valence angles (<b>Alt+A</b>), and dihedrals (<b>Alt+D</b>) in real time.</li>"
             "<li><b>Mutate Elements:</b> Double-click any atom to open the Periodic Table for element replacement.</li>"
             "</ul>"
-        ))
+        )
+        lbl2.setWordWrap(True)
+        cl2.addWidget(lbl2)
         l2.addWidget(card2)
         l2.addStretch()
         self.pages_stack.addWidget(p2)
@@ -148,10 +214,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         l3 = QtWidgets.QVBoxLayout(p3)
         l3.setSpacing(10)
         card3 = QtWidgets.QFrame()
-        card3.setStyleSheet("background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;")
+        card3.setStyleSheet(card_qss)
         cl3 = QtWidgets.QVBoxLayout(card3)
-        cl3.addWidget(QtWidgets.QLabel(
-            "<h3 style='color:#38bdf8; margin:0;'>3. Quantum Chemistry Engine Matrix & Live Monitor</h3>"
+        lbl3 = QtWidgets.QLabel(
+            f"<h3 style='color:{heading_col}; margin:0;'>3. Quantum Chemistry Engine Matrix & Live Monitor</h3>"
             "<p style='line-height: 1.5; font-size: 13px;'>"
             "Execute and monitor quantum chemical calculations across top industry codes:"
             "</p>"
@@ -161,7 +227,9 @@ class OnboardingTourDialog(QtWidgets.QDialog):
             "<li><b>Live Job Monitor (Ctrl+J):</b> Stream output logs with real-time electronic SCF convergence plots and 3D geometry step tracking.</li>"
             "<li><b>QC Doctor:</b> Automated diagnostics explaining SCF convergence failure, linear dependencies, and basis set deficiencies.</li>"
             "</ul>"
-        ))
+        )
+        lbl3.setWordWrap(True)
+        cl3.addWidget(lbl3)
         l3.addWidget(card3)
         l3.addStretch()
         self.pages_stack.addWidget(p3)
@@ -171,10 +239,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         l4 = QtWidgets.QVBoxLayout(p4)
         l4.setSpacing(10)
         card4 = QtWidgets.QFrame()
-        card4.setStyleSheet("background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;")
+        card4.setStyleSheet(card_qss)
         cl4 = QtWidgets.QVBoxLayout(card4)
-        cl4.addWidget(QtWidgets.QLabel(
-            "<h3 style='color:#38bdf8; margin:0;'>4. Wavefunction Surfaces, Spectroscopy & Command Palette</h3>"
+        lbl4 = QtWidgets.QLabel(
+            f"<h3 style='color:{heading_col}; margin:0;'>4. Wavefunction Surfaces, Spectroscopy & Command Palette</h3>"
             "<p style='line-height: 1.5; font-size: 13px;'>"
             "Publication-ready spectroscopic analysis and productivity accelerators:"
             "</p>"
@@ -184,7 +252,9 @@ class OnboardingTourDialog(QtWidgets.QDialog):
             "<li><b>Command Palette (Ctrl+K):</b> Instant fuzzy search for all 60+ tools, exporters, and dialogs.</li>"
             "<li><b>Example Gallery (Ctrl+Shift+G):</b> Browse bundled benchmark wavefunctions and output logs.</li>"
             "</ul>"
-        ))
+        )
+        lbl4.setWordWrap(True)
+        cl4.addWidget(lbl4)
         l4.addWidget(card4)
         l4.addStretch()
         self.pages_stack.addWidget(p4)

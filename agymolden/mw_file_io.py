@@ -4,7 +4,7 @@ import os
 import math
 import copy
 import logging
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 import numpy as np
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -1228,15 +1228,49 @@ class FileIOMixin:
 
     def _on_view_qm_output_file(self):
         """Open the QM Output & Log Viewer Dialog."""
-        path = getattr(self, "_last_loaded_qm_log_path", None)
-        # Check active calculation runner if present
+        path = None
+
+        # 1. Currently loaded file if it is an output/log/text file
+        cur = getattr(self, "current_file_path", None)
+        if cur and os.path.isfile(cur) and cur.lower().endswith((".out", ".log", ".txt")):
+            path = cur
+
+        # 2. Last explicitly loaded QM log path
         if not path or not os.path.isfile(path):
-            job_mon = getattr(self, "_job_monitor_dlg", None)
-            if job_mon and getattr(job_mon, "runner", None):
-                runner = job_mon.runner
+            cand_last = getattr(self, "_last_loaded_qm_log_path", None)
+            if cand_last and os.path.isfile(cand_last):
+                path = cand_last
+
+        # 3. Sibling .out / .log file matching the currently loaded file (e.g. .molden, .xyz, .inp)
+        if (not path or not os.path.isfile(path)) and cur:
+            stem = cur
+            for sfx in (".molden.input", ".molden", ".xyz", ".inp", ".gjf", ".com", ".zmat"):
+                if stem.lower().endswith(sfx):
+                    stem = stem[:-len(sfx)]
+                    break
+            else:
+                stem = os.path.splitext(cur)[0]
+            for ext in (".out", ".log"):
+                cand = stem + ext
+                if os.path.isfile(cand):
+                    path = cand
+                    break
+
+        # 4. Active calculation runner (from dock or standalone job monitor)
+        if not path or not os.path.isfile(path):
+            monitors = []
+            if hasattr(self, "dock_manager") and "job_monitor" in getattr(self.dock_manager, "docks", {}):
+                monitors.append(self.dock_manager.docks["job_monitor"].monitor)
+            if getattr(self, "_job_monitor_dlg", None) is not None:
+                monitors.append(self._job_monitor_dlg)
+            for job_mon in monitors:
+                runner = getattr(job_mon, "runner", None)
+                if not runner:
+                    continue
                 if getattr(runner, "log_file", None) and os.path.isfile(runner.log_file):
                     path = runner.log_file
-                elif getattr(runner, "input_file", None):
+                    break
+                if getattr(runner, "input_file", None):
                     base_no_ext = os.path.splitext(runner.input_file)[0]
                     for d in filter(None, [getattr(runner, "work_dir", None), os.path.dirname(runner.input_file)]):
                         for ext in (".out", ".log"):
@@ -1244,8 +1278,10 @@ class FileIOMixin:
                             if os.path.isfile(cand):
                                 path = cand
                                 break
-                        if path:
+                        if path and os.path.isfile(path):
                             break
+                    if path and os.path.isfile(path):
+                        break
 
         if not path or not os.path.isfile(path):
             # Prompt user to choose a .out or .log file to view
@@ -1261,8 +1297,11 @@ class FileIOMixin:
         self._last_loaded_qm_log_path = path
         if hasattr(self, "dock_manager"):
             dock = self.dock_manager.get_or_create_output_viewer(path)
+            dock.viewer_dlg.show()
             dock.show()
             dock.raise_()
+            if dock.isFloating():
+                dock.activateWindow()
         else:
             from .dialog_output_viewer import QMOutputViewerDialog
             dlg = QMOutputViewerDialog(self, file_path=path)
