@@ -6,46 +6,24 @@ on:
     branches: [ main, master ]
     paths-ignore:
       - '**.md'
+      - 'docs/**'
+      - 'examples/**'
+      - 'LICENSE'
   pull_request:
     branches: [ main, master ]
     paths-ignore:
       - '**.md'
+      - 'docs/**'
+      - 'examples/**'
+      - 'LICENSE'
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Code Quality & Linting
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Run Ruff Linter & Formatter Check
-        continue-on-error: true
-        run: |
-          pip install ruff
-          ruff check .
-          ruff format --check .
-
-      - name: Run Mypy Type Check (Core Modules)
-        continue-on-error: true
-        run: |
-          pip install mypy
-          mypy agymolden/molecule_model.py agymolden/zmatrix.py agymolden/mcp_server.py agymolden/project_bundle.py agymolden/session_state.py
-
   test:
-    name: Test on ubuntu-latest (Py 3.11)
-    needs: lint
+    name: Lint & Test on ubuntu-latest (Py 3.11)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -66,19 +44,25 @@ jobs:
 
       - name: Install Package & Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -e . pytest
+
+      - name: Run Ruff Linter & Formatter Check
+        continue-on-error: true
+        run: |
+          pip install ruff
+          ruff check .
+          ruff format --check .
 
       - name: Run Test Suite (Offscreen Qt)
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          pytest -v tests/test_surfaces_and_orca_ui.py tests/test_volumetric.py tests/test_cycle_welder.py tests/test_format_roundtrip.py tests/test_layout_resolutions.py tests/test_apex_triad.py tests/test_diagnostics.py tests/test_verified_input_generators.py
+          pytest -v tests/test_surfaces_and_orca_ui.py tests/test_volumetric.py tests/test_cycle_welder.py tests/test_format_roundtrip.py tests/test_layout_resolutions.py tests/test_apex_triad.py tests/test_diagnostics.py tests/test_verified_input_generators.py tests/test_ui_usability_fixes.py
 
   test-cross-os:
     if: github.event_name == 'workflow_dispatch'
     name: Test on ${{ matrix.os }} (Py 3.11)
-    needs: lint
+    needs: test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -98,11 +82,10 @@ jobs:
 
       - name: Install Package & Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -e . pytest
 
       - name: Run Test Suite (Offscreen Qt)
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          pytest -v tests/test_surfaces_and_orca_ui.py tests/test_volumetric.py tests/test_cycle_welder.py tests/test_format_roundtrip.py tests/test_layout_resolutions.py tests/test_apex_triad.py tests/test_diagnostics.py tests/test_verified_input_generators.py
+          pytest -v tests/test_surfaces_and_orca_ui.py tests/test_volumetric.py tests/test_cycle_welder.py tests/test_format_roundtrip.py tests/test_layout_resolutions.py tests/test_apex_triad.py tests/test_diagnostics.py tests/test_verified_input_generators.py tests/test_ui_usability_fixes.py

@@ -6,10 +6,15 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: release-oneclick-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   bundle:
     name: Build & Release One-Click Universal Bundle
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -25,7 +30,6 @@ jobs:
 
       - name: Install Build Tooling
         run: |
-          python -m pip install --upgrade pip
           pip install build wheel
 
       - name: Build One-Click Bundle Zip
@@ -33,12 +37,13 @@ jobs:
           chmod +x scripts/make_oneclick_bundle.sh
           ./scripts/make_oneclick_bundle.sh
 
-      - name: Upload Artifact
+      - name: Upload Artifact (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: AgyMolden_OneClick_Bundle
           path: AgyMolden_OneClick_Bundle.zip
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: error
 
       - name: Create GitHub Release

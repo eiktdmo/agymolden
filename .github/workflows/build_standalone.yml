@@ -2,71 +2,92 @@ name: Build Standalone Binaries
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+    inputs:
+      target_os:
+        description: 'Target OS to build (choose linux to minimize GitHub Actions minutes)'
+        required: true
+        default: 'linux'
+        type: choice
+        options:
+          - linux
+          - windows
+          - macos
+          - all
+
+concurrency:
+  group: build-standalone-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Build on ${{ matrix.os }}
+    if: >-
+      inputs.target_os == 'all' ||
+      (inputs.target_os == 'linux' && matrix.key == 'linux') ||
+      (inputs.target_os == 'windows' && matrix.key == 'windows') ||
+      (inputs.target_os == 'macos' && matrix.key == 'macos')
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            artifact_name: agymolden-windows-x64
-            archive_file: dist/agymolden-windows-x64.zip
-          - os: ubuntu-22.04
+          - key: linux
+            os: ubuntu-latest
             artifact_name: agymolden-linux-x64
             archive_file: dist/agymolden-linux-x64.tar.gz
-          - os: macos-latest
+          - key: windows
+            os: windows-latest
+            artifact_name: agymolden-windows-x64
+            archive_file: dist/agymolden-windows-x64.zip
+          - key: macos
+            os: macos-latest
             artifact_name: agymolden-macos
             archive_file: dist/agymolden-macos.tar.gz
 
-        steps:
-          - name: Checkout Repository
-            uses: actions/checkout@v4
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-          - name: Set up Python 3.11
-            uses: actions/setup-python@v5
-            with:
-              python-version: '3.11'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-          - name: Install System Dependencies (Linux)
-            if: runner.os == 'Linux'
-            run: |
-              sudo apt-get update
-              sudo apt-get install -y libgl1 libglx-mesa0 libegl1 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglx-mesa0 libegl1 libxkbcommon-x11-0 libxcb-cursor0
 
-          - name: Install Python Dependencies & PyInstaller
-            run: |
-              python -m pip install --upgrade pip
-              pip install -e ".[all]" pyinstaller
+      - name: Install Python Dependencies & PyInstaller
+        run: |
+          pip install -e ".[all]" pyinstaller
 
-          - name: Build Standalone Bundle with PyInstaller
-            run: |
-              pyinstaller agymolden.spec --noconfirm --clean
+      - name: Build Standalone Bundle with PyInstaller
+        run: |
+          pyinstaller agymolden.spec --noconfirm --clean
 
-          - name: Archive Bundle (Windows)
-            if: runner.os == 'Windows'
-            run: |
-              Compress-Archive -Path dist/agymolden.exe -DestinationPath dist/agymolden-windows-x64.zip
+      - name: Archive Bundle (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path dist/agymolden.exe -DestinationPath dist/agymolden-windows-x64.zip
 
-          - name: Archive Bundle (Linux)
-            if: runner.os == 'Linux'
-            run: |
-              tar -czvf dist/agymolden-linux-x64.tar.gz -C dist agymolden
+      - name: Archive Bundle (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          tar -czvf dist/agymolden-linux-x64.tar.gz -C dist agymolden
 
-          - name: Archive Bundle (macOS)
-            if: runner.os == 'macOS'
-            run: |
-              tar -czvf dist/agymolden-macos.tar.gz -C dist agymolden.app
+      - name: Archive Bundle (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          tar -czvf dist/agymolden-macos.tar.gz -C dist agymolden.app
 
-          - name: Upload Artifact
-            uses: actions/upload-artifact@v4
-            with:
-              name: ${{ matrix.artifact_name }}
-              path: ${{ matrix.archive_file }}
-              retention-days: 7
-              if-no-files-found: error
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_file }}
+          retention-days: 1
+          if-no-files-found: error
