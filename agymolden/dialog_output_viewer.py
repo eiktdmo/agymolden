@@ -75,11 +75,39 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         # 2. Main Horizontal Splitter (Sections Tree on left, Log Text on right)
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
-        # Left Card: Sections & Key Milestones
+        # Left Card: Teaching Quick-Jump Bar + Sections & Key Milestones
         left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(4)
+
+        self._quick_jump_targets: dict[str, Optional[int]] = {}
+        jump_grid = QtWidgets.QGridLayout()
+        jump_grid.setSpacing(4)
+
+        def _mk_jump_btn(text: str, color: str, key: str, tip: str) -> QtWidgets.QPushButton:
+            b = QtWidgets.QPushButton(text)
+            b.setEnabled(False)
+            b.setToolTip(tip)
+            b.setStyleSheet(
+                f"QPushButton {{ background-color: {color}; color: #ffffff; font-weight: bold; font-size: 11px; padding: 3px 6px; border-radius: 4px; }}"
+                "QPushButton:disabled { background-color: #cbd5e1; color: #64748b; }"
+            )
+            b.clicked.connect(lambda _c=False, k=key: self._jump_to_category(k))
+            return b
+
+        self.btn_jump_final_e = _mk_jump_btn("⭐ Final E", "#2563eb", "final_e", "Jump to Final Total Energy")
+        self.btn_jump_e_parts = _mk_jump_btn("🧮 E-Parts", "#0891b2", "e_parts", "Jump to Separated Energy Components (Nuc / 1e / 2e / XC)")
+        self.btn_jump_ecorr = _mk_jump_btn("🔬 E-Corr", "#7c3aed", "ecorr", "Jump to Post-HF Correlation Energy (MP2 / CCSD(T))")
+        self.btn_jump_mos = _mk_jump_btn("⚛️ MOs", "#0d9488", "mos", "Jump to Molecular Orbitals (Occupations & Energies)")
+        self.btn_jump_vibs = _mk_jump_btn("🎵 Vibs", "#059669", "vibs", "Jump to Vibrational Modes / Frequencies / IR Table")
+
+        jump_grid.addWidget(self.btn_jump_final_e, 0, 0)
+        jump_grid.addWidget(self.btn_jump_e_parts, 0, 1)
+        jump_grid.addWidget(self.btn_jump_ecorr, 0, 2)
+        jump_grid.addWidget(self.btn_jump_mos, 1, 0)
+        jump_grid.addWidget(self.btn_jump_vibs, 1, 1, 1, 2)
+        left_layout.addLayout(jump_grid)
 
         lbl_sec = QtWidgets.QLabel("<b>📑 Key Sections & Steps:</b>")
         left_layout.addWidget(lbl_sec)
@@ -134,6 +162,12 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self.btn_doctor.clicked.connect(self._on_qc_doctor_clicked)
         bot_bar.addWidget(self.btn_doctor)
 
+        self.btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in Agemacs")
+        self.btn_open_agemacs.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold;")
+        self.btn_open_agemacs.setToolTip("Open this calculation log/output file directly in Agemacs")
+        self.btn_open_agemacs.clicked.connect(self._on_open_in_agemacs)
+        bot_bar.addWidget(self.btn_open_agemacs)
+
         btn_copy = QtWidgets.QPushButton("📋 Copy All to Clipboard")
         btn_copy.clicked.connect(self._on_copy_all)
         bot_bar.addWidget(btn_copy)
@@ -185,15 +219,18 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self._index_sections(content)
 
     def _index_sections(self, content: str):
-        """Scan file lines for key milestones (Cycles, SCF, Frequencies, Warnings, Convergence)."""
+        """Scan file lines for key milestones (Energies, Energy Breakdown, Correlation, MOs, Vibrations, Convergence)."""
         self.list_sections.clear()
         self.line_indices.clear()
+        self._quick_jump_targets = {k: None for k in ("final_e", "e_parts", "ecorr", "mos", "vibs")}
 
         lines = content.splitlines()
-        first_step = True
+        last_mo_line = -100
 
         for idx, line in enumerate(lines):
             s = line.strip()
+            s_l = s.lower()
+
             # Match optimization steps (ORCA: GEOMETRY OPTIMIZATION CYCLE 1, Gaussian: Cycle 1, Step 1)
             m_cycle = re.search(
                 r"(?:GEOMETRY\s+OPTIMIZATION\s+CYCLE|Geometry\s+optimization\s+cycle|^Cycle\s+|^Step\s+)\s*(\d+)",
@@ -205,19 +242,63 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
                 self._add_section_item(f"🔄 Optimization Step {c_num}", idx)
                 continue
 
-            # Match SCF / Energy
+            # Match Separated Energy Components (ORCA TOTAL SCF ENERGY block, Gaussian KE/Nuclear, PySCF/Psi4)
+            if (
+                re.search(r"^(?:TOTAL\s+SCF\s+ENERGY|SCF\s+ENERGY\s+COMPONENTS|Energy\s+Decomposition)\b", s, re.IGNORECASE)
+                or re.search(r"(?:nuclear\s+repulsion\s+energy\s*[=:]|KE\s*=\s*[+-]?\d)", s, re.IGNORECASE)
+            ):
+                self._add_section_item("🧮 Energy Components (Nuc / 1e / 2e / XC)", idx)
+                self._quick_jump_targets["e_parts"] = idx
+                continue
+
+            # Match Post-HF Correlation Energy (MP2, RI-MP2, CCSD, CCSD(T), DLPNO-CCSD(T))
+            m_corr = re.search(
+                r"(?:RI-?MP2\s+CORRELATION\s+ENERGY|MP2\s+CORRELATION\s+ENERGY|Final\s+correlation\s+energy|"
+                r"CCSD(?:\(T\))?\s+correlation\s+energy|Triples\s+Correction\s*\(T\)|E\(CORR\)|DE\(Corr\)|EUMP2|E2)\s*[:=]?\s*([+-]?\d+\.\d+(?:[EeDd][+-]?\d+)?)",
+                s,
+                re.IGNORECASE,
+            )
+            if m_corr:
+                self._add_section_item(f"🔬 Correlation Energy = {m_corr.group(1)}", idx)
+                self._quick_jump_targets["ecorr"] = idx
+                continue
+
+            # Match Molecular Orbitals (Occupations, Energies, LCAO, Loewdin AO-Composition)
+            if re.search(r"^MOLECULAR\s+ORBITALS\b", s, re.IGNORECASE):
+                last_mo_line = idx
+                self._add_section_item("⚛️ Molecular Orbitals (LCAO Table)", idx)
+                self._quick_jump_targets["mos"] = idx
+                continue
+            if re.search(r"^LOEWDIN\s+REDUCED\s+ORBITAL\s+POPULATIONS\s+PER\s+MO\b", s, re.IGNORECASE):
+                self._add_section_item("⚛️ Loewdin MO AO-Composition", idx)
+                if self._quick_jump_targets["mos"] is None:
+                    self._quick_jump_targets["mos"] = idx
+                continue
+            if (
+                re.search(r"^(?:ORBITAL\s+ENERGIES|MO\s+ENERGIES|Orbital\s+Energies|Population\s+analysis\s+using\s+the\s+SCF\s+Density)\b", s, re.IGNORECASE)
+                or (re.search(r"Alpha\s+occ\.\s+eigenvalues", s, re.IGNORECASE) and idx - last_mo_line > 25)
+            ):
+                last_mo_line = idx
+                self._add_section_item("⚛️ Molecular Orbitals (Occ & Energies)", idx)
+                self._quick_jump_targets["mos"] = idx
+                continue
+
+            # Match Final / Total Energy
             e_match = re.search(
-                r"(?:FINAL\s+SINGLE\s+POINT\s+ENERGY|Total\s+Energy|SCF\s+Done|E\(HF\)|E\(DFT\)|E\(CCSD\))\s*[:=]?\s*([+-]?\d+\.\d+)",
+                r"(?:FINAL\s+SINGLE\s+POINT\s+ENERGY|MP2\s+TOTAL\s+ENERGY|FINAL\s+CCSD(?:\(T\))?\s+ENERGY|Total\s+Energy|SCF\s+Done|E\(HF\)|E\(DFT\)|E\(CCSD\))\s*[:=]?\s*([+-]?\d+\.\d+)",
                 s,
                 re.IGNORECASE,
             )
             if e_match:
-                if len(self.line_indices) < 35 or "Done" in s or "FINAL" in s:
-                    self._add_section_item(f"⚡ E = {e_match.group(1)}", idx)
+                is_final = any(k in s.upper() for k in ("FINAL", "SCF DONE", "MP2 TOTAL", "TOTAL ENERGY"))
+                if is_final or len(self.line_indices) < 35:
+                    prefix = "⭐ Final Energy" if is_final else "⚡ E"
+                    self._add_section_item(f"{prefix} = {e_match.group(1)}", idx)
+                if is_final or self._quick_jump_targets["final_e"] is None:
+                    self._quick_jump_targets["final_e"] = idx
                 continue
 
             # Match Convergence
-            s_l = s.lower()
             if "the optimization has converged" in s_l:
                 self._add_section_item("🎉 Optimization Converged", idx)
                 continue
@@ -228,9 +309,20 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
                 self._add_section_item(f"✔ {s[:45]}", idx)
                 continue
 
-            # Match Vibrational Analysis
-            if re.search(r"(?:Harmonic frequencies|Vibrational Frequencies|NORMAL MODES)", s, re.IGNORECASE):
-                self._add_section_item("🎵 Harmonic Frequencies / Modes", idx)
+            # Match Vibrational Analysis & IR Table
+            if re.search(r"(?:VIBRATIONAL\s+FREQUENCIES|Harmonic\s+frequencies|NORMAL\s+MODES)", s, re.IGNORECASE):
+                self._add_section_item("🎵 Vibrational Modes Table", idx)
+                self._quick_jump_targets["vibs"] = idx
+                continue
+            if re.search(r"^IR\s+SPECTRUM\b", s, re.IGNORECASE):
+                self._add_section_item("📈 IR Spectrum Table", idx)
+                if self._quick_jump_targets["vibs"] is None:
+                    self._quick_jump_targets["vibs"] = idx
+                continue
+
+            # Match Thermochemistry
+            if re.search(r"(?:THERMOCHEMISTRY\s+AT|Final\s+Gibbs\s+free\s+energy|Sum\s+of\s+electronic\s+and\s+thermal\s+Free\s+Energies)", s, re.IGNORECASE):
+                self._add_section_item("🔥 Thermochemistry (ZPE / H / G)", idx)
                 continue
 
             # Match Normal Termination
@@ -247,6 +339,23 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
         if not self.line_indices:
             self.list_sections.addItem("No specific section markers detected")
+
+        btn_map = {
+            "final_e": (self.btn_jump_final_e, "Jump to Final Total Energy"),
+            "e_parts": (self.btn_jump_e_parts, "Jump to Separated Energy Components"),
+            "ecorr": (self.btn_jump_ecorr, "Jump to Post-HF Correlation Energy"),
+            "mos": (self.btn_jump_mos, "Jump to Molecular Orbitals (Occupations & Energies)"),
+            "vibs": (self.btn_jump_vibs, "Jump to Vibrational Modes / IR Table"),
+        }
+        for key, (btn, base_tip) in btn_map.items():
+            target = self._quick_jump_targets.get(key)
+            btn.setEnabled(target is not None)
+            btn.setToolTip(f"{base_tip} (L:{target + 1})" if target is not None else f"{base_tip} (Not found in this output)")
+
+    def _jump_to_category(self, key: str):
+        line_no = self._quick_jump_targets.get(key)
+        if line_no is not None:
+            self._jump_to_line(line_no)
 
     def _add_section_item(self, label: str, line_no: int):
         self.line_indices.append((label, line_no))
@@ -357,3 +466,13 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.file_path))
         else:
             QtWidgets.QMessageBox.information(self, "External Editor", "File path is not available on disk.")
+
+    def _on_open_in_agemacs(self):
+        from .companion import send_to_agemacs, send_text_to_agemacs
+
+        if self.file_path and os.path.isfile(self.file_path):
+            ok = send_to_agemacs([self.file_path], self)
+        else:
+            ok = send_text_to_agemacs("agymolden_output.log", self.txt_viewer.toPlainText(), self)
+        if not ok:
+            QtWidgets.QMessageBox.information(self, "Open in Agemacs", "Could not launch 'agemacs'.")

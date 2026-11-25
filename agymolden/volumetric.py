@@ -200,6 +200,8 @@ class IsosurfaceMesh:
     surface_values: Optional[np.ndarray] = None  # Raw scalar property values at vertices (e.g. ESP a.u., ALIE eV)
     extrema_points: Optional[List[Dict[str, Any]]] = None  # Local surface extrema [{"type": "min"|"max", "pos": [x,y,z], "val": float, "label": str}]
     esp_range: Optional[Tuple[float, float]] = None  # (min_v, max_v) potential mapping range in a.u.
+    colormap_name: str = "bwr_r"
+    colorbar_title: str = "ESP Heatmap (a.u.)"
 
 
 
@@ -696,10 +698,32 @@ def _cart_powers_for_l(l_ang: int) -> List[Tuple[int, int, int]]:
     return powers
 
 
+def _double_factorial(n: int) -> int:
+    """Return n!! (with (-1)!! = 1 and 0!! = 1)."""
+    res = 1
+    while n > 1:
+        res *= n
+        n -= 2
+    return res
+
+
+def _cart_ang_norm(lx: int, ly: int, lz: int) -> float:
+    """Angular normalization factor for a Cartesian GTO x^lx y^ly z^lz."""
+    l_ang = lx + ly + lz
+    denom = (
+        4.0
+        * np.pi
+        * _double_factorial(2 * lx - 1)
+        * _double_factorial(2 * ly - 1)
+        * _double_factorial(2 * lz - 1)
+    )
+    return float(np.sqrt(_double_factorial(2 * l_ang + 1) / denom))
+
+
 class _FallbackCube:
     """Pure-NumPy drop-in replacement for pyscf.tools.cubegen.Cube."""
 
-    def __init__(self, mol: Any, nx: int = 48, ny: int = 48, nz: int = 48, margin: float = 3.0, extent: Optional[Tuple[float, float, float]] = None):
+    def __init__(self, mol: Any, nx: int = 48, ny: int = 48, nz: int = 48, margin: float = 5.5, extent: Optional[Tuple[float, float, float]] = None):
         self.nx = int(nx)
         self.ny = int(ny)
         self.nz = int(nz)
@@ -723,10 +747,18 @@ class _FallbackCube:
 class _FallbackMol:
     """Pure-NumPy molecular GTO representation and evaluator when PySCF is unavailable."""
 
-    def __init__(self, symbols: List[str], coords_bohr: np.ndarray, shells: List[Dict[str, Any]], cart: bool = False):
+    def __init__(
+        self,
+        symbols: List[str],
+        coords_bohr: np.ndarray,
+        shells: List[Dict[str, Any]],
+        cart: bool = False,
+        cart_l: Optional[Dict[int, bool]] = None,
+    ):
         self._symbols = list(symbols)
         self._coords_bohr = np.asarray(coords_bohr, dtype=np.float64)
         self._shells = shells
+        self._cart_l: Dict[int, bool] = dict(cart_l) if cart_l is not None else {2: bool(cart), 3: bool(cart), 4: bool(cart)}
         self.cart = bool(cart)
         self.natm = len(self._symbols)
         self._basis = True  # truthy sentinel for callers checking getattr(mol, "_basis", None)
@@ -754,7 +786,8 @@ class _FallbackMol:
             base_n = l_ang + 1 + shell_counts.get((at_idx, l_ang), 0)
             shell_counts[(at_idx, l_ang)] = shell_counts.get((at_idx, l_ang), 0) + 1
             nl_str = f"{base_n}{l_names.get(l_ang, 's')}"
-            n_comp = ((l_ang + 1) * (l_ang + 2)) // 2 if self.cart else (2 * l_ang + 1)
+            is_cart = self._cart_l.get(l_ang, self.cart) if l_ang >= 2 else True
+            n_comp = ((l_ang + 1) * (l_ang + 2)) // 2 if is_cart else (2 * l_ang + 1)
             for c_i in range(n_comp):
                 if fmt:
                     labels.append(f"{at_idx} {sym}{at_idx + 1} {nl_str}")
@@ -793,8 +826,10 @@ class _FallbackMol:
                         val = val * (z ** lz if lz > 1 else z)
                     cart_ang[:, p_idx] = val
                 cart_block = cart_ang * rad[:, None]
-                if self.cart:
-                    cols.append(cart_block)
+                is_cart = self._cart_l.get(l_ang, self.cart)
+                if is_cart:
+                    ang_norms = np.array([_cart_ang_norm(lx, ly, lz) for lx, ly, lz in powers], dtype=np.float64)
+                    cols.append(cart_block * ang_norms[None, :])
                 elif l_ang == 2:
                     cols.append(cart_block @ _CART2SPH_L2)
                 elif l_ang == 3:
@@ -817,7 +852,7 @@ def _load_fallback_molden(molden_path: str):
     symbols: List[str] = []
     coords_bohr_list: List[List[float]] = []
     atom_units = "AU"
-    cart = True
+    cart_l: Dict[int, bool] = {2: True, 3: True, 4: True}
 
     raw_shells: List[Dict[str, Any]] = []
     mo_energies: List[float] = []
@@ -846,10 +881,23 @@ def _load_fallback_molden(molden_path: str):
                     atom_units = "ANGS"
                 else:
                     atom_units = "AU"
-            elif sec_header[:2] in ("5D", "7F", "9G"):
-                cart = False
-            elif sec_header[:2] == "6D" or sec_header[:3] in ("10F", "15G"):
-                cart = True
+            else:
+                if "5D" in sec_header:
+                    cart_l[2] = False
+                    if "10F" not in sec_header:
+                        cart_l[3] = False
+                    if "15G" not in sec_header:
+                        cart_l[4] = False
+                if "6D" in sec_header:
+                    cart_l[2] = True
+                if "7F" in sec_header:
+                    cart_l[3] = False
+                if "10F" in sec_header:
+                    cart_l[3] = True
+                if "9G" in sec_header:
+                    cart_l[4] = False
+                if "15G" in sec_header:
+                    cart_l[4] = True
             i += 1
             continue
 
@@ -865,6 +913,25 @@ def _load_fallback_molden(molden_path: str):
             toks = raw.split()
             if len(toks) >= 1 and toks[0].isdigit():
                 cur_atom_idx = int(toks[0]) - 1
+            elif len(toks) >= 2 and toks[0].lower() == "sp":
+                n_prim = int(toks[1])
+                fac = float(toks[2].replace("D", "E").replace("d", "e")) if len(toks) >= 3 else 1.0
+                if fac == 0.0:
+                    fac = 1.0
+                exps, cs_s, cs_p = [], [], []
+                for _ in range(n_prim):
+                    i += 1
+                    if i >= n_lines:
+                        break
+                    ptoks = lines[i].replace("D", "E").replace("d", "e").split()
+                    if len(ptoks) >= 3:
+                        exps.append(float(ptoks[0]))
+                        cs_s.append(float(ptoks[1]) * fac)
+                        cs_p.append(float(ptoks[2]) * fac)
+                if exps:
+                    exps_arr = np.array(exps, dtype=np.float64)
+                    raw_shells.append({"atom_idx": cur_atom_idx, "l": 0, "exps": exps_arr, "cs": np.array(cs_s, dtype=np.float64)})
+                    raw_shells.append({"atom_idx": cur_atom_idx, "l": 1, "exps": exps_arr, "cs": np.array(cs_p, dtype=np.float64)})
             elif len(toks) >= 2 and toks[0].lower() in l_map:
                 lsym = toks[0].lower()
                 n_prim = int(toks[1])
@@ -889,14 +956,24 @@ def _load_fallback_molden(molden_path: str):
                         "cs": np.array(cs, dtype=np.float64),
                     })
         elif sec == "MO":
-            up = raw.upper()
-            if up.startswith("SYM=") or (up.startswith("ENE=") and not (i > 0 and lines[i - 1].strip().upper().startswith("SYM="))):
-                sym_val = raw.split("=", 1)[1].strip() if up.startswith("SYM=") else "1a"
-                ene_val = float(raw.replace("D", "E").replace("d", "e").split("=", 1)[1].strip()) if up.startswith("ENE=") else 0.0
+            if "=" in raw:
+                k_part, v_part = raw.split("=", 1)
+                k_up = k_part.strip().upper()
+                v_str = v_part.strip()
+            else:
+                k_up, v_str = "", ""
+            if k_up in ("SYM", "ENE"):
+                sym_val = v_str if k_up == "SYM" else "1a"
+                try:
+                    ene_val = float(v_str.replace("D", "E").replace("d", "e")) if k_up == "ENE" else 0.0
+                except ValueError:
+                    ene_val = 0.0
                 spin_val = "Alpha"
                 occ_val = 0.0
                 c_dict: Dict[int, float] = {}
-                has_ene = up.startswith("ENE=")
+                seen_sym = (k_up == "SYM")
+                seen_ene = (k_up == "ENE")
+                seen_coeff = False
                 i += 1
                 while i < n_lines:
                     sub = lines[i].strip()
@@ -906,25 +983,40 @@ def _load_fallback_molden(molden_path: str):
                     if sub.startswith("["):
                         i -= 1
                         break
-                    sub_up = sub.upper()
-                    if sub_up.startswith("SYM="):
-                        i -= 1
-                        break
-                    if sub_up.startswith("ENE="):
-                        if has_ene:
+                    if "=" in sub:
+                        sk_part, sv_part = sub.split("=", 1)
+                        sk_up = sk_part.strip().upper()
+                        sv_str = sv_part.strip()
+                    else:
+                        sk_up, sv_str = "", ""
+                    if sk_up == "SYM":
+                        if seen_sym or seen_coeff:
                             i -= 1
                             break
-                        ene_val = float(sub.replace("D", "E").replace("d", "e").split("=", 1)[1].strip())
-                        has_ene = True
-                    elif sub_up.startswith("SPIN="):
-                        spin_val = sub.split("=", 1)[1].strip()
-                    elif sub_up.startswith("OCC"):
-                        occ_val = float(sub.replace("D", "E").replace("d", "e").split("=", 1)[1].strip())
+                        sym_val = sv_str or sym_val
+                        seen_sym = True
+                    elif sk_up == "ENE":
+                        if seen_ene or seen_coeff:
+                            i -= 1
+                            break
+                        try:
+                            ene_val = float(sv_str.replace("D", "E").replace("d", "e"))
+                        except ValueError:
+                            pass
+                        seen_ene = True
+                    elif sk_up == "SPIN":
+                        spin_val = sv_str
+                    elif sk_up.startswith("OCC"):
+                        try:
+                            occ_val = float(sv_str.replace("D", "E").replace("d", "e"))
+                        except ValueError:
+                            pass
                     else:
                         ctoks = sub.replace("D", "E").replace("d", "e").split()
                         if len(ctoks) >= 2:
                             try:
                                 c_dict[int(ctoks[0]) - 1] = float(ctoks[1])
+                                seen_coeff = True
                             except ValueError:
                                 pass
                     i += 1
@@ -943,7 +1035,8 @@ def _load_fallback_molden(molden_path: str):
     off = 0
     for sh in raw_shells:
         l_ang = int(sh["l"])
-        if cart:
+        is_cart = cart_l.get(l_ang, True) if l_ang >= 2 else True
+        if is_cart:
             if l_ang == 2:
                 order_idx.extend([off + 0, off + 3, off + 5, off + 1, off + 2, off + 4])
             elif l_ang == 3:
@@ -1004,7 +1097,7 @@ def _load_fallback_molden(molden_path: str):
             "weights": w_raw * s1,
         })
 
-    mol = _FallbackMol(symbols, np.array(coords_bohr_list, dtype=np.float64), shells_built, cart=cart)
+    mol = _FallbackMol(symbols, np.array(coords_bohr_list, dtype=np.float64), shells_built, cart=all(cart_l.values()), cart_l=cart_l)
     mo_en_arr = np.array(mo_energies, dtype=np.float64)
     mo_occ_arr = np.array(mo_occs, dtype=np.float64)
     spins_up = [s.upper() for s in mo_spins]
@@ -1465,7 +1558,7 @@ def evaluate_molden_orbital_grid(
     nx: int = 48,
     ny: int = 48,
     nz: int = 48,
-    margin_bohr: float = 3.0,
+    margin_bohr: float = 5.5,
 ) -> Optional[VolumetricData]:
     """
     Rigorously evaluate molecular orbital wavefunction values on a 3D Cartesian grid
@@ -1550,7 +1643,7 @@ def compute_molden_esp_grid(
     nx: int = 40,
     ny: int = 40,
     nz: int = 40,
-    margin_bohr: float = 3.5,
+    margin_bohr: float = 5.5,
     extent: Optional[Tuple[float, float, float]] = None,
 ) -> Optional[VolumetricData]:
     """
@@ -1640,12 +1733,191 @@ def compute_molden_esp_grid(
     )
 
 
+def compute_molden_electron_density_grid(
+    molden_path: str,
+    nx: int = 40,
+    ny: int = 40,
+    nz: int = 40,
+    margin_bohr: float = 5.5,
+) -> Optional[VolumetricData]:
+    """
+    Compute total electron density 3D grid: rho(r) = sum_i n_i |psi_i(r)|^2.
+    Evaluated from Molden [GTO] basis and [MO] coefficients using PySCF or the pure-NumPy GTO evaluator.
+    """
+    ctx = _get_mo_grid_context(molden_path, nx, ny, nz, margin_bohr)
+    if ctx is None:
+        return None
+
+    res = ctx["res"]
+    mol = ctx["mol"]
+    c = ctx["cube"]
+    ao_val = ctx["ao_val"]
+
+    mo_coeff = np.asarray(res[2])
+    mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else None
+
+    if mo_coeff.ndim == 3 and mo_coeff.shape[0] == 2:
+        rho = np.zeros(ao_val.shape[0], dtype=np.float64)
+        for s_idx in range(2):
+            occ_s = mo_occ[s_idx] if mo_occ is not None and mo_occ.ndim == 2 else np.zeros(mo_coeff.shape[2])
+            mask = occ_s > 1e-8
+            if np.any(mask):
+                psi = ao_val @ mo_coeff[s_idx, :, mask].T
+                rho += np.sum((psi * psi) * occ_s[mask][None, :], axis=1)
+    else:
+        if mo_occ is None:
+            mo_occ = np.zeros(mo_coeff.shape[1], dtype=np.float64)
+        mask = mo_occ > 1e-8
+        if np.any(mask):
+            psi = ao_val @ mo_coeff[:, mask]
+            rho = np.sum((psi * psi) * mo_occ[mask][None, :], axis=1)
+        else:
+            rho = np.zeros(ao_val.shape[0], dtype=np.float64)
+
+    grid_3d = rho.reshape((c.nx, c.ny, c.nz)).astype(np.float32)
+
+    step_x = (c.box[0] / max(1, c.nx - 1)) * BOHR_TO_ANGSTROM
+    step_y = (c.box[1] / max(1, c.ny - 1)) * BOHR_TO_ANGSTROM
+    step_z = (c.box[2] / max(1, c.nz - 1)) * BOHR_TO_ANGSTROM
+    origin_ang = c.boxorig * BOHR_TO_ANGSTROM
+    atom_coords_ang = mol.atom_coords() * BOHR_TO_ANGSTROM
+    symbols = [mol.atom_symbol(i) for i in range(mol.natm)]
+
+    bname = os.path.basename(molden_path).lower()
+    if "positron" in bname:
+        dens_title = "Positron Density (ρ₊)"
+        dens_comment = f"Exact Positron Density from Molden ({c.nx}x{c.ny}x{c.nz})"
+    elif "muon" in bname:
+        dens_title = "Muon Density (ρ_μ)"
+        dens_comment = f"Exact Muon Density from Molden ({c.nx}x{c.ny}x{c.nz})"
+    elif "proton" in bname:
+        dens_title = "Quantum Proton Density (ρ_p)"
+        dens_comment = f"Exact Quantum Proton Density from Molden ({c.nx}x{c.ny}x{c.nz})"
+    else:
+        dens_title = "Total Electron Density (ρ)"
+        dens_comment = f"Exact Electron Density from Molden ({c.nx}x{c.ny}x{c.nz})"
+
+    return VolumetricData(
+        title=dens_title,
+        comment=dens_comment,
+        symbols=symbols,
+        atom_coords=atom_coords_ang,
+        origin=origin_ang,
+        voxels_x=c.nx,
+        voxels_y=c.ny,
+        voxels_z=c.nz,
+        step_x=step_x,
+        step_y=step_y,
+        step_z=step_z,
+        grid_data=grid_3d,
+        is_orbital=False,
+        orbital_index=None,
+    )
+
+
+compute_molden_density_grid = compute_molden_electron_density_grid
+
+
+def _eval_molden_density_on_coords(res_tuple, mol: Any, coords: np.ndarray) -> np.ndarray:
+    """Evaluate total particle density sum_i n_i |psi_i(r)|^2 at arbitrary Bohr coordinates."""
+    mo_coeff = np.asarray(res_tuple[2])
+    mo_occ = np.asarray(res_tuple[3]) if len(res_tuple) > 3 and res_tuple[3] is not None else None
+    n_pts = len(coords)
+    rho = np.zeros(n_pts, dtype=np.float64)
+    chunk = 8000
+    for start in range(0, n_pts, chunk):
+        ao_val = mol.eval_gto("GTOval", coords[start:start + chunk])
+        if mo_coeff.ndim == 3 and mo_coeff.shape[0] == 2:
+            for s_idx in range(2):
+                occ_s = mo_occ[s_idx] if mo_occ is not None and mo_occ.ndim == 2 else np.zeros(mo_coeff.shape[2])
+                mask = occ_s > 1e-8
+                if np.any(mask):
+                    psi = ao_val @ mo_coeff[s_idx, :, mask].T
+                    rho[start:start + chunk] += np.sum((psi * psi) * occ_s[mask][None, :], axis=1)
+        else:
+            occ_r = mo_occ if mo_occ is not None and mo_occ.ndim == 1 else np.zeros(mo_coeff.shape[1])
+            mask = occ_r > 1e-8
+            if np.any(mask):
+                psi = ao_val @ mo_coeff[:, mask]
+                rho[start:start + chunk] += np.sum((psi * psi) * occ_r[mask][None, :], axis=1)
+    return rho
+
+
+def compute_molden_annihilation_density_grid(
+    elec_molden_path: str,
+    pos_molden_path: str,
+    nx: int = 44,
+    ny: int = 44,
+    nz: int = 44,
+    margin_bohr: float = 6.5,
+) -> Optional[VolumetricData]:
+    """
+    Compute the Electron-Positron Annihilation Density 3D grid:
+        rho_ann(r) = rho_-(r) * rho_+(r)
+    Evaluated on a single shared Cartesian grid spanning both wavefunctions.
+    """
+    def _load_any(path: str):
+        res = None
+        try:
+            res = _load_pyscf_molden(path)
+        except Exception:
+            res = None
+        if not res or not getattr(res[0], "_basis", None) or res[0].natm == 0:
+            try:
+                res = _load_fallback_molden(path)
+            except Exception:
+                return None
+        if not res or len(res) < 3 or res[2] is None:
+            return None
+        return res
+
+    res_e = _load_any(elec_molden_path)
+    res_p = _load_any(pos_molden_path)
+    if res_e is None or res_p is None:
+        return None
+
+    mol_e, mol_p = res_e[0], res_p[0]
+    all_coords = np.vstack([mol_e.atom_coords(), mol_p.atom_coords()])
+    box_diag = np.max(all_coords, axis=0) - np.min(all_coords, axis=0) + 2.0 * float(margin_bohr)
+    boxorig = np.min(all_coords, axis=0) - float(margin_bohr)
+
+    xs = np.arange(nx, dtype=np.float64) * (box_diag[0] / max(1, nx - 1))
+    ys = np.arange(ny, dtype=np.float64) * (box_diag[1] / max(1, ny - 1))
+    zs = np.arange(nz, dtype=np.float64) * (box_diag[2] / max(1, nz - 1))
+    coords = np.vstack(np.meshgrid(xs, ys, zs, indexing="ij")).reshape(3, -1).T + boxorig
+
+    rho_e = _eval_molden_density_on_coords(res_e, mol_e, coords)
+    rho_p = _eval_molden_density_on_coords(res_p, mol_p, coords)
+    rho_ann = (rho_e * rho_p).reshape((nx, ny, nz)).astype(np.float32)
+
+    step_x = np.array([box_diag[0] / max(1, nx - 1), 0.0, 0.0], dtype=np.float64) * BOHR_TO_ANGSTROM
+    step_y = np.array([0.0, box_diag[1] / max(1, ny - 1), 0.0], dtype=np.float64) * BOHR_TO_ANGSTROM
+    step_z = np.array([0.0, 0.0, box_diag[2] / max(1, nz - 1)], dtype=np.float64) * BOHR_TO_ANGSTROM
+
+    return VolumetricData(
+        title="Electron-Positron Annihilation Density (ρ₋·ρ₊)",
+        comment=f"Shared-Grid Annihilation Overlap Density ({nx}x{ny}x{nz})",
+        symbols=[mol_e.atom_symbol(i) for i in range(mol_e.natm)],
+        atom_coords=mol_e.atom_coords() * BOHR_TO_ANGSTROM,
+        origin=boxorig * BOHR_TO_ANGSTROM,
+        voxels_x=nx,
+        voxels_y=ny,
+        voxels_z=nz,
+        step_x=step_x,
+        step_y=step_y,
+        step_z=step_z,
+        grid_data=rho_ann,
+        is_orbital=False,
+        orbital_index=None,
+    )
+
+
 def compute_molden_spin_density_grid(
     molden_path: str,
     nx: int = 40,
     ny: int = 40,
     nz: int = 40,
-    margin_bohr: float = 3.0,
+    margin_bohr: float = 5.5,
 ) -> Optional[VolumetricData]:
     """
     Compute open-shell spin density 3D grid: Delta rho(r) = rho_alpha(r) - rho_beta(r).
@@ -1741,7 +2013,7 @@ def compute_molden_esp_mapped_density(
     esp_max: Optional[float] = None,
     colormap_name: str = "bwr_r",
     find_extrema: bool = True,
-    margin_bohr: float = 3.5,
+    margin_bohr: float = 5.5,
     extent: Optional[Tuple[float, float, float]] = None,
 ) -> Optional[IsosurfaceMesh]:
     """
@@ -1933,13 +2205,12 @@ def compute_molden_elf_grid(
     nx: int = 40,
     ny: int = 40,
     nz: int = 40,
-    margin_bohr: float = 3.0,
+    margin_bohr: float = 5.5,
 ) -> Optional[VolumetricData]:
     """
     Compute the Electron Localization Function (ELF) 3D grid directly from Molden wavefunctions.
-    Uses Becke-Edgecombe formula:
-        ELF(r) = 1 / (1 + (D(r) / D_0(r))^2)
-    where D(r) is the Pauli kinetic energy density and D_0(r) is the Thomas-Fermi reference.
+    Uses Becke-Edgecombe formula (spin-polarized for UHF, closed-shell for RHF) with
+    Multiwfn far-field stability constant (1e-5) and fast O(N_pts * N_ao * N_occ) contractions.
     Values range from 0.0 to 1.0; isosurface at 0.80 - 0.85 reveals electron pairs, bonds, and lone pairs.
     """
     import io
@@ -1971,42 +2242,67 @@ def compute_molden_elf_grid(
     mo_coeff = np.asarray(res[2])
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else np.zeros(mo_coeff.shape[-1])
 
-    if mo_coeff.ndim == 3:
-        dm = np.sum([c @ np.diag(occ) @ c.T for c, occ in zip(mo_coeff, mo_occ)], axis=0)
+    is_uhf = mo_coeff.ndim == 3 and mo_coeff.shape[0] == 2
+    channels: List[Tuple[np.ndarray, np.ndarray]] = []
+    if is_uhf:
+        for s_idx in range(2):
+            occ_s = mo_occ[s_idx] if mo_occ.ndim == 2 else np.zeros(mo_coeff.shape[2])
+            mask = occ_s > 1e-8
+            if np.any(mask):
+                channels.append((mo_coeff[s_idx, :, mask].T, occ_s[mask]))
     else:
-        dm = mo_coeff @ np.diag(mo_occ) @ mo_coeff.T
+        occ_r = mo_occ if mo_occ.ndim == 1 else np.zeros(mo_coeff.shape[1])
+        mask = occ_r > 1e-8
+        if np.any(mask):
+            channels.append((mo_coeff[:, mask], occ_r[mask]))
 
     c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
     coords = c.get_coords()
 
-    # Evaluate AO values and gradients in chunks for memory safety
+    # Evaluate AO values and gradients in chunks using occupied-MO contractions
     chunk = 4000
     n_pts = len(coords)
-    elf_vals = np.empty(n_pts, dtype=np.float32)
+    elf_vals = np.zeros(n_pts, dtype=np.float32)
+    if not channels:
+        grid_3d = elf_vals.reshape((c.nx, c.ny, c.nz))
+    else:
+        cf_rhf = 0.3 * (3.0 * np.pi**2) ** (2.0 / 3.0)
+        cf_uhf = 0.3 * (6.0 * np.pi**2) ** (2.0 / 3.0)
 
-    cf = 0.3 * (3.0 * np.pi**2) ** (2.0 / 3.0)
+        for i in range(0, n_pts, chunk):
+            sub_coords = coords[i:i + chunk]
+            ao_val = mol.eval_gto("GTOval", sub_coords)        # (sub_n, nao)
+            ao_grad = mol.eval_gto("GTOval_ip", sub_coords)     # (3, sub_n, nao)
 
-    for i in range(0, n_pts, chunk):
-        sub_coords = coords[i:i + chunk]
-        ao_val = mol.eval_gto("GTOval", sub_coords)        # (sub_n, nao)
-        ao_grad = mol.eval_gto("GTOval_ip", sub_coords)     # (3, sub_n, nao)
+            if is_uhf:
+                d_tot = np.full(len(sub_coords), 1e-5, dtype=np.float64)
+                rho_53_sum = np.zeros(len(sub_coords), dtype=np.float64)
+                for c_occ, occ_v in channels:
+                    psi = ao_val @ c_occ
+                    gpsi = ao_grad @ c_occ
+                    rho_s = np.sum((psi * psi) * occ_v[None, :], axis=1)
+                    grad_s = 2.0 * np.sum((gpsi * psi[None, :, :]) * occ_v[None, None, :], axis=2)
+                    grad_sq_s = np.sum(grad_s * grad_s, axis=0)
+                    tau_s = 0.5 * np.sum(np.sum(gpsi * gpsi, axis=0) * occ_v[None, :], axis=1)
+                    d_tot += np.maximum(0.0, tau_s - 0.125 * grad_sq_s / np.maximum(rho_s, 1e-12))
+                    rho_53_sum += np.maximum(rho_s, 1e-12) ** (5.0 / 3.0)
+                d_0 = cf_uhf * rho_53_sum
+            else:
+                c_occ, occ_v = channels[0]
+                psi = ao_val @ c_occ
+                gpsi = ao_grad @ c_occ
+                rho = np.sum((psi * psi) * occ_v[None, :], axis=1)
+                grad_rho = 2.0 * np.sum((gpsi * psi[None, :, :]) * occ_v[None, None, :], axis=2)
+                grad_rho_sq = np.sum(grad_rho * grad_rho, axis=0)
+                tau = 0.5 * np.sum(np.sum(gpsi * gpsi, axis=0) * occ_v[None, :], axis=1)
+                d_tot = np.maximum(0.0, tau - 0.125 * grad_rho_sq / np.maximum(rho, 1e-12)) + 1e-5
+                d_0 = cf_rhf * np.maximum(rho, 1e-12) ** (5.0 / 3.0)
 
-        rho = np.einsum("pi,ij,pj->p", ao_val, dm, ao_val)
-        grad_rho = 2.0 * np.einsum("xpi,ij,pj->xp", ao_grad, dm, ao_val)
-        grad_rho_sq = np.sum(grad_rho**2, axis=0)
-        tau = 0.5 * np.einsum("xpi,ij,xpj->p", ao_grad, dm, ao_grad)
+            chi = d_tot / np.maximum(d_0, 1e-12)
+            sub_elf = 1.0 / (1.0 + chi * chi)
+            elf_vals[i:i + chunk] = sub_elf.astype(np.float32)
 
-        # Thomas-Fermi reference
-        tau_tf = cf * np.maximum(rho, 1e-12) ** (5.0 / 3.0)
-
-        # Pauli kinetic energy
-        d_pauli = np.maximum(0.0, tau - 0.125 * grad_rho_sq / np.maximum(rho, 1e-12))
-
-        chi = d_pauli / np.maximum(tau_tf, 1e-12)
-        sub_elf = 1.0 / (1.0 + chi**2)
-        elf_vals[i:i + chunk] = sub_elf.astype(np.float32)
-
-    grid_3d = elf_vals.reshape((c.nx, c.ny, c.nz))
+        grid_3d = elf_vals.reshape((c.nx, c.ny, c.nz))
 
     step_x = (c.box[0] / max(1, c.nx - 1)) * BOHR_TO_ANGSTROM
     step_y = (c.box[1] / max(1, c.ny - 1)) * BOHR_TO_ANGSTROM
@@ -2121,7 +2417,7 @@ def evaluate_lmo_orbital_grid(
     nx: int = 44,
     ny: int = 44,
     nz: int = 44,
-    margin_bohr: float = 3.0,
+    margin_bohr: float = 5.5,
 ) -> Optional[VolumetricData]:
     """Evaluate a single localized molecular orbital column onto a 3D Cartesian grid."""
     import io
@@ -2178,18 +2474,18 @@ def compute_molden_nci_rdg(
     nx: int = 36,
     ny: int = 36,
     nz: int = 36,
-    margin_bohr: float = 3.0,
+    margin_bohr: float = 5.5,
     rdg_isovalue: float = 0.5,
+    rho_cutoff: float = 0.05,
 ) -> Optional[IsosurfaceMesh]:
     """
     Compute Non-Covalent Interactions (NCI) using Reduced Density Gradient (RDG).
-    Extracts RDG isosurface at `rdg_isovalue` (e.g. 0.5) and colors vertices by:
-        sign(lambda_2) * rho
-    where lambda_2 is the second eigenvalue of the electron density Hessian.
-    Color coding:
-        Blue = Attractive interaction (Hydrogen bonding, halogen bonding)
+    Masks covalent core regions (rho > rho_cutoff) before Marching Cubes, extracts the RDG
+    isosurface at `rdg_isovalue` (e.g. 0.5), and colors vertices with Multiwfn-style Blue-Green-Red
+    mapping over sign(lambda_2) * rho in [-0.035, +0.035]:
+        Blue  = Attractive interaction (Hydrogen bonding, halogen bonding)
         Green = Weak dispersion (van der Waals)
-        Red = Steric repulsion (non-bonded clash, ring center strain)
+        Red   = Steric repulsion (non-bonded clash, ring center strain)
     """
     import io
     import contextlib
@@ -2197,7 +2493,7 @@ def compute_molden_nci_rdg(
     try:
         from pyscf.tools import molden, cubegen
         from pyscf.dft import numint
-        import matplotlib as mpl
+        from matplotlib.colors import LinearSegmentedColormap
     except ImportError:
         return None
 
@@ -2222,10 +2518,20 @@ def compute_molden_nci_rdg(
     mo_coeff = np.asarray(res[2])
     mo_occ = np.asarray(res[3]) if len(res) > 3 and res[3] is not None else np.zeros(mo_coeff.shape[-1])
 
-    if mo_coeff.ndim == 3:
-        dm = np.sum([c @ np.diag(occ) @ c.T for c, occ in zip(mo_coeff, mo_occ)], axis=0)
+    channels: List[Tuple[np.ndarray, np.ndarray]] = []
+    if mo_coeff.ndim == 3 and mo_coeff.shape[0] == 2:
+        for s_idx in range(2):
+            occ_s = mo_occ[s_idx] if mo_occ.ndim == 2 else np.zeros(mo_coeff.shape[2])
+            mask = occ_s > 1e-8
+            if np.any(mask):
+                channels.append((mo_coeff[s_idx, :, mask].T, occ_s[mask]))
     else:
-        dm = mo_coeff @ np.diag(mo_occ) @ mo_coeff.T
+        occ_r = mo_occ if mo_occ.ndim == 1 else np.zeros(mo_coeff.shape[1])
+        mask = occ_r > 1e-8
+        if np.any(mask):
+            channels.append((mo_coeff[:, mask], occ_r[mask]))
+    if not channels:
+        return None
 
     c = cubegen.Cube(mol, nx=nx, ny=ny, nz=nz, margin=margin_bohr)
     coords = c.get_coords()
@@ -2234,23 +2540,27 @@ def compute_molden_nci_rdg(
     chunk = 2000
     n_pts = len(coords)
     rdg_flat = np.empty(n_pts, dtype=np.float32)
-    rho_flat = np.empty(n_pts, dtype=np.float32)
 
     cf = 2.0 * (3.0 * np.pi**2) ** (1.0 / 3.0)
 
     for i in range(0, n_pts, chunk):
         sub_coords = coords[i:i + chunk]
         ao_1 = ni.eval_ao(mol, sub_coords, deriv=1)  # (4, sub_n, nao)
-        # ao_1[0]=val, ao_1[1]=dx, ao_1[2]=dy, ao_1[3]=dz
-        rho_p = np.einsum("pi,ij,pj->p", ao_1[0], dm, ao_1[0])
-        rho_flat[i:i + chunk] = rho_p
+        rho_p = np.zeros(len(sub_coords), dtype=np.float64)
+        gx = np.zeros(len(sub_coords), dtype=np.float64)
+        gy = np.zeros(len(sub_coords), dtype=np.float64)
+        gz = np.zeros(len(sub_coords), dtype=np.float64)
+        for c_occ, occ_v in channels:
+            psi = ao_1[0] @ c_occ
+            rho_p += np.sum((psi * psi) * occ_v[None, :], axis=1)
+            gx += 2.0 * np.sum(((ao_1[1] @ c_occ) * psi) * occ_v[None, :], axis=1)
+            gy += 2.0 * np.sum(((ao_1[2] @ c_occ) * psi) * occ_v[None, :], axis=1)
+            gz += 2.0 * np.sum(((ao_1[3] @ c_occ) * psi) * occ_v[None, :], axis=1)
 
-        gx = 2.0 * np.einsum("pi,ij,pj->p", ao_1[1], dm, ao_1[0])
-        gy = 2.0 * np.einsum("pi,ij,pj->p", ao_1[2], dm, ao_1[0])
-        gz = 2.0 * np.einsum("pi,ij,pj->p", ao_1[3], dm, ao_1[0])
-        norm_g = np.sqrt(gx**2 + gy**2 + gz**2)
-
+        norm_g = np.sqrt(gx * gx + gy * gy + gz * gz)
         rdg_p = norm_g / (cf * np.maximum(rho_p, 1e-10) ** (4.0 / 3.0))
+        if rho_cutoff > 0.0:
+            rdg_p = np.where(rho_p > rho_cutoff, 100.0, rdg_p)
         rdg_flat[i:i + chunk] = rdg_p
 
     # Extract RDG isosurface (typically s = 0.5)
@@ -2286,52 +2596,52 @@ def compute_molden_nci_rdg(
     verts_bohr = mesh.vertices * ANGSTROM_TO_BOHR
     nv = len(verts_bohr)
     slr = np.zeros(nv, dtype=np.float32)
-    rho_v = np.zeros(nv, dtype=np.float32)
 
     v_chunk = 1500
     for vi in range(0, nv, v_chunk):
         sub_v = verts_bohr[vi:vi + v_chunk]
         ao_2 = ni.eval_ao(mol, sub_v, deriv=2)
-        # ao_2 rows:
-        # 0: val, 1: dx, 2: dy, 3: dz
-        # 4: dxx, 5: dxy, 6: dxz, 7: dyy, 8: dyz, 9: dzz
-        v_rho = np.einsum("pi,ij,pj->p", ao_2[0], dm, ao_2[0])
-        rho_v[vi:vi + len(sub_v)] = v_rho
-
-        # Hessian components: d2_rho = 2*(d2_ao * dm * ao + d1_ao * dm * d1_ao)
         sub_nv = len(sub_v)
+        v_rho = np.zeros(sub_nv, dtype=np.float64)
         hess = np.zeros((sub_nv, 3, 3), dtype=np.float64)
 
-        # xx: ao_2[4], ao_2[1]
-        hess[:, 0, 0] = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[4], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[1], dm, ao_2[1]))
-        # yy: ao_2[7], ao_2[2]
-        hess[:, 1, 1] = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[7], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[2], dm, ao_2[2]))
-        # zz: ao_2[9], ao_2[3]
-        hess[:, 2, 2] = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[9], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[3], dm, ao_2[3]))
-        # xy: ao_2[5], ao_2[1], ao_2[2]
-        h_xy = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[5], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[1], dm, ao_2[2]))
-        hess[:, 0, 1] = hess[:, 1, 0] = h_xy
-        # xz: ao_2[6], ao_2[1], ao_2[3]
-        h_xz = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[6], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[1], dm, ao_2[3]))
-        hess[:, 0, 2] = hess[:, 2, 0] = h_xz
-        # yz: ao_2[8], ao_2[2], ao_2[3]
-        h_yz = 2.0 * (np.einsum("pi,ij,pj->p", ao_2[8], dm, ao_2[0]) + np.einsum("pi,ij,pj->p", ao_2[2], dm, ao_2[3]))
-        hess[:, 1, 2] = hess[:, 2, 1] = h_yz
+        for c_occ, occ_v in channels:
+            psi = ao_2[0] @ c_occ
+            gx = ao_2[1] @ c_occ
+            gy = ao_2[2] @ c_occ
+            gz = ao_2[3] @ c_occ
+            hxx = ao_2[4] @ c_occ
+            hxy = ao_2[5] @ c_occ
+            hxz = ao_2[6] @ c_occ
+            hyy = ao_2[7] @ c_occ
+            hyz = ao_2[8] @ c_occ
+            hzz = ao_2[9] @ c_occ
+
+            v_rho += np.sum((psi * psi) * occ_v[None, :], axis=1)
+            hess[:, 0, 0] += 2.0 * np.sum((hxx * psi + gx * gx) * occ_v[None, :], axis=1)
+            hess[:, 1, 1] += 2.0 * np.sum((hyy * psi + gy * gy) * occ_v[None, :], axis=1)
+            hess[:, 2, 2] += 2.0 * np.sum((hzz * psi + gz * gz) * occ_v[None, :], axis=1)
+            c_xy = 2.0 * np.sum((hxy * psi + gx * gy) * occ_v[None, :], axis=1)
+            c_xz = 2.0 * np.sum((hxz * psi + gx * gz) * occ_v[None, :], axis=1)
+            c_yz = 2.0 * np.sum((hyz * psi + gy * gz) * occ_v[None, :], axis=1)
+            hess[:, 0, 1] += c_xy
+            hess[:, 1, 0] += c_xy
+            hess[:, 0, 2] += c_xz
+            hess[:, 2, 0] += c_xz
+            hess[:, 1, 2] += c_yz
+            hess[:, 2, 1] += c_yz
 
         eig_v = np.linalg.eigvalsh(hess)
         lam2_v = eig_v[:, 1]
-        slr[vi:vi + len(sub_v)] = (np.sign(lam2_v) * v_rho).astype(np.float32)
+        slr[vi:vi + sub_nv] = (np.sign(lam2_v) * v_rho).astype(np.float32)
 
-    # Color mapping:
-    # Blue (slr <= -0.02, H-bonds) -> Green (slr ~ 0.0, vdW) -> Red (slr >= +0.02, Steric clash)
-    norm_val = np.clip((slr - (-0.03)) / 0.06, 0.0, 1.0)
-    cmap = mpl.colormaps.get("bwr_r", mpl.colormaps["coolwarm"])
+    # Multiwfn-style Blue (attractive) -> Green (vdW) -> Red (steric clash)
+    norm_val = np.clip((slr - (-0.035)) / 0.07, 0.0, 1.0)
+    cmap = LinearSegmentedColormap.from_list(
+        "nci_bgr", [(0.0, 0.15, 0.95), (0.05, 0.80, 0.25), (0.95, 0.12, 0.12)]
+    )
     rgba = cmap(norm_val)
     colors = rgba[:, :3].astype(np.float32)
-
-    # Gray out vertices with electron density too high (covalent core > 0.05 a.u.)
-    mask_cov = rho_v > 0.05
-    colors[mask_cov] = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
     mesh.vertex_colors = colors
     mesh.surface_values = slr
@@ -2734,3 +3044,212 @@ def generate_orbital_surfaces(
             meshes.append(mesh_neg)
 
     return meshes
+
+
+def build_density_colormap_slice_mesh(
+    vol_data: VolumetricData,
+    plane: str = "AUTO",
+    offset_angstrom: float = 0.0,
+    colormap_name: str = "viridis",
+    log_scale: bool = True,
+    resolution: int = 88,
+    alpha: float = 0.88,
+) -> IsosurfaceMesh:
+    """Build a 3D color-mapped slice plane mesh from any VolumetricData density grid."""
+    from scipy.ndimage import map_coordinates
+
+    res = max(16, int(resolution))
+    origin = np.asarray(vol_data.origin, dtype=np.float64)
+    step_mat = np.column_stack([
+        np.asarray(vol_data.step_x, dtype=np.float64),
+        np.asarray(vol_data.step_y, dtype=np.float64),
+        np.asarray(vol_data.step_z, dtype=np.float64),
+    ])
+    inv_step_mat = np.linalg.inv(step_mat)
+    box_diag = (
+        (vol_data.voxels_x - 1) * step_mat[:, 0]
+        + (vol_data.voxels_y - 1) * step_mat[:, 1]
+        + (vol_data.voxels_z - 1) * step_mat[:, 2]
+    )
+    p_min = np.minimum(origin, origin + box_diag)
+    p_max = np.maximum(origin, origin + box_diag)
+    box_center = 0.5 * (p_min + p_max)
+
+    plane_key = (plane or "AUTO").upper()
+    if plane_key == "AUTO":
+        coords = np.asarray(vol_data.atom_coords, dtype=np.float64) if len(vol_data.atom_coords) > 0 else np.empty((0, 3))
+        if len(coords) >= 2:
+            stds = np.std(coords, axis=0)
+            min_ax = int(np.argmin(stds))
+            plane_key = ("YZ", "XZ", "XY")[min_ax]
+        else:
+            plane_key = "XY"
+
+    if plane_key == "XZ":
+        ax1, ax2, ax_n = 0, 2, 1
+        n_vec = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    elif plane_key == "YZ":
+        ax1, ax2, ax_n = 1, 2, 0
+        n_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    else:  # XY
+        ax1, ax2, ax_n = 0, 1, 2
+        n_vec = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+    u_vals = np.linspace(p_min[ax1], p_max[ax1], res, dtype=np.float64)
+    v_vals = np.linspace(p_min[ax2], p_max[ax2], res, dtype=np.float64)
+    uu, vv = np.meshgrid(u_vals, v_vals, indexing="ij")
+
+    pts = np.empty((res * res, 3), dtype=np.float64)
+    pts[:, ax1] = uu.ravel()
+    pts[:, ax2] = vv.ravel()
+    pts[:, ax_n] = box_center[ax_n] + float(offset_angstrom)
+
+    vox_coords = ((pts - origin[None, :]) @ inv_step_mat.T).T
+    rho_slice = map_coordinates(
+        np.asarray(vol_data.grid_data, dtype=np.float64),
+        vox_coords,
+        order=1,
+        mode="constant",
+        cval=0.0,
+    )
+
+    if log_scale:
+        vals = np.log10(np.maximum(np.abs(rho_slice), 1e-6))
+        pos_vals = vals[vals > -5.9]
+        vmin = max(-6.0, float(np.percentile(pos_vals, 5)) if len(pos_vals) > 0 else -5.0)
+        vmax = max(vmin + 0.5, float(np.max(vals)))
+        cbar_title = "log10 Density (e/a0^3)"
+    else:
+        vals = rho_slice
+        vmin = float(np.min(vals))
+        vmax = max(vmin + 1e-6, float(np.max(vals)))
+        cbar_title = "Density rho (e/a0^3)"
+
+    norm_val = np.clip((vals - vmin) / max(1e-9, vmax - vmin), 0.0, 1.0)
+    try:
+        import matplotlib as mpl
+        cmap = mpl.colormaps.get(colormap_name, mpl.colormaps["viridis"])
+        rgb = cmap(norm_val)[:, :3].astype(np.float32)
+    except Exception:
+        rgb = np.column_stack([norm_val, 0.5 * (1.0 - np.abs(2.0 * norm_val - 1.0)), 1.0 - norm_val]).astype(np.float32)
+
+    idx_grid = np.arange(res * res, dtype=np.uint32).reshape(res, res)
+    i00 = idx_grid[:-1, :-1].ravel()
+    i10 = idx_grid[1:, :-1].ravel()
+    i01 = idx_grid[:-1, 1:].ravel()
+    i11 = idx_grid[1:, 1:].ravel()
+    faces = np.vstack([
+        np.column_stack([i00, i10, i11]),
+        np.column_stack([i00, i11, i01]),
+    ]).astype(np.uint32)
+
+    normals = np.tile(n_vec, (res * res, 1))
+    return IsosurfaceMesh(
+        isovalue=0.0,
+        vertices=pts.astype(np.float32),
+        normals=normals,
+        faces=faces,
+        color=(0.2, 0.7, 0.6),
+        vertex_colors=rgb,
+        surface_values=vals.astype(np.float32),
+        esp_range=(vmin, vmax),
+        colormap_name=colormap_name,
+        colorbar_title=cbar_title,
+    )
+
+
+def build_density_mapped_vdw_mesh(
+    vol_data: VolumetricData,
+    vdw_scale: float = 0.85,
+    colormap_name: str = "viridis",
+    log_scale: bool = False,
+    grid_n: int = 48,
+) -> Optional[IsosurfaceMesh]:
+    """Map 3D density onto a smooth Gaussian vdW molecular envelope (like 3D ESP-mapped density)."""
+    import math
+    from scipy.ndimage import map_coordinates
+
+    coords = np.asarray(vol_data.atom_coords, dtype=np.float64)
+    if len(coords) == 0:
+        return build_density_colormap_slice_mesh(vol_data, colormap_name=colormap_name, log_scale=log_scale)
+
+    try:
+        from .elements import get_vdw_radius
+        radii = np.array([max(0.8, float(get_vdw_radius(s))) for s in vol_data.symbols], dtype=np.float64)
+    except Exception:
+        radii = np.full(len(coords), 1.7, dtype=np.float64)
+
+    eff_radii = radii * max(0.4, float(vdw_scale))
+    pad = float(np.max(eff_radii)) + 1.5
+    p_min = np.min(coords, axis=0) - pad
+    p_max = np.max(coords, axis=0) + pad
+    n = max(24, int(grid_n))
+    xs = np.linspace(p_min[0], p_max[0], n, dtype=np.float64)
+    ys = np.linspace(p_min[1], p_max[1], n, dtype=np.float64)
+    zs = np.linspace(p_min[2], p_max[2], n, dtype=np.float64)
+    dx, dy, dz = (p_max[0] - p_min[0]) / (n - 1), (p_max[1] - p_min[1]) / (n - 1), (p_max[2] - p_min[2]) / (n - 1)
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+
+    field = np.zeros((n, n, n), dtype=np.float64)
+    for (ax, ay, az), rad in zip(coords, eff_radii):
+        r2 = (X - ax) ** 2 + (Y - ay) ** 2 + (Z - az) ** 2
+        field += np.exp(-r2 / (rad * rad))
+
+    env_vol = VolumetricData(
+        title="vdW Envelope",
+        comment="metaball",
+        symbols=list(vol_data.symbols),
+        atom_coords=coords,
+        origin=p_min,
+        voxels_x=n,
+        voxels_y=n,
+        voxels_z=n,
+        step_x=np.array([dx, 0.0, 0.0]),
+        step_y=np.array([0.0, dy, 0.0]),
+        step_z=np.array([0.0, 0.0, dz]),
+        grid_data=field,
+        is_orbital=False,
+    )
+    mesh = extract_isosurface(env_vol, isovalue=math.exp(-1.0), color=(0.2, 0.7, 0.6))
+    if mesh is None or len(mesh.vertices) == 0:
+        return build_density_colormap_slice_mesh(vol_data, colormap_name=colormap_name, log_scale=log_scale)
+
+    origin = np.asarray(vol_data.origin, dtype=np.float64)
+    step_mat = np.column_stack([
+        np.asarray(vol_data.step_x, dtype=np.float64),
+        np.asarray(vol_data.step_y, dtype=np.float64),
+        np.asarray(vol_data.step_z, dtype=np.float64),
+    ])
+    inv_step_mat = np.linalg.inv(step_mat)
+    vox_coords = ((np.asarray(mesh.vertices, dtype=np.float64) - origin[None, :]) @ inv_step_mat.T).T
+    rho_verts = map_coordinates(
+        np.asarray(vol_data.grid_data, dtype=np.float64),
+        vox_coords,
+        order=1,
+        mode="constant",
+        cval=0.0,
+    )
+
+    if log_scale:
+        vals = np.log10(np.maximum(np.abs(rho_verts), 1e-6))
+        cbar_title = "log10 Density (e/a0^3)"
+    else:
+        vals = rho_verts
+        cbar_title = "Density rho (e/a0^3)"
+
+    vmin = float(np.percentile(vals, 2))
+    vmax = max(vmin + 1e-6, float(np.percentile(vals, 98)))
+    norm_val = np.clip((vals - vmin) / (vmax - vmin), 0.0, 1.0)
+    try:
+        import matplotlib as mpl
+        cmap = mpl.colormaps.get(colormap_name, mpl.colormaps["viridis"])
+        rgb = cmap(norm_val)[:, :3].astype(np.float32)
+    except Exception:
+        rgb = np.column_stack([norm_val, 0.5 * (1.0 - np.abs(2.0 * norm_val - 1.0)), 1.0 - norm_val]).astype(np.float32)
+
+    mesh.vertex_colors = rgb
+    mesh.surface_values = vals.astype(np.float32)
+    mesh.esp_range = (vmin, vmax)
+    mesh.colormap_name = colormap_name
+    mesh.colorbar_title = cbar_title
+    return mesh

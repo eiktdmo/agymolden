@@ -161,7 +161,7 @@ class IBODialog(QtWidgets.QDialog):
             self.tbl_ibos.setItem(r, 3, QtWidgets.QTableWidgetItem(atoms_summary))
 
             btn_view = QtWidgets.QPushButton("👁️ View 3D")
-            btn_view.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold;")
+            btn_view.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
             btn_view.clicked.connect(lambda _, idx=orb.index, coeff=orb.coeff: self._emit_view(idx, coeff))
             self.tbl_ibos.setCellWidget(r, 4, btn_view)
 

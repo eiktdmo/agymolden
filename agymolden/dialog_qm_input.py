@@ -133,7 +133,8 @@ class QMCalculationDialog(QtWidgets.QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Quantum Chemistry Calculation Setup")
-        self.resize(780, 720)
+        from .theme import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 780, 680)
 
         self.symbols = symbols
         self.coords = coords
@@ -267,7 +268,11 @@ class QMCalculationDialog(QtWidgets.QDialog):
         self._populate_scan_defaults_from_selection()
         t1_layout.addRow(self.grp_pes_scan)
 
-        tabs.addTab(tab1, "Job & Method")
+        tab1_scroll = QtWidgets.QScrollArea()
+        tab1_scroll.setWidgetResizable(True)
+        tab1_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        tab1_scroll.setWidget(tab1)
+        tabs.addTab(tab1_scroll, "Job & Method")
 
         # Tab 2: System & Solvation
         tab2 = QtWidgets.QWidget()
@@ -311,6 +316,13 @@ class QMCalculationDialog(QtWidgets.QDialog):
         t2_layout.addRow("Title / Comment:", self.txt_title)
 
         tabs.addTab(tab2, "Charge & Solvation")
+
+        for cb in (self.combo_qm_code, self.combo_job_type, self.combo_method, self.combo_basis, self.combo_dispersion, self.combo_solvent):
+            cb.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(18)
+            cb.setMinimumHeight(30)
+            cb.view().setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
+            cb.view().setMinimumWidth(max(320, cb.sizeHint().width() + 28))
 
         # Tab 3: Hardware & Extra Options
         tab3 = QtWidgets.QWidget()
@@ -412,6 +424,12 @@ class QMCalculationDialog(QtWidgets.QDialog):
         btn_save.setStyleSheet("background-color: #2563eb; font-weight: bold;")
         btn_save.clicked.connect(self._on_save_file)
         btn_layout.addWidget(btn_save)
+
+        self.btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in Agemacs")
+        self.btn_open_agemacs.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 10px;")
+        self.btn_open_agemacs.setToolTip("Send this generated QM input file directly to Agemacs")
+        self.btn_open_agemacs.clicked.connect(self._on_open_in_agemacs)
+        btn_layout.addWidget(self.btn_open_agemacs)
 
         btn_cluster = QtWidgets.QPushButton("🖥️ Cluster / HPC Script...")
         btn_cluster.setStyleSheet("background-color: #4338ca; color: white; font-weight: bold; padding: 4px 10px;")
@@ -913,4 +931,15 @@ class QMCalculationDialog(QtWidgets.QDialog):
                 main_win.set_molecule_from_zatoms(zat)
         dlg.pipeline_completed_with_geom.connect(_on_geom)
         dlg.exec()
+
+    def _on_open_in_agemacs(self):
+        """Send the generated QM input text to Agemacs."""
+        from .companion import send_text_to_agemacs
+
+        ext = self.lbl_ext.text().strip() or ".inp"
+        if not ext.startswith("."):
+            ext = "." + ext
+        content = self.text_preview.toPlainText()
+        if not send_text_to_agemacs(f"agymolden_input{ext}", content, self):
+            QtWidgets.QMessageBox.information(self, "Open in Agemacs", "Could not launch 'agemacs'.")
 

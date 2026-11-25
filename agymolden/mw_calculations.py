@@ -1339,7 +1339,7 @@ class CalculationsMixin:
         isovalue = self.spin_quick_iso.value() if hasattr(self, "spin_quick_iso") else 0.030
         opacity = (self.slider_quick_opacity.value() / 100.0) if hasattr(self, "slider_quick_opacity") else 0.80
         n_pts = int(self.combo_quick_grid.currentData() or 40) if hasattr(self, "combo_quick_grid") else 40
-        margin_b = float(self.spin_quick_margin.value()) if hasattr(self, "spin_quick_margin") else 3.0
+        margin_b = float(self.spin_quick_margin.value()) if hasattr(self, "spin_quick_margin") else 5.5
 
         molden_path = self._active_molden_path
         self.statusBar().showMessage(f"Computing 3D orbital mesh for MO #{mo_index+1} ({n_pts}³ grid, margin {margin_b:.1f} a₀)...", 3000)
@@ -1446,6 +1446,26 @@ class CalculationsMixin:
         from .controllers import OrbitalController
         OrbitalController(self).quick_view_homo_lumo_duality()
 
+    def _on_quick_view_electron_density(self):
+        """1-Click Total Electron Density ρ(r) evaluation and 3D rendering."""
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_electron_density()
+
+    def _on_quick_view_density_colormap(self):
+        """1-Click 3D Density Color Map (Slice Plane) from active Molden file."""
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_density_colormap()
+
+    def _on_update_quick_density_colormap(self):
+        """Live re-slice the cached density grid with updated colormap/plane/offset/log."""
+        from .controllers import OrbitalController
+        OrbitalController(self).update_quick_density_colormap()
+
+    def _on_quick_view_density_2d(self):
+        """Open 2D Density Contour Map dialog pre-selected to Electron Density."""
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_density_2d()
+
     def _on_quick_view_spin_density(self):
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
         from .controllers import OrbitalController
@@ -1474,6 +1494,16 @@ class CalculationsMixin:
         """Evaluate the companion positron ground-state orbital and overlay it (gold/green) onto the 3D viewport."""
         from .controllers import OrbitalController
         OrbitalController(self).overlay_positron_orbital()
+
+    def _on_overlay_positron_density(self):
+        """Evaluate companion positron density ρ₊ and overlay it (gold) onto the 3D viewport."""
+        from .controllers import OrbitalController
+        OrbitalController(self).overlay_positron_density()
+
+    def _on_view_annihilation_density(self):
+        """Evaluate shared-grid electron-positron annihilation density ρ₋·ρ₊."""
+        from .controllers import OrbitalController
+        OrbitalController(self).quick_view_annihilation_density()
 
     def _on_quick_slider_iso_changed(self, val: int):
         iso = val / 1000.0

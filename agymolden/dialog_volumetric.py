@@ -28,10 +28,13 @@ from .volumetric import (
     generate_orbital_surfaces,
     evaluate_molden_orbital_grid,
     compute_molden_esp_grid,
+    compute_molden_electron_density_grid,
     compute_molden_spin_density_grid,
     compute_molden_esp_mapped_density,
     compute_molden_nci_rdg,
     compute_molden_alie_mapped_density,
+    build_density_colormap_slice_mesh,
+    build_density_mapped_vdw_mesh,
     compute_molden_orbital_decomposition,
     compute_molden_elf_grid,
     compute_molden_localized_orbitals,
@@ -131,42 +134,42 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         prop_layout.addWidget(self.btn_esp_mapped, 0, 0)
 
         self.btn_calc_esp = QtWidgets.QPushButton("⚡ 3D ESP Isopotential Lobes (±V)")
-        self.btn_calc_esp.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_calc_esp.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_calc_esp.setToolTip("Calculate exact 3D electrostatic potential grid and display positive (+V) and negative (-V) isopotential lobes")
         self.btn_calc_esp.clicked.connect(self._on_compute_esp)
         prop_layout.addWidget(self.btn_calc_esp, 0, 1)
 
         self.btn_spin_density = QtWidgets.QPushButton("🌀 Spin Density")
-        self.btn_spin_density.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_spin_density.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_spin_density.setToolTip("Compute open-shell spin density distribution (rho_alpha - rho_beta)")
         self.btn_spin_density.clicked.connect(self._on_compute_spin_density)
         prop_layout.addWidget(self.btn_spin_density, 1, 0)
 
         self.btn_esp_2d = QtWidgets.QPushButton("📈 2D ESP Contours...")
-        self.btn_esp_2d.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_esp_2d.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_esp_2d.setToolTip("Plot 2D ESP slice contours on XY, XZ, or YZ planes with atom overlays")
         self.btn_esp_2d.clicked.connect(self._on_open_esp_2d)
         prop_layout.addWidget(self.btn_esp_2d, 1, 1)
 
         self.btn_calc_elf = QtWidgets.QPushButton("⚡ ELF Localization")
-        self.btn_calc_elf.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_calc_elf.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_calc_elf.setToolTip("Becke-Edgecombe Electron Localization Function (ELF, 0.0 - 1.0) for chemical bond & lone pair visualization")
         self.btn_calc_elf.clicked.connect(self._on_compute_elf)
         prop_layout.addWidget(self.btn_calc_elf, 2, 0)
 
         self.btn_localize_mo = QtWidgets.QPushButton("🔍 Localize Orbitals")
-        self.btn_localize_mo.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_localize_mo.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_localize_mo.setToolTip("Transform canonical molecular orbitals to localized MOs (Boys or Pipek-Mezey bonds & lone pairs)")
         self.btn_localize_mo.clicked.connect(self._on_compute_localized_orbitals)
         prop_layout.addWidget(self.btn_localize_mo, 2, 1)
 
         self.btn_calc_nci = QtWidgets.QPushButton("🌿 NCI / RDG (Interactions)")
-        self.btn_calc_nci.setStyleSheet("background-color: #15803d; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_calc_nci.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_calc_nci.setToolTip("Reduced Density Gradient (RDG): Visualizes non-covalent interactions (Blue = H-bond, Green = vdW, Red = steric clash)")
         self.btn_calc_nci.clicked.connect(self._on_compute_nci_rdg)
 
         self.btn_nci_plot = QtWidgets.QPushButton("📈 NCI 2D Plot...")
-        self.btn_nci_plot.setStyleSheet("background-color: #047857; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_nci_plot.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_nci_plot.setToolTip("Open interactive 2D Reduced Density Gradient (RDG) vs sign(λ₂)ρ scatter plot")
         self.btn_nci_plot.clicked.connect(self._on_open_nci_plot)
 
@@ -176,22 +179,34 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         prop_layout.addLayout(nci_h_box, 3, 0)
 
         self.btn_calc_alie = QtWidgets.QPushButton("🎯 ALIE Reactive Sites")
-        self.btn_calc_alie.setStyleSheet("background-color: #be185d; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_calc_alie.setStyleSheet("background-color: #d97706; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_calc_alie.setToolTip("Average Local Ionization Energy (ALIE): Identifies electrophilic attack & radical reaction sites (surface minima)")
         self.btn_calc_alie.clicked.connect(self._on_compute_alie)
         prop_layout.addWidget(self.btn_calc_alie, 3, 1)
 
         self.btn_calc_chelpg = QtWidgets.QPushButton("🎯 CHELPG Partial Charges")
-        self.btn_calc_chelpg.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_calc_chelpg.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_calc_chelpg.setToolTip("Fit electrostatic potential to atomic centers (Fast / Accurate)")
         self.btn_calc_chelpg.clicked.connect(self._on_compute_chelpg)
         prop_layout.addWidget(self.btn_calc_chelpg, 4, 0)
 
         self.btn_multiwfn_suite = QtWidgets.QPushButton("⚡ Multiwfn Suite (Bonds/Fukui/QTAIM/CM5)")
-        self.btn_multiwfn_suite.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_multiwfn_suite.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_multiwfn_suite.setToolTip("Open full Multiwfn Electronic Structure suite: Mayer/Wiberg bond orders, Conceptual DFT Fukui/Dual descriptors, QTAIM BCPs, CM5/Hirshfeld charges")
         self.btn_multiwfn_suite.clicked.connect(self._on_open_multiwfn_suite)
         prop_layout.addWidget(self.btn_multiwfn_suite, 4, 1)
+
+        self.btn_electron_density = QtWidgets.QPushButton("☁️ Electron Density (ρ)")
+        self.btn_electron_density.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_electron_density.setToolTip("Evaluate total electron density ρ(r) on a 3D grid from the loaded Molden wavefunction")
+        self.btn_electron_density.clicked.connect(self._on_compute_electron_density)
+        prop_layout.addWidget(self.btn_electron_density, 5, 0)
+
+        self.btn_density_colormap = QtWidgets.QPushButton("🌈 Density Color Map (3D)")
+        self.btn_density_colormap.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_density_colormap.setToolTip("Map total electron density ρ(r) onto a 3D molecular surface (like ESP-mapped density) or a 3D slice plane")
+        self.btn_density_colormap.clicked.connect(self._on_compute_density_colormap)
+        prop_layout.addWidget(self.btn_density_colormap, 5, 1)
 
         self.grp_properties.setVisible(False)
         layout.addWidget(self.grp_properties)
@@ -309,6 +324,64 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
         self.grp_esp_mapped.setVisible(False)
         layout.addWidget(self.grp_esp_mapped)
 
+        # Reactive Density Color Map Controls (3D Molecular Surface or Slice)
+        self.grp_dens_cmap = QtWidgets.QGroupBox("🌈 Density Color Map Controls (Live 3D)")
+        dc_layout = QtWidgets.QFormLayout(self.grp_dens_cmap)
+        dc_layout.setSpacing(6)
+
+        self.combo_dens_cmap = QtWidgets.QComboBox()
+        for cmap_lbl, cmap_key in [
+            ("viridis (Perceptual Blue-Green-Yellow)", "viridis"),
+            ("plasma (Purple-Orange-Yellow)", "plasma"),
+            ("inferno (Dark-Red-Yellow)", "inferno"),
+            ("magma (Dark-Magenta-Cream)", "magma"),
+            ("turbo (High-Contrast Rainbow)", "turbo"),
+            ("jet (Classic Multiwfn Rainbow)", "jet"),
+            ("coolwarm (Blue-White-Red)", "coolwarm"),
+        ]:
+            self.combo_dens_cmap.addItem(cmap_lbl, cmap_key)
+        self.combo_dens_cmap.currentIndexChanged.connect(self._update_density_colormap_slice)
+        dc_layout.addRow("Palette:", self.combo_dens_cmap)
+
+        self.combo_dens_plane = QtWidgets.QComboBox()
+        self.combo_dens_plane.addItem("3D Molecular Surface (vdW)", "VDW")
+        self.combo_dens_plane.addItem("3D Slice: Auto Plane", "AUTO")
+        self.combo_dens_plane.addItem("3D Slice: XY Plane", "XY")
+        self.combo_dens_plane.addItem("3D Slice: XZ Plane", "XZ")
+        self.combo_dens_plane.addItem("3D Slice: YZ Plane", "YZ")
+        self.combo_dens_plane.currentIndexChanged.connect(self._update_density_colormap_slice)
+        dc_layout.addRow("Mode / Plane:", self.combo_dens_plane)
+
+        row_doff = QtWidgets.QHBoxLayout()
+        self.slider_dens_offset = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_dens_offset.setRange(-100, 100)
+        self.slider_dens_offset.setValue(0)
+        self.spin_dens_offset = QtWidgets.QDoubleSpinBox()
+        self.spin_dens_offset.setRange(-10.0, 10.0)
+        self.spin_dens_offset.setDecimals(1)
+        self.spin_dens_offset.setSingleStep(0.2)
+        self.spin_dens_offset.setValue(0.0)
+        self.spin_dens_offset.setSuffix(" Å")
+        self.slider_dens_offset.valueChanged.connect(lambda v: (self.spin_dens_offset.blockSignals(True), self.spin_dens_offset.setValue(v / 10.0), self.spin_dens_offset.blockSignals(False), self._update_density_colormap_slice()))
+        self.spin_dens_offset.valueChanged.connect(lambda v: (self.slider_dens_offset.blockSignals(True), self.slider_dens_offset.setValue(int(round(v * 10.0))), self.slider_dens_offset.blockSignals(False), self._update_density_colormap_slice()))
+        row_doff.addWidget(self.slider_dens_offset, stretch=1)
+        row_doff.addWidget(self.spin_dens_offset)
+        dc_layout.addRow("Slice Offset:", row_doff)
+
+        row_dscale = QtWidgets.QHBoxLayout()
+        self.chk_dens_log = QtWidgets.QCheckBox("Log10 Scale (core + valence)")
+        self.chk_dens_log.setChecked(False)
+        self.chk_dens_log.toggled.connect(self._update_density_colormap_slice)
+        row_dscale.addWidget(self.chk_dens_log)
+        btn_open_2d_dens = QtWidgets.QPushButton("📈 2D Contour Map...")
+        btn_open_2d_dens.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; padding: 3px 8px;")
+        btn_open_2d_dens.clicked.connect(self._on_open_density_2d)
+        row_dscale.addWidget(btn_open_2d_dens)
+        dc_layout.addRow("Scale / 2D:", row_dscale)
+
+        self.grp_dens_cmap.setVisible(False)
+        layout.addWidget(self.grp_dens_cmap)
+
         # Isosurface Parameters Group
         grp_params = QtWidgets.QGroupBox("Marching Cubes Isosurface Controls")
         p_layout = QtWidgets.QFormLayout(grp_params)
@@ -388,10 +461,10 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         # Plot Box Size / Margin (Bohr)
         self.spin_box_margin = QtWidgets.QDoubleSpinBox()
-        self.spin_box_margin.setRange(1.0, 15.0)
+        self.spin_box_margin.setRange(1.0, 30.0)
         self.spin_box_margin.setDecimals(1)
         self.spin_box_margin.setSingleStep(0.5)
-        self.spin_box_margin.setValue(3.0)
+        self.spin_box_margin.setValue(5.5)
         self.spin_box_margin.setSuffix(" a₀ (Bohr)")
         self.spin_box_margin.setToolTip(
             "Plot box padding beyond the outer atoms (in Bohr). Increase if diffuse orbital lobes or surfaces are clipped at the box boundary."
@@ -822,10 +895,21 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return int(self.combo_grid_points.currentData() or default)
         return default
 
-    def _get_box_margin(self, default: float = 3.0) -> float:
+    def _get_box_margin(self, default: float = 5.5) -> float:
         if hasattr(self, "spin_box_margin"):
             return float(self.spin_box_margin.value())
         return default
+
+    def _warn_pyscf_or_failure(self, title: str, fallback_msg: str) -> None:
+        """Show an actionable PySCF installation message when pyscf is absent, else fallback_msg."""
+        import importlib.util
+
+        if importlib.util.find_spec("pyscf") is None:
+            from .multiwfn_analysis import PYSCF_MISSING_MESSAGE
+
+            QtWidgets.QMessageBox.warning(self, "PySCF Required", PYSCF_MISSING_MESSAGE)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, fallback_msg)
 
     def _on_grid_points_changed(self):
         if self.current_molden_path and self.grp_mo.isVisible():
@@ -838,14 +922,14 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             return
 
         n_pts = self._get_grid_pts(40)
-        margin_b = max(3.5, self._get_box_margin(3.5))
+        margin_b = max(5.5, self._get_box_margin(5.5))
 
         def _compute():
             return compute_molden_esp_grid(self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
 
         def _on_done(esp_vol):
             if esp_vol is None:
-                QtWidgets.QMessageBox.warning(self, "ESP Calculation", "Could not calculate ESP from current Molden file.")
+                self._warn_pyscf_or_failure("ESP Calculation", "Could not calculate ESP from current Molden file.")
                 return
 
             self.current_vol_data = esp_vol
@@ -907,6 +991,147 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
             _on_done,
             _on_error,
         )
+
+    def _on_compute_electron_density(self):
+        """Compute total electron density ρ(r) 3D grid from the loaded Molden file and display isosurface."""
+        if not self.current_molden_path:
+            QtWidgets.QMessageBox.information(self, "Electron Density", "Please load a .molden file first.")
+            return
+
+        n_pts = self._get_grid_pts(40)
+        margin_b = self._get_box_margin(5.5)
+
+        def _compute():
+            return compute_molden_electron_density_grid(
+                self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b
+            )
+
+        def _on_done(dens_vol):
+            if dens_vol is None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Electron Density", "Could not calculate electron density from current Molden file."
+                )
+                return
+
+            self.current_vol_data = dens_vol
+            max_val = float(np.max(dens_vol.grid_data))
+            is_pos = "positron" in os.path.basename(self.current_molden_path).lower()
+            if is_pos:
+                sugg_iso = 0.001 if max_val > 0.0015 else max(0.0001, round(max_val * 0.25, 5))
+                self.pos_color = (0.95, 0.72, 0.12)
+            else:
+                sugg_iso = 0.02 if max_val > 0.025 else max(0.0005, round(max_val * 0.25, 4))
+
+            self.spin_iso.blockSignals(True)
+            self.spin_iso.setMaximum(max(1.0, round(max_val * 1.1, 3)))
+            self.spin_iso.setValue(sugg_iso)
+            self.spin_iso.blockSignals(False)
+            self.slider_iso.blockSignals(True)
+            self.slider_iso.setMaximum(max(100, int(round(max_val * 1100.0))))
+            self.slider_iso.setValue(max(1, int(round(sugg_iso * 1000.0))))
+            self.slider_iso.blockSignals(False)
+
+            dx = float(np.linalg.norm(dens_vol.step_x)) * 1.8897259886
+            dy = float(np.linalg.norm(dens_vol.step_y)) * 1.8897259886
+            dz = float(np.linalg.norm(dens_vol.step_z)) * 1.8897259886
+            n_elec = float(np.sum(dens_vol.grid_data)) * dx * dy * dz
+
+            self.lbl_info.setText(
+                f"<b>{dens_vol.title}</b>: Evaluated electron density grid "
+                f"({dens_vol.voxels_x}×{dens_vol.voxels_y}×{dens_vol.voxels_z}). "
+                f"Max ρ: {max_val:.4f} e/a₀³, ∫ρ dV ≈ {n_elec:.2f} e⁻"
+            )
+            if hasattr(self, "grp_dens_cmap"):
+                self.grp_dens_cmap.setVisible(True)
+            self._update_surface()
+
+        def _on_error(e):
+            QtWidgets.QMessageBox.critical(self, "Electron Density Error", f"Failed to compute electron density:\n{e}")
+
+        run_in_background(
+            self, "Electron Density", "Evaluating total electron density ρ(r) on 3D grid...", _compute, _on_done, _on_error
+        )
+
+    def _update_density_colormap_slice(self):
+        """Render or live-update the 3D color-mapped density surface (vdW) or slice plane."""
+        if self.current_vol_data is None:
+            return
+        cmap_name = self.combo_dens_cmap.currentData() or "viridis"
+        plane = self.combo_dens_plane.currentData() or "VDW"
+        offset = float(self.spin_dens_offset.value())
+        log_scale = self.chk_dens_log.isChecked()
+        if plane == "VDW":
+            mesh = build_density_mapped_vdw_mesh(
+                self.current_vol_data,
+                vdw_scale=max(0.5, 0.85 + 0.05 * offset),
+                colormap_name=cmap_name,
+                log_scale=log_scale,
+            )
+        else:
+            mesh = build_density_colormap_slice_mesh(
+                self.current_vol_data,
+                plane=plane,
+                offset_angstrom=offset,
+                colormap_name=cmap_name,
+                log_scale=log_scale,
+            )
+        opacity = self.slider_opacity.value() / 100.0
+        self.surface_updated.emit([mesh], opacity)
+        if hasattr(self, "grp_esp_mapped"):
+            self.grp_esp_mapped.setVisible(False)
+        self.grp_dens_cmap.setVisible(True)
+        vmin, vmax = mesh.esp_range or (0.0, 1.0)
+        self.lbl_stats.setText(
+            f"Density Color Map ({cmap_name}, {plane} @ {offset:+.1f} Å): range [{vmin:.2g}, {vmax:.2g}]"
+        )
+
+    def _on_compute_density_colormap(self):
+        """Plot total electron density ρ(r) as a 3D color-mapped slice (auto-computing from Molden if needed)."""
+        if self.current_vol_data is not None and not getattr(self.current_vol_data, "is_orbital", False):
+            self._update_density_colormap_slice()
+            return
+        if not self.current_molden_path:
+            QtWidgets.QMessageBox.information(self, "Density Color Map", "Please load a .molden or .cube file first.")
+            return
+
+        n_pts = self._get_grid_pts(40)
+        margin_b = self._get_box_margin(5.5)
+
+        def _compute():
+            return compute_molden_electron_density_grid(
+                self.current_molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b
+            )
+
+        def _on_done(dens_vol):
+            if dens_vol is None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Density Color Map", "Could not calculate electron density from current Molden file."
+                )
+                return
+            self.current_vol_data = dens_vol
+            self._update_density_colormap_slice()
+
+        def _on_error(e):
+            QtWidgets.QMessageBox.critical(self, "Density Color Map Error", f"Failed to compute density:\n{e}")
+
+        run_in_background(
+            self, "Density Color Map", "Evaluating electron density ρ(r) for 3D color map...", _compute, _on_done, _on_error
+        )
+
+    def _on_open_density_2d(self):
+        """Open the 2D Slicer pre-selected to Electron Density (ρ) color contour map."""
+        if not self.current_molden_path and not self.current_vol_data:
+            return
+        try:
+            dlg = ESP2DContourDialog(
+                self,
+                molden_path=self.current_molden_path,
+                vol_data=self.current_vol_data,
+                initial_property="RHO",
+            )
+            dlg.exec()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "2D Density Map Error", f"Could not launch 2D Density Map:\n{e}")
 
     def _on_compute_spin_density(self):
         """Compute open-shell spin density 3D grid and display isosurfaces."""
@@ -1069,7 +1294,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         def _on_done(mesh):
             if mesh is None:
-                QtWidgets.QMessageBox.warning(self, "ESP-Mapped Density", "Could not generate ESP-mapped surface from current Molden file.")
+                self._warn_pyscf_or_failure("ESP-Mapped Density", "Could not generate ESP-mapped surface from current Molden file.")
                 return
 
             self._cached_esp_mapped_mesh = mesh
@@ -1123,7 +1348,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         def _on_done(mesh):
             if mesh is None:
-                QtWidgets.QMessageBox.warning(self, "NCI / RDG Analysis", "Could not generate NCI/RDG surface from current Molden file.")
+                self._warn_pyscf_or_failure("NCI / RDG Analysis", "Could not generate NCI/RDG surface from current Molden file.")
                 return
 
             opacity = self.slider_opacity.value() / 100.0
@@ -1169,7 +1394,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         def _on_done(mesh):
             if mesh is None:
-                QtWidgets.QMessageBox.warning(self, "ALIE Analysis", "Could not generate ALIE surface from current Molden file.")
+                self._warn_pyscf_or_failure("ALIE Analysis", "Could not generate ALIE surface from current Molden file.")
                 return
 
             opacity = self.slider_opacity.value() / 100.0
@@ -1205,7 +1430,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         def _on_done(res):
             if res is None:
-                QtWidgets.QMessageBox.warning(self, "CHELPG Charges", "Could not calculate CHELPG charges from current Molden file.")
+                self._warn_pyscf_or_failure("CHELPG Charges", "Could not calculate CHELPG charges from current Molden file.")
                 return
 
             charges, rmse = res
@@ -1259,7 +1484,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         def _on_done(elf_vol):
             if elf_vol is None:
-                QtWidgets.QMessageBox.warning(self, "ELF Calculation", "Could not calculate ELF from current Molden file.")
+                self._warn_pyscf_or_failure("ELF Calculation", "Could not calculate ELF from current Molden file.")
                 return
 
             self.current_vol_data = elf_vol
@@ -1414,7 +1639,7 @@ class VolumetricSurfaceDialog(QtWidgets.QDialog):
 
         # Attempt exact analytic GTO evaluation first if basis is available
         if self.current_molden_path:
-            margin_b = self._get_box_margin(3.0)
+            margin_b = self._get_box_margin(5.5)
             def _eval_mo():
                 vol = evaluate_molden_orbital_grid(self.current_molden_path, orbital_index=idx, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
                 decomp = compute_molden_orbital_decomposition(self.current_molden_path, orbital_index=idx) if vol else []

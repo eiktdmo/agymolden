@@ -139,6 +139,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
         # Restore window geometry & state from previous session
         self._restore_window_state()
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                from .session_state import get_settings
+
+                if get_settings("Preferences").value("ui/simple_mode", False, type=bool):
+                    self._on_toggle_simple_mode(True)
+            except Exception:
+                pass
 
         # Start with no molecule (empty workspace, like Molden)
         self.set_molecule_from_zatoms([])
@@ -304,8 +312,21 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.redo_stack.clear()
         self._update_undo_redo_actions()
 
+    def _is_2d_sketcher_focused(self) -> bool:
+        """Return True when the embedded 2D | 3D sketcher pane is active and holds keyboard focus."""
+        pane = getattr(self, "sketcher_2d_pane", None)
+        split_btn = getattr(self, "btn_2d_3d_split", None)
+        if pane is None or split_btn is None or not split_btn.isChecked() or not pane.isVisibleTo(self):
+            return False
+        focus_w = QtWidgets.QApplication.focusWidget()
+        return bool(focus_w is not None and (focus_w is pane or pane.isAncestorOf(focus_w)))
+
     def undo(self):
-        """Undo last molecular modification."""
+        """Undo last molecular modification (routes to 2D sketcher when focused in 2D | 3D mode)."""
+        if self._is_2d_sketcher_focused():
+            self.sketcher_2d_pane._on_undo()
+            self.statusBar().showMessage("2D Sketcher Undo.", 2500)
+            return
         if not self.undo_stack:
             self.statusBar().showMessage("Nothing to undo.", 2500)
             return
@@ -326,7 +347,11 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         self.statusBar().showMessage("Undo: Restored previous state.", 3000)
 
     def redo(self):
-        """Redo last undone molecular modification."""
+        """Redo last undone molecular modification (routes to 2D sketcher when focused in 2D | 3D mode)."""
+        if self._is_2d_sketcher_focused():
+            self.sketcher_2d_pane._on_redo()
+            self.statusBar().showMessage("2D Sketcher Redo.", 2500)
+            return
         if not self.redo_stack:
             self.statusBar().showMessage("Nothing to redo.", 2500)
             return
@@ -631,6 +656,8 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
     def _update_chemical_summary(self):
         """Update the permanent molecular formula and weight status in real time."""
+        if hasattr(self, "_update_welcome_banner"):
+            self._update_welcome_banner()
         if not hasattr(self, "lbl_chem_summary"):
             return
         symbols = [a.symbol for a in self.zatoms if a.symbol != "X"]
@@ -721,7 +748,7 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             if hasattr(self, "btn_preflight_badge"):
                 if len(symbols) == 0:
                     self.btn_preflight_badge.setText("⚪ Empty")
-                    self.btn_preflight_badge.setStyleSheet("background-color: #475569; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;")
+                    self.btn_preflight_badge.setStyleSheet("background-color: #0284c7; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 2px 4px;")
                     self.btn_preflight_badge.setToolTip("Pre-flight: No atoms in molecule.")
                 else:
                     self.btn_preflight_badge.setText("🟢 Ready")
@@ -1851,7 +1878,38 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             app.setStyleSheet(qss)
 
         is_white = (theme == "white")
-        # Dynamic theme-sensitive label and frame styles
+        # Dynamic theme-sensitive label, welcome banner, and checkable ribbon toggle styles
+        if hasattr(self, "welcome_banner"):
+            if is_white:
+                self.welcome_banner.setStyleSheet(
+                    "QFrame { background-color: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; padding: 4px 8px; }"
+                    "QPushButton { background-color: #2563eb; color: #ffffff; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+                    "QPushButton:hover { background-color: #1d4ed8; }"
+                )
+            else:
+                self.welcome_banner.setStyleSheet(
+                    "QFrame { background-color: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; }"
+                    "QPushButton { background-color: #0284c7; color: #ffffff; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+                    "QPushButton:hover { background-color: #0369a1; }"
+                )
+        if hasattr(self, "lbl_welcome_banner"):
+            self.lbl_welcome_banner.setStyleSheet(f"color: {'#1e293b' if is_white else '#e2e8f0'}; border: none;")
+
+        ribbon_toggle_specs = (
+            ("btn_ribbon_tweezers", "#dbeafe", "#1d4ed8", "#93c5fd", "#0c4a6e", "#bae6fd", "#0284c7", "#0284c7", "#38bdf8"),
+            ("btn_auto_relax", "#ede9fe", "#6d28d9", "#c4b5fd", "#3b1d6e", "#ddd6fe", "#7c3aed", "#7c3aed", "#a78bfa"),
+            ("btn_2d_3d_split", "#e0f2fe", "#0369a1", "#7dd3fc", "#0c4a6e", "#bae6fd", "#0284c7", "#0284c7", "#38bdf8"),
+            ("btn_toggle_right_pane", "#ccfbf1", "#0f766e", "#5eead4", "#134e4a", "#99f6e4", "#0d9488", "#0d9488", "#2dd4bf"),
+        )
+        for attr, w_bg, w_fg, w_bd, d_bg, d_fg, d_bd, chk_bg, chk_bd in ribbon_toggle_specs:
+            btn = getattr(self, attr, None)
+            if btn is not None:
+                bg, fg, bd = (w_bg, w_fg, w_bd) if is_white else (d_bg, d_fg, d_bd)
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {bg}; color: {fg}; font-weight: bold; padding: 2px 8px; border: 1px solid {bd}; border-radius: 3px; }}"
+                    f"QPushButton:checked {{ background-color: {chk_bg}; color: #ffffff; border: 1.5px solid {chk_bd}; }}"
+                )
+
         if hasattr(self, "lbl_measurement"):
             self.lbl_measurement.setStyleSheet(f"color: {'#0369a1' if is_white else '#38bdf8'}; font-weight: bold;")
         if hasattr(self, "lbl_live_geom"):

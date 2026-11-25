@@ -123,7 +123,8 @@ class QuickOrcaDialog(QtWidgets.QDialog):
     def __init__(self, parent: Optional[QtWidgets.QWidget], zatoms: List[ZAtom], coords: Optional[np.ndarray] = None):
         super().__init__(parent if isinstance(parent, QtWidgets.QWidget) else None)
         self.setWindowTitle("🚀 ORCA Quantum Chemistry Studio & Input Generator")
-        self.resize(680, 620)
+        from .theme import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 720, 660)
         self.zatoms = zatoms
         self.coords = coords
         self._syncing_route = False
@@ -146,7 +147,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         hdr_layout.addWidget(info_box, 1)
 
         btn_full_studio = QtWidgets.QPushButton("🎛️ Full Multi-Code QM Studio...")
-        btn_full_studio.setStyleSheet("background-color: #334155; color: white; padding: 5px 10px; font-size: 11px;")
+        btn_full_studio.setStyleSheet("background-color: #4f46e5; color: white; padding: 5px 10px; font-size: 11px; font-weight: bold;")
         btn_full_studio.setToolTip("Switch to the advanced multi-tab GaussView-style QM generator (Gaussian, ORCA, PySCF, xTB)")
         btn_full_studio.clicked.connect(self._on_switch_to_full_studio)
         hdr_layout.addWidget(btn_full_studio, 0, QtCore.Qt.AlignmentFlag.AlignTop)
@@ -165,8 +166,9 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         # 1. Theory & Basis Section
         grp_theory = QtWidgets.QGroupBox("1. Method, Basis Set & Job Type")
         theory_grid = QtWidgets.QGridLayout(grp_theory)
-        theory_grid.setVerticalSpacing(6)
+        theory_grid.setVerticalSpacing(8)
         theory_grid.setHorizontalSpacing(10)
+        theory_grid.setColumnStretch(1, 1)
 
         theory_grid.addWidget(QtWidgets.QLabel("Job Type:"), 0, 0)
         self.combo_job = QtWidgets.QComboBox()
@@ -207,7 +209,9 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         # 2. Environment (Solvent & Dispersion)
         grp_env = QtWidgets.QGroupBox("2. Environment & Dispersion")
         env_grid = QtWidgets.QGridLayout(grp_env)
-        env_grid.setVerticalSpacing(6)
+        env_grid.setVerticalSpacing(8)
+        env_grid.setHorizontalSpacing(10)
+        env_grid.setColumnStretch(1, 1)
 
         env_grid.addWidget(QtWidgets.QLabel("Solvent (CPCM):"), 0, 0)
         self.combo_solvent = QtWidgets.QComboBox()
@@ -256,6 +260,15 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         self.chk_esp.setChecked(False)
         self.chk_esp.toggled.connect(self._update_deck_preview)
         props_layout.addWidget(self.chk_esp, 2, 0)
+
+        self.chk_print_mos = QtWidgets.QCheckBox("⚛️ Print Molecular Orbitals && AO Composition")
+        self.chk_print_mos.setToolTip(
+            "Appends %output Print[P_MOs] 1, Print[P_ReducedOrbPopMO_L] 1, Print[P_Basis] 2 end "
+            "so ORCA prints full MO LCAO coefficients and per-MO atomic orbital percentages in the .out file."
+        )
+        self.chk_print_mos.setChecked(False)
+        self.chk_print_mos.toggled.connect(self._update_deck_preview)
+        props_layout.addWidget(self.chk_print_mos, 2, 1)
 
         opts_layout.addWidget(grp_props)
 
@@ -336,8 +349,19 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         row_route.addWidget(self.txt_route, 1)
         opts_layout.addLayout(row_route)
 
+        for cb in (self.combo_job, self.combo_method, self.combo_basis, self.combo_grid, self.combo_solvent, self.combo_dispersion):
+            cb.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(22)
+            cb.setMinimumHeight(30)
+            cb.view().setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
+            cb.view().setMinimumWidth(max(360, cb.sizeHint().width() + 28))
+
         opts_layout.addStretch()
-        self.tabs.addTab(tab_opts, "⚡ Calculation Setup")
+        opts_scroll = QtWidgets.QScrollArea()
+        opts_scroll.setWidgetResizable(True)
+        opts_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        opts_scroll.setWidget(tab_opts)
+        self.tabs.addTab(opts_scroll, "⚡ Calculation Setup")
 
         # -------------------------------------------------------------
         # Tab 2: Deck Preview
@@ -359,6 +383,14 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         btn_copy_deck = QtWidgets.QPushButton("📋 Copy Deck to Clipboard")
         btn_copy_deck.clicked.connect(self._on_copy_deck)
         row_prev_btns.addWidget(btn_copy_deck)
+        self.btn_open_agemacs_prev = QtWidgets.QPushButton("🚀 Open Deck in Agemacs")
+        self.btn_open_agemacs_prev.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 10px;")
+        self.btn_open_agemacs_prev.clicked.connect(self._on_open_deck_in_agemacs)
+        row_prev_btns.addWidget(self.btn_open_agemacs_prev)
+        btn_save_prev = QtWidgets.QPushButton("💾 Save Input Only...")
+        btn_save_prev.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px;")
+        btn_save_prev.clicked.connect(self._on_save_input_only)
+        row_prev_btns.addWidget(btn_save_prev)
         row_prev_btns.addStretch()
         prev_layout.addLayout(row_prev_btns)
 
@@ -400,7 +432,8 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         bot_layout.addRow("Input File:", self.txt_filename)
 
         dir_row = QtWidgets.QHBoxLayout()
-        self.txt_dir = QtWidgets.QLineEdit(os.path.abspath("."))
+        init_dir = self._get_default_working_dir()
+        self.txt_dir = QtWidgets.QLineEdit(init_dir)
         dir_row.addWidget(self.txt_dir, stretch=1)
         btn_browse = QtWidgets.QPushButton("Browse...")
         btn_browse.clicked.connect(self._on_browse_dir)
@@ -446,6 +479,18 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         btn_cancel = QtWidgets.QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_box.addWidget(btn_cancel)
+
+        self.btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in Agemacs")
+        self.btn_open_agemacs.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
+        self.btn_open_agemacs.setToolTip("Open this ORCA input deck in Agemacs for editing")
+        self.btn_open_agemacs.clicked.connect(self._on_open_deck_in_agemacs)
+        btn_box.addWidget(self.btn_open_agemacs)
+
+        self.btn_save_only = QtWidgets.QPushButton("💾 Save Input Only...")
+        self.btn_save_only.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
+        self.btn_save_only.setToolTip("Save this ORCA input file (.inp) to disk to run outside AgyMolden (e.g. on an HPC cluster or terminal) without launching ORCA locally")
+        self.btn_save_only.clicked.connect(self._on_save_input_only)
+        btn_box.addWidget(self.btn_save_only)
 
         self.btn_run = QtWidgets.QPushButton("🚀 Run ORCA Now")
         self.btn_run.setStyleSheet(
@@ -552,6 +597,13 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             lines.append(f"%pal nprocs {nprocs} end")
 
         lines.append(f"%maxcore {self.spn_mem.value()}")
+
+        if hasattr(self, "chk_print_mos") and self.chk_print_mos.isChecked():
+            lines.append("%output")
+            lines.append("  Print[ P_MOs ] 1")
+            lines.append("  Print[ P_ReducedOrbPopMO_L ] 1")
+            lines.append("  Print[ P_Basis ] 2")
+            lines.append("end")
 
         # Check for MO cubes (valid ORCA %plots block syntax)
         if hasattr(self, "chk_mo_cubes") and self.chk_mo_cubes.isChecked():
@@ -703,10 +755,30 @@ class QuickOrcaDialog(QtWidgets.QDialog):
                 f"<span style='color: #16a34a;'>({info['formula']}, {num_electrons} e⁻, mult={mult})</span>"
             )
 
+    @staticmethod
+    def _get_default_working_dir() -> str:
+        try:
+            from agymolden.session_state import get_settings
+            last_dir = str(get_settings("AgyMolden").value("orca_last_dir", "") or "").strip()
+            if last_dir and os.path.isdir(last_dir):
+                return last_dir
+        except Exception:
+            pass
+        cwd = os.path.abspath(".")
+        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        if os.path.normcase(cwd) == os.path.normcase(proj_root):
+            return os.path.expanduser("~")
+        return cwd
+
     def _on_browse_dir(self):
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Working Directory", self.txt_dir.text())
         if d:
             self.txt_dir.setText(d)
+            try:
+                from agymolden.session_state import get_settings
+                get_settings("AgyMolden").setValue("orca_last_dir", d)
+            except Exception:
+                pass
 
     def _refresh_orca_status(self, info=None):
         if info is None:
@@ -830,3 +902,59 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         self.saved_input_path = target_path
         self.accept()
+
+    def _on_open_deck_in_agemacs(self):
+        """Send the generated ORCA input deck to Agemacs."""
+        from .companion import send_text_to_agemacs
+
+        fname = (self.txt_filename.text().strip() or "orca_calc.inp")
+        if not fname.endswith(".inp"):
+            fname += ".inp"
+        content = self.txt_deck_preview.toPlainText() if hasattr(self, "txt_deck_preview") else self._generate_deck_content()
+        if not send_text_to_agemacs(fname, content, self):
+            QtWidgets.QMessageBox.information(self, "Open in Agemacs", "Could not launch 'agemacs'.")
+
+    def _on_save_input_only(self) -> Optional[str]:
+        """Save the generated ORCA input file (.inp) to disk for external execution without running ORCA."""
+        fname = self.txt_filename.text().strip() or "orca_calc.inp"
+        if not fname.endswith(".inp"):
+            fname += ".inp"
+        base_dir = self.txt_dir.text().strip() or os.path.expanduser("~")
+        default_path = os.path.join(base_dir, fname)
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save ORCA Input File",
+            default_path,
+            "ORCA Input (*.inp);;All Files (*)",
+        )
+        if not path:
+            return None
+        if not path.endswith(".inp"):
+            path += ".inp"
+
+        content = self.txt_deck_preview.toPlainText() if hasattr(self, "txt_deck_preview") else self._generate_deck_content()
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Save Error", f"Could not write ORCA input file:\n{e}")
+            return None
+
+        chosen_dir = os.path.dirname(os.path.abspath(path))
+        self.txt_dir.setText(chosen_dir)
+        self.txt_filename.setText(os.path.basename(path))
+        self.saved_input_path = path
+        try:
+            from agymolden.session_state import get_settings
+            get_settings("AgyMolden").setValue("orca_last_dir", chosen_dir)
+        except Exception:
+            pass
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "ORCA Input Saved",
+            f"Saved ORCA input file to:\n{path}\n\n"
+            f"You can run it outside AgyMolden (e.g. orca {os.path.basename(path)} > {os.path.splitext(os.path.basename(path))[0]}.out).",
+        )
+        return path

@@ -33,6 +33,8 @@ def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = No
     proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidate_dirs = [
         os.environ.get("AGEMACS_DIR", ""),
+        os.path.expanduser("~/Programs/agemacs"),
+        os.path.expanduser("~/Projects/agemacs"),
         os.path.expanduser("~/Insync/Desktop/agyprojects/agemacs"),
         os.path.expanduser("~/Desktop/agyprojects/agemacs"),
         os.path.expanduser("~/agyprojects/agemacs"),
@@ -60,6 +62,23 @@ def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = No
                 return True
 
     return False
+
+
+def send_text_to_agemacs(
+    filename: str,
+    content: str,
+    parent: Optional[QtWidgets.QWidget] = None,
+) -> bool:
+    """Write generated text (XYZ, ZMAT, ORCA/Gaussian input, etc.) to a temp file and open it in agemacs."""
+    import tempfile
+
+    safe_name = os.path.basename(filename or "agymolden_export.txt")
+    out_dir = os.path.join(tempfile.gettempdir(), "agymolden_agemacs")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, safe_name)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    return send_to_agemacs([out_path], parent)
 
 
 def start_agymolden_ipc(window: QtWidgets.QMainWindow) -> None:

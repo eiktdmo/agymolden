@@ -294,7 +294,7 @@ class ExtensionManagerDialog(QtWidgets.QDialog):
             btn.setStyleSheet(
                 "background-color: #10b981; color: white; padding: 4px; font-size: 11px;"
                 if not installed else
-                "background-color: #475569; color: #f1f5f9; padding: 4px; font-size: 11px;"
+                "background-color: #0284c7; color: #ffffff; padding: 4px; font-size: 11px;"
             )
             pkg = info["pip_pkg"]
             btn.clicked.connect(lambda checked=False, p=pkg: self.start_installation(p))

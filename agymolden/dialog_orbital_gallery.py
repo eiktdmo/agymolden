@@ -320,7 +320,7 @@ class OrbitalSnapshotDialog(QtWidgets.QDialog):
 
         self._run_batch_render_sequence(selected, isovalue, n_pts, bg_mode, transparent, margin_bohr=margin_b)
 
-    def _run_batch_render_sequence(self, selected_indices: List[int], isovalue: float, n_pts: int, bg_mode: str, transparent: bool, margin_bohr: float = 3.0):
+    def _run_batch_render_sequence(self, selected_indices: List[int], isovalue: float, n_pts: int, bg_mode: str, transparent: bool, margin_bohr: float = 5.5):
         import numpy as np
         from .volumetric import evaluate_molden_orbital_grid, generate_orbital_surfaces, parse_molden_file
         viewer = getattr(self._parent_mw, "viewer", None)

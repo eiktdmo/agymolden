@@ -14,7 +14,10 @@ import numpy as np
 from PyQt6 import QtWidgets
 
 from ..volumetric import (
+    compute_molden_annihilation_density_grid,
+    compute_molden_electron_density_grid,
     compute_molden_spin_density_grid,
+    extract_isosurface,
     generate_orbital_surfaces,
     compute_molden_esp_mapped_density,
     localize_molden_orbitals,
@@ -162,6 +165,148 @@ class OrbitalController:
             self.mw.viewer.update()
             self.mw.statusBar().showMessage(f"Dual Frontier View: HOMO #{homo_idx+1} (Cyan/Amber) + LUMO #{lumo_idx+1} (Violet/Emerald)", 5000)
 
+    def quick_view_electron_density(self) -> None:
+        """1-Click Total Electron Density ρ(r) evaluation and 3D rendering from active Molden file."""
+        molden_path = getattr(self.mw, "_active_molden_path", None)
+        if not molden_path or not os.path.isfile(molden_path):
+            self.mw._on_open_volumetric_dialog()
+            return
+
+        isovalue = self.mw.spin_quick_iso.value() if hasattr(self.mw, "spin_quick_iso") else 0.02
+        opacity = (self.mw.slider_quick_opacity.value() / 100.0) if hasattr(self.mw, "slider_quick_opacity") else 0.80
+        n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
+        margin_b = float(self.mw.spin_quick_margin.value()) if hasattr(self.mw, "spin_quick_margin") else 5.5
+
+        self.mw.statusBar().showMessage(f"Computing 3D total electron density ρ(r) ({n_pts}³ grid)...", 3000)
+
+        def _compute():
+            vol = compute_molden_electron_density_grid(molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
+            if not vol:
+                return [], isovalue, None
+            max_val = float(np.max(vol.grid_data))
+            is_pos = "positron" in os.path.basename(molden_path).lower()
+            if is_pos:
+                eff_iso = min(isovalue, 0.001) if isovalue >= max_val else isovalue
+                if eff_iso <= 0.0 or eff_iso >= max_val:
+                    eff_iso = max(0.0001, round(max_val * 0.25, 5))
+                surf_color = (0.95, 0.72, 0.12)
+            else:
+                eff_iso = min(isovalue, 0.02) if isovalue >= max_val else isovalue
+                if eff_iso <= 0.0 or eff_iso >= max_val:
+                    eff_iso = max(0.0005, round(max_val * 0.25, 4))
+                surf_color = (0.25, 0.72, 0.92)
+            mesh = extract_isosurface(vol, isovalue=eff_iso, color=surf_color)
+            return ([mesh] if mesh is not None else []), eff_iso, vol
+
+        def _on_done(res_tuple):
+            meshes, eff_iso, vol = res_tuple
+            if vol is None or not meshes:
+                self.mw.statusBar().showMessage("Could not evaluate electron density from the active Molden file.", 4000)
+                return
+            self.mw._current_rendered_mo_vol = vol
+            self.mw._last_quick_density_vol = vol
+            self.mw._last_quick_density_path = molden_path
+            if hasattr(self.mw, "grp_quick_dens_cmap"):
+                self.mw.grp_quick_dens_cmap.setVisible(True)
+            self.mw.viewer.active_isosurfaces = meshes
+            self.mw.viewer.surface_opacity = opacity
+            self.mw.viewer.update()
+            self.mw.statusBar().showMessage(
+                f"Rendered Total Electron Density ρ(r) (Isovalue={eff_iso:.4f} e/a₀³)", 5000
+            )
+
+        def _on_error(e):
+            log.warning(f"Error computing electron density: {e}")
+
+        run_in_background(
+            self.mw,
+            "Computing Electron Density",
+            "Evaluating total electron density ρ(r) on 3D grid...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
+    def quick_view_density_colormap(self) -> None:
+        """Render total electron density ρ(r) as a 3D color-mapped slice plane in the main viewer."""
+        molden_path = getattr(self.mw, "_active_molden_path", None)
+        cached_vol = getattr(self.mw, "_last_quick_density_vol", None)
+        cached_path = getattr(self.mw, "_last_quick_density_path", None)
+        if cached_vol is not None and (cached_path == molden_path or not molden_path):
+            self.update_quick_density_colormap()
+            return
+        if not molden_path or not os.path.isfile(molden_path):
+            self.mw._on_open_volumetric_dialog()
+            return
+
+        n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
+        margin_b = float(self.mw.spin_quick_margin.value()) if hasattr(self.mw, "spin_quick_margin") else 5.5
+
+        def _compute():
+            return compute_molden_electron_density_grid(molden_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
+
+        def _on_done(vol):
+            if vol is None:
+                self.mw.statusBar().showMessage("Could not evaluate electron density from the active Molden file.", 4000)
+                return
+            self.mw._current_rendered_mo_vol = vol
+            self.mw._last_quick_density_vol = vol
+            self.mw._last_quick_density_path = molden_path
+            self.update_quick_density_colormap()
+
+        def _on_error(e):
+            log.warning(f"Error computing density colormap: {e}")
+
+        run_in_background(
+            self.mw,
+            "Density Color Map",
+            "Evaluating electron density ρ(r) for 3D color map...",
+            _compute,
+            _on_done,
+            _on_error,
+        )
+
+    def update_quick_density_colormap(self) -> None:
+        """Live-update the 3D color-mapped density surface (vdW) or slice from cached density grid."""
+        from ..volumetric import build_density_colormap_slice_mesh, build_density_mapped_vdw_mesh
+
+        vol = getattr(self.mw, "_last_quick_density_vol", None)
+        if vol is None:
+            return
+        cmap_name = self.mw.combo_quick_dens_cmap.currentData() if hasattr(self.mw, "combo_quick_dens_cmap") else "viridis"
+        plane = self.mw.combo_quick_dens_plane.currentData() if hasattr(self.mw, "combo_quick_dens_plane") else "VDW"
+        offset = float(self.mw.spin_quick_dens_offset.value()) if hasattr(self.mw, "spin_quick_dens_offset") else 0.0
+        log_scale = self.mw.chk_quick_dens_log.isChecked() if hasattr(self.mw, "chk_quick_dens_log") else False
+        opacity = (self.mw.slider_quick_opacity.value() / 100.0) if hasattr(self.mw, "slider_quick_opacity") else 0.88
+
+        if plane == "VDW":
+            mesh = build_density_mapped_vdw_mesh(
+                vol, vdw_scale=max(0.5, 0.85 + 0.05 * offset), colormap_name=cmap_name, log_scale=log_scale
+            )
+        else:
+            mesh = build_density_colormap_slice_mesh(
+                vol, plane=plane, offset_angstrom=offset, colormap_name=cmap_name, log_scale=log_scale
+            )
+        if hasattr(self.mw, "grp_quick_dens_cmap"):
+            self.mw.grp_quick_dens_cmap.setVisible(True)
+        if hasattr(self.mw, "viewer"):
+            self.mw.viewer.active_isosurfaces = [mesh]
+            self.mw.viewer.surface_opacity = opacity
+            self.mw.viewer.update()
+        self.mw.statusBar().showMessage(f"Density Color Map ({cmap_name}, {plane} @ {offset:+.1f} Å)", 4000)
+
+    def quick_view_density_2d(self) -> None:
+        """Open the 2D Slicer pre-selected to Electron Density (ρ) color contour map."""
+        from ..dialog_esp_2d import ESP2DContourDialog
+
+        molden_path = getattr(self.mw, "_active_molden_path", None)
+        vol = getattr(self.mw, "_last_quick_density_vol", None)
+        if not molden_path and vol is None:
+            self.mw._on_open_volumetric_dialog()
+            return
+        dlg = ESP2DContourDialog(self.mw, molden_path=molden_path, vol_data=vol, initial_property="RHO")
+        dlg.exec()
+
     def quick_view_spin_density(self) -> None:
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
         molden_path = getattr(self.mw, "_active_molden_path", None)
@@ -172,7 +317,7 @@ class OrbitalController:
         isovalue = self.mw.spin_quick_iso.value() if hasattr(self.mw, "spin_quick_iso") else 0.005
         opacity = (self.mw.slider_quick_opacity.value() / 100.0) if hasattr(self.mw, "slider_quick_opacity") else 0.80
         n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
-        margin_b = float(self.mw.spin_quick_margin.value()) if hasattr(self.mw, "spin_quick_margin") else 3.0
+        margin_b = float(self.mw.spin_quick_margin.value()) if hasattr(self.mw, "spin_quick_margin") else 5.5
 
         self.mw.statusBar().showMessage(f"Computing 3D spin density Δρ = ρ_α − ρ_β ({n_pts}³ grid)...", 3000)
 
@@ -251,7 +396,7 @@ class OrbitalController:
 
         opacity = (self.mw.slider_quick_opacity.value() / 100.0) if hasattr(self.mw, "slider_quick_opacity") else 0.85
         n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
-        margin_b = max(3.5, float(self.mw.spin_quick_margin.value())) if hasattr(self.mw, "spin_quick_margin") else 3.5
+        margin_b = max(5.5, float(self.mw.spin_quick_margin.value())) if hasattr(self.mw, "spin_quick_margin") else 5.5
 
         self.mw.statusBar().showMessage(f"Computing 3D ESP-mapped electron density surface ({n_pts}³ grid)...", 3000)
 
@@ -394,6 +539,98 @@ class OrbitalController:
             _compute,
             _on_done,
             lambda e: log.warning(f"Error computing positron orbital: {e}"),
+        )
+
+    def _resolve_positron_molden_path(self) -> Optional[str]:
+        pos_path = getattr(self.mw, "_companion_positron_molden_path", None)
+        if not pos_path or not os.path.isfile(pos_path):
+            pos_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self.mw, "Select Positron Molden File", "", "Molden Files (*.molden *.molden.input);;All Files (*)"
+            )
+            if not pos_path:
+                return None
+            self.mw._companion_positron_molden_path = pos_path
+        return pos_path
+
+    def overlay_positron_density(self) -> None:
+        """Evaluate companion positron density rho_+ and overlay it in gold onto the 3D viewport."""
+        pos_path = self._resolve_positron_molden_path()
+        if not pos_path:
+            return
+        n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
+        margin_b = max(6.5, float(self.mw.spin_quick_margin.value())) if hasattr(self.mw, "spin_quick_margin") else 6.5
+
+        def _compute():
+            vol = compute_molden_electron_density_grid(pos_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b)
+            if vol is None:
+                return []
+            max_val = float(np.max(vol.grid_data))
+            eff_iso = 0.001 if max_val > 0.0015 else max(0.0001, round(max_val * 0.25, 5))
+            mesh = extract_isosurface(vol, isovalue=eff_iso, color=(0.95, 0.72, 0.12))
+            return [mesh] if mesh is not None else []
+
+        def _on_done(pos_meshes):
+            if pos_meshes:
+                existing = list(getattr(self.mw.viewer, "active_isosurfaces", []))
+                self.mw.viewer.active_isosurfaces = existing + pos_meshes
+                self.mw.viewer.surface_opacity = 0.72
+                self.mw.viewer.update()
+                self.mw.statusBar().showMessage(
+                    f"Overlaid Positron Density ρ₊ from {os.path.basename(pos_path)} (Gold)", 5000
+                )
+
+        run_in_background(
+            self.mw,
+            "Rendering Positron Density",
+            f"Evaluating positron density ρ₊ from {os.path.basename(pos_path)}...",
+            _compute,
+            _on_done,
+            lambda e: log.warning(f"Error computing positron density: {e}"),
+        )
+
+    def quick_view_annihilation_density(self) -> None:
+        """Compute electron-positron annihilation density rho_- * rho_+ on a shared grid."""
+        elec_path = getattr(self.mw, "_active_molden_path", None)
+        if not elec_path or not os.path.isfile(elec_path):
+            self.mw._on_open_volumetric_dialog()
+            return
+        pos_path = self._resolve_positron_molden_path()
+        if not pos_path:
+            return
+        n_pts = int(self.mw.combo_quick_grid.currentData() or 40) if hasattr(self.mw, "combo_quick_grid") else 40
+        margin_b = max(6.5, float(self.mw.spin_quick_margin.value())) if hasattr(self.mw, "spin_quick_margin") else 6.5
+
+        def _compute():
+            vol = compute_molden_annihilation_density_grid(
+                elec_path, pos_path, nx=n_pts, ny=n_pts, nz=n_pts, margin_bohr=margin_b
+            )
+            if vol is None:
+                return [], 0.0, None
+            max_val = float(np.max(vol.grid_data))
+            eff_iso = max(1e-6, round(max_val * 0.20, 6))
+            mesh = extract_isosurface(vol, isovalue=eff_iso, color=(0.92, 0.22, 0.68))
+            return ([mesh] if mesh is not None else []), eff_iso, vol
+
+        def _on_done(res_tuple):
+            meshes, eff_iso, vol = res_tuple
+            if vol is None or not meshes:
+                self.mw.statusBar().showMessage("Could not evaluate annihilation density ρ₋·ρ₊.", 4000)
+                return
+            self.mw._current_rendered_mo_vol = vol
+            self.mw.viewer.active_isosurfaces = meshes
+            self.mw.viewer.surface_opacity = 0.80
+            self.mw.viewer.update()
+            self.mw.statusBar().showMessage(
+                f"Rendered Annihilation Density ρ₋·ρ₊ (Isovalue={eff_iso:.2e} a.u.)", 5000
+            )
+
+        run_in_background(
+            self.mw,
+            "Annihilation Density",
+            "Evaluating shared-grid electron-positron annihilation density ρ₋·ρ₊...",
+            _compute,
+            _on_done,
+            lambda e: log.warning(f"Error computing annihilation density: {e}"),
         )
 
     def get_mo_phase_colors(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:

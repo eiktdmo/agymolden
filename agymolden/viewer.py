@@ -585,6 +585,41 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.pan_y = 0.0
         self.zoom = max(max_dist * 3.2, 5.0)
 
+    def get_camera_state(self) -> Dict[str, Any]:
+        """Return a JSON-serializable snapshot of the current camera orientation, pan, zoom, and projection."""
+        q = self.rot_quat
+        return {
+            "rot_x": float(self.rot_x),
+            "rot_y": float(self.rot_y),
+            "rot_quat": [float(q.scalar()), float(q.x()), float(q.y()), float(q.z())],
+            "pan_x": float(self.pan_x),
+            "pan_y": float(self.pan_y),
+            "zoom": float(self.zoom),
+            "is_orthographic": bool(getattr(self, "is_orthographic", False)),
+        }
+
+    def set_camera_state(self, state: Dict[str, Any]) -> bool:
+        """Restore camera orientation, pan, zoom, and projection from a saved snapshot."""
+        if not isinstance(state, dict) or "rot_quat" not in state:
+            return False
+        q_vals = state.get("rot_quat")
+        if not isinstance(q_vals, (list, tuple)) or len(q_vals) != 4:
+            return False
+        try:
+            self.rot_x = float(state.get("rot_x", self.rot_x))
+            self.rot_y = float(state.get("rot_y", self.rot_y))
+            q = QtGui.QQuaternion(float(q_vals[0]), float(q_vals[1]), float(q_vals[2]), float(q_vals[3]))
+            if not q.isNull():
+                self.rot_quat = q.normalized()
+            self.pan_x = float(state.get("pan_x", 0.0))
+            self.pan_y = float(state.get("pan_y", 0.0))
+            self.zoom = max(0.5, float(state.get("zoom", 15.0)))
+            self.is_orthographic = bool(state.get("is_orthographic", False))
+            self.update()
+            return True
+        except (TypeError, ValueError):
+            return False
+
     def auto_center(self):
         """Reset camera pan and zoom to perfectly frame and center the molecule in the canvas."""
         self.fit_camera()
@@ -914,6 +949,25 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             self._cached_sphere_props = (radii, colors)
         return self._cached_sphere_props
 
+    def _compute_atom_ao(self, coords: np.ndarray, radii: np.ndarray) -> np.ndarray:
+        """Compute cached per-atom cavity ambient occlusion factor in [0.58, 1.0]."""
+        n = len(coords)
+        if n <= 1:
+            return np.ones(n, dtype=np.float32)
+        key = (n, float(coords[0, 0]), float(coords[-1, -1]), float(radii[0]))
+        if getattr(self, "_ao_cache_key", None) == key and getattr(self, "_ao_cache_val", None) is not None:
+            return self._ao_cache_val
+        diff = coords[:, None, :] - coords[None, :, :]
+        dist2 = np.sum(diff * diff, axis=2)
+        np.fill_diagonal(dist2, np.inf)
+        mask = dist2 < (4.5 * 4.5)
+        r2 = (radii[None, :] ** 2) * mask
+        occ = np.sum(r2 / np.maximum(dist2, 0.5), axis=1)
+        ao = np.clip(1.0 - 0.55 * occ, 0.58, 1.0).astype(np.float32)
+        self._ao_cache_key = key
+        self._ao_cache_val = ao
+        return ao
+
     def _build_sphere_instance_data(
         self,
         render_coords: np.ndarray,
@@ -932,6 +986,9 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
                 inst_data[i, 4:7] = self._charge_to_rgb(charges_arr[i])
         else:
             inst_data[:, 4:7] = base_colors
+        if getattr(self, "use_depth_cueing", True) and n_atoms > 1:
+            ao = self._compute_atom_ao(render_coords, radii)
+            inst_data[:, 4:7] *= ao[:, None]
 
         inst_data[:, 7] = 0.0
         if not clean_export:
@@ -1248,6 +1305,17 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         loc_depth_cue = self._uloc("u_depth_cue")
         if loc_depth_cue != -1:
             glUniform1i(loc_depth_cue, 1 if getattr(self, "use_depth_cueing", True) else 0)
+
+        loc_bg_col = self._uloc("u_bg_color")
+        if loc_bg_col != -1:
+            if getattr(self, "bg_color_mode", "white") == "white":
+                glUniform3f(loc_bg_col, 0.97, 0.98, 0.99)
+            else:
+                glUniform3f(loc_bg_col, 0.07, 0.09, 0.14)
+
+        loc_cam_dist = self._uloc("u_cam_dist")
+        if loc_cam_dist != -1:
+            glUniform1f(loc_cam_dist, float(getattr(self, "zoom", 15.0)))
 
         # 1. Render Bonds (Cylinders) via GPU instancing
         if self.style_mode != "Spacefill":
@@ -2728,40 +2796,57 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
 
                     # Dynamic multi-stop gradient for realistic colormap preview
                     grad = QtGui.QLinearGradient(cbar_x, cbar_y, cbar_x + cbar_w, cbar_y)
-                    cmap_hint = getattr(esp_mesh, "colormap_name", "bwr_r").lower()
-                    if "jet" in cmap_hint:
-                        grad.setColorAt(0.00, QtGui.QColor("#ef4444"))
-                        grad.setColorAt(0.25, QtGui.QColor("#f97316"))
-                        grad.setColorAt(0.50, QtGui.QColor("#22c55e"))
-                        grad.setColorAt(0.75, QtGui.QColor("#06b6d4"))
-                        grad.setColorAt(1.00, QtGui.QColor("#2563eb"))
-                    elif "spectral" in cmap_hint:
-                        grad.setColorAt(0.00, QtGui.QColor("#d73027"))
-                        grad.setColorAt(0.25, QtGui.QColor("#fee08b"))
-                        grad.setColorAt(0.50, QtGui.QColor("#ffffbf"))
-                        grad.setColorAt(0.75, QtGui.QColor("#91bfdb"))
-                        grad.setColorAt(1.00, QtGui.QColor("#4575b4"))
-                    else:  # bwr_r / RdBu / coolwarm_r standard
-                        grad.setColorAt(0.00, QtGui.QColor("#dc2626"))   # Negative nucleophilic (Red)
-                        grad.setColorAt(0.48, QtGui.QColor("#f8fafc"))   # Neutral
-                        grad.setColorAt(0.52, QtGui.QColor("#f8fafc"))
-                        grad.setColorAt(1.00, QtGui.QColor("#2563eb"))   # Positive electrophilic (Blue)
+                    cmap_raw = getattr(esp_mesh, "colormap_name", "bwr_r")
+                    cmap_loaded = False
+                    try:
+                        import matplotlib as _mpl
+                        _cmap = _mpl.colormaps.get(cmap_raw)
+                        if _cmap is not None:
+                            for i_s in range(9):
+                                t_s = i_s / 8.0
+                                r_c, g_c, b_c, _ = _cmap(t_s)
+                                grad.setColorAt(t_s, QtGui.QColor(int(r_c * 255), int(g_c * 255), int(b_c * 255)))
+                            cmap_loaded = True
+                    except Exception:
+                        cmap_loaded = False
+
+                    if not cmap_loaded:
+                        cmap_hint = str(cmap_raw).lower()
+                        if "jet" in cmap_hint:
+                            grad.setColorAt(0.00, QtGui.QColor("#ef4444"))
+                            grad.setColorAt(0.25, QtGui.QColor("#f97316"))
+                            grad.setColorAt(0.50, QtGui.QColor("#22c55e"))
+                            grad.setColorAt(0.75, QtGui.QColor("#06b6d4"))
+                            grad.setColorAt(1.00, QtGui.QColor("#2563eb"))
+                        elif "spectral" in cmap_hint:
+                            grad.setColorAt(0.00, QtGui.QColor("#d73027"))
+                            grad.setColorAt(0.25, QtGui.QColor("#fee08b"))
+                            grad.setColorAt(0.50, QtGui.QColor("#ffffbf"))
+                            grad.setColorAt(0.75, QtGui.QColor("#91bfdb"))
+                            grad.setColorAt(1.00, QtGui.QColor("#4575b4"))
+                        else:  # bwr_r / RdBu / coolwarm_r standard
+                            grad.setColorAt(0.00, QtGui.QColor("#dc2626"))
+                            grad.setColorAt(0.48, QtGui.QColor("#f8fafc"))
+                            grad.setColorAt(0.52, QtGui.QColor("#f8fafc"))
+                            grad.setColorAt(1.00, QtGui.QColor("#2563eb"))
 
                     painter.setBrush(QtGui.QBrush(grad))
                     painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1.0))
                     painter.drawRect(cbar_x, cbar_y, cbar_w, cbar_h)
 
-                    # Labels: -V_lim, 0, +V_lim and unit conversion (eV)
+                    cbar_title = getattr(esp_mesh, "colorbar_title", "ESP Heatmap (a.u.)")
+                    is_sym = (e_min < 0.0 < e_max) and ("log" not in cbar_title.lower())
                     painter.setFont(QtGui.QFont("DejaVu Sans", 7, QtGui.QFont.Weight.Bold))
-                    painter.setPen(QtGui.QColor("#dc2626" if is_white_vp else "#f87171"))
-                    painter.drawText(cbar_x - 2, cbar_y + cbar_h + 13, f"{e_min:+.3f}")
+                    painter.setPen(QtGui.QColor("#dc2626" if is_sym and is_white_vp else ("#f87171" if is_sym else ("#334155" if is_white_vp else "#cbd5e1"))))
+                    painter.drawText(cbar_x - 2, cbar_y + cbar_h + 13, f"{e_min:+.2f}" if is_sym else f"{e_min:.2g}")
                     painter.setPen(QtGui.QColor("#475569" if is_white_vp else "#cbd5e1"))
-                    painter.drawText(cbar_x + cbar_w // 2 - 4, cbar_y + cbar_h + 13, "0")
-                    painter.setPen(QtGui.QColor("#2563eb" if is_white_vp else "#60a5fa"))
-                    e_max_str = f"{e_max:+.3f}"
+                    mid_lbl = "0" if is_sym else f"{0.5 * (e_min + e_max):.2g}"
+                    painter.drawText(cbar_x + cbar_w // 2 - 8, cbar_y + cbar_h + 13, mid_lbl)
+                    painter.setPen(QtGui.QColor("#2563eb" if is_sym and is_white_vp else ("#60a5fa" if is_sym else ("#334155" if is_white_vp else "#cbd5e1"))))
+                    e_max_str = f"{e_max:+.2f}" if is_sym else f"{e_max:.2g}"
                     painter.drawText(cbar_x + cbar_w - 42, cbar_y + cbar_h + 13, e_max_str)
                     painter.setPen(QtGui.QColor("#334155" if is_white_vp else "#94a3b8"))
-                    painter.drawText(cbar_x, cbar_y - 4, "ESP Heatmap (a.u.)")
+                    painter.drawText(cbar_x, cbar_y - 4, cbar_title)
             else:
                 self.clear_surface_rect = None
 

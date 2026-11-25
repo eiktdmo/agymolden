@@ -373,7 +373,7 @@ class SymmetryController:
                 self.mw.btn_impose_symmetry.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 5px;")
             else:
                 self.mw.btn_impose_symmetry.setText("🔒 Impose Symmetry: OFF")
-                self.mw.btn_impose_symmetry.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold; padding: 5px;")
+                self.mw.btn_impose_symmetry.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold; padding: 5px;")
             self.mw.btn_impose_symmetry.blockSignals(False)
 
         if self.mw.symmetry_imposed and self.mw.imposed_sym_res is not None:

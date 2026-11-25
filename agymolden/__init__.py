@@ -163,6 +163,27 @@ def main(argv=None):
     parser.add_argument("--version", action="version", version=f"AgyMolden {__version__}")
     args, qt_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
+    # Guard against Conda's bundled libstdc++.so.6 lacking GLIBCXX symbols needed by Mesa/OpenGL on Linux
+    if (
+        sys.platform.startswith("linux")
+        and os.environ.get("CONDA_PREFIX")
+        and not os.environ.get("_AGYMOLDEN_LIBSTDCPP_CHECKED")
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("QT_QPA_PLATFORM") != "offscreen"
+    ):
+        os.environ["_AGYMOLDEN_LIBSTDCPP_CHECKED"] = "1"
+        for sys_lib in (
+            "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+            "/usr/lib64/libstdc++.so.6",
+            "/usr/lib/libstdc++.so.6",
+        ):
+            if os.path.isfile(sys_lib):
+                cur_preload = os.environ.get("LD_PRELOAD", "")
+                if sys_lib not in cur_preload:
+                    os.environ["LD_PRELOAD"] = f"{sys_lib}:{cur_preload}".strip(":")
+                    os.execv(sys.executable, [sys.executable, "-m", "agymolden"] + sys.argv[1:])
+                break
+
     _setup_logging(args.debug)
     _check_dependencies()
     _log_startup_environment()

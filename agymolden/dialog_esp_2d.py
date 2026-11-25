@@ -25,12 +25,19 @@ from .volumetric import BOHR_TO_ANGSTROM, ANGSTROM_TO_BOHR, VolumetricData
 class ESP2DContourDialog(QtWidgets.QDialog):
     """Dialog for interactive 2D slicing and contour plotting of Molecular Electrostatic Potential or Volumetric Grids."""
 
-    def __init__(self, parent: QtWidgets.QWidget, molden_path: Optional[str] = None, vol_data: Optional[VolumetricData] = None):
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        molden_path: Optional[str] = None,
+        vol_data: Optional[VolumetricData] = None,
+        initial_property: str = "ESP",
+    ):
         super().__init__(parent)
         self.setWindowTitle("2D Slicer & Contour Map (Gabedit / Multiwfn style)")
         self.resize(880, 680)
         self.molden_path = molden_path
         self.vol_data = vol_data
+        self._initial_property = initial_property
 
         self.mol = None
         self.dm = None
@@ -44,6 +51,12 @@ class ESP2DContourDialog(QtWidgets.QDialog):
                     QtWidgets.QMessageBox.warning(parent, "PySCF Required", friendly_error_text(exc))
                 self.molden_path = None
         self._init_ui()
+        if getattr(self, "_initial_property", "ESP") != "ESP":
+            idx_p = self.combo_property.findData(self._initial_property)
+            if idx_p >= 0:
+                self.combo_property.blockSignals(True)
+                self.combo_property.setCurrentIndex(idx_p)
+                self.combo_property.blockSignals(False)
         self._recompute_and_plot()
 
     def _load_wavefunction(self):
@@ -91,6 +104,7 @@ class ESP2DContourDialog(QtWidgets.QDialog):
         self.combo_plane.addItem("XZ Plane (Top/Ring View)", "XZ")
         self.combo_plane.addItem("XY Plane", "XY")
         self.combo_plane.addItem("YZ Plane (Side View)", "YZ")
+        self.combo_plane.addItem("Custom 3-Atom Plane", "CUSTOM3")
         # Auto-detect best initial plane with largest coordinate spread
         if self.mol is not None:
             coords = self.mol.atom_coords() * BOHR_TO_ANGSTROM
@@ -105,8 +119,17 @@ class ESP2DContourDialog(QtWidgets.QDialog):
             self.combo_plane.setCurrentIndex(1) # XY
         else:
             self.combo_plane.setCurrentIndex(2) # YZ
-        self.combo_plane.currentIndexChanged.connect(self._recompute_and_plot)
+        self.combo_plane.currentIndexChanged.connect(self._on_plane_changed)
         p_form.addRow("Slice Plane:", self.combo_plane)
+
+        self.edit_plane_atoms = QtWidgets.QLineEdit("1, 2, 3")
+        self.edit_plane_atoms.setPlaceholderText("e.g. 1, 2, 3")
+        self.edit_plane_atoms.setToolTip("Enter 3 non-collinear 1-based atom indices defining the slice plane")
+        self.edit_plane_atoms.setVisible(False)
+        self.edit_plane_atoms.editingFinished.connect(self._recompute_and_plot)
+        self.lbl_plane_atoms = QtWidgets.QLabel("Plane Atoms:")
+        self.lbl_plane_atoms.setVisible(False)
+        p_form.addRow(self.lbl_plane_atoms, self.edit_plane_atoms)
 
         self.spin_offset = QtWidgets.QDoubleSpinBox()
         self.spin_offset.setRange(-15.0, 15.0)
@@ -273,6 +296,44 @@ class ESP2DContourDialog(QtWidgets.QDialog):
         self.spin_range.blockSignals(False)
         self._recompute_and_plot()
 
+    def _on_plane_changed(self):
+        is_custom = (self.combo_plane.currentData() == "CUSTOM3")
+        if hasattr(self, "edit_plane_atoms"):
+            self.edit_plane_atoms.setVisible(is_custom)
+        if hasattr(self, "lbl_plane_atoms"):
+            self.lbl_plane_atoms.setVisible(is_custom)
+        self._recompute_and_plot()
+
+    @staticmethod
+    def _compute_custom_plane_frame(
+        coords_bohr: np.ndarray, indices_text: str
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        """Build orthonormal (origin, u_hat, v_hat, n_hat) frame from 3 1-based atom indices."""
+        import re
+
+        toks = [int(t) - 1 for t in re.findall(r"\d+", indices_text or "")]
+        if len(toks) < 3 or len(set(toks[:3])) < 3:
+            return None
+        i, j, k = toks[:3]
+        n_at = len(coords_bohr)
+        if not (0 <= i < n_at and 0 <= j < n_at and 0 <= k < n_at):
+            return None
+        r_i, r_j, r_k = coords_bohr[i], coords_bohr[j], coords_bohr[k]
+        v1 = r_j - r_i
+        n1 = float(np.linalg.norm(v1))
+        if n1 < 1e-6:
+            return None
+        u_hat = v1 / n1
+        normal = np.cross(v1, r_k - r_i)
+        nn = float(np.linalg.norm(normal))
+        if nn < 1e-6:
+            return None
+        n_hat = normal / nn
+        v_hat = np.cross(n_hat, u_hat)
+        v_hat /= max(1e-12, float(np.linalg.norm(v_hat)))
+        origin = (r_i + r_j + r_k) / 3.0
+        return origin, u_hat, v_hat, n_hat
+
     def _recompute_and_plot(self):
         if self.mol is None and self.vol_data is None:
             return
@@ -282,28 +343,58 @@ class ESP2DContourDialog(QtWidgets.QDialog):
             plane_mode = self.combo_plane.currentData() or "XZ"
             axis_map = {"XY": (0, 1, 2), "XZ": (0, 2, 1), "YZ": (1, 2, 0)}
             u_ax, v_ax, n_ax = axis_map.get(plane_mode, (0, 2, 1))
+            custom_frame = None
 
             if self.mol is not None:
                 # Wavefunction ESP mode
                 coords_bohr = self.mol.atom_coords()
                 offset_bohr = float(self.spin_offset.value()) * ANGSTROM_TO_BOHR
-                plane_n = np.mean(coords_bohr[:, n_ax]) + offset_bohr
-
                 pad_bohr = float(self.spin_box_margin.value()) if hasattr(self, "spin_box_margin") else 4.2
-                u_min = coords_bohr[:, u_ax].min() - pad_bohr
-                u_max = coords_bohr[:, u_ax].max() + pad_bohr
-                v_min = coords_bohr[:, v_ax].min() - pad_bohr
-                v_max = coords_bohr[:, v_ax].max() + pad_bohr
-
                 n_pts = self.spin_grid_pts.value()
-                u_vals = np.linspace(u_min, u_max, n_pts)
-                v_vals = np.linspace(v_min, v_max, n_pts)
-                U_grid, V_grid = np.meshgrid(u_vals, v_vals, indexing="ij")
 
-                pts = np.zeros((n_pts * n_pts, 3), dtype=np.float64)
-                pts[:, u_ax] = U_grid.ravel()
-                pts[:, v_ax] = V_grid.ravel()
-                pts[:, n_ax] = plane_n
+                if plane_mode == "CUSTOM3":
+                    custom_frame = self._compute_custom_plane_frame(
+                        coords_bohr, self.edit_plane_atoms.text() if hasattr(self, "edit_plane_atoms") else ""
+                    )
+                    if custom_frame is None:
+                        plane_mode = "XZ"
+                        u_ax, v_ax, n_ax = (0, 2, 1)
+
+                if custom_frame is not None:
+                    origin_b, u_hat, v_hat, n_hat = custom_frame
+                    rel = coords_bohr - origin_b[None, :]
+                    atom_u_b = rel @ u_hat
+                    atom_v_b = rel @ v_hat
+                    atom_n_b = rel @ n_hat
+                    u_min = float(atom_u_b.min()) - pad_bohr
+                    u_max = float(atom_u_b.max()) + pad_bohr
+                    v_min = float(atom_v_b.min()) - pad_bohr
+                    v_max = float(atom_v_b.max()) + pad_bohr
+                    u_vals = np.linspace(u_min, u_max, n_pts)
+                    v_vals = np.linspace(v_min, v_max, n_pts)
+                    U_grid, V_grid = np.meshgrid(u_vals, v_vals, indexing="ij")
+                    pts = (
+                        origin_b[None, :]
+                        + U_grid.ravel()[:, None] * u_hat[None, :]
+                        + V_grid.ravel()[:, None] * v_hat[None, :]
+                        + offset_bohr * n_hat[None, :]
+                    )
+                    plane_n = offset_bohr
+                else:
+                    plane_n = np.mean(coords_bohr[:, n_ax]) + offset_bohr
+                    u_min = coords_bohr[:, u_ax].min() - pad_bohr
+                    u_max = coords_bohr[:, u_ax].max() + pad_bohr
+                    v_min = coords_bohr[:, v_ax].min() - pad_bohr
+                    v_max = coords_bohr[:, v_ax].max() + pad_bohr
+
+                    u_vals = np.linspace(u_min, u_max, n_pts)
+                    v_vals = np.linspace(v_min, v_max, n_pts)
+                    U_grid, V_grid = np.meshgrid(u_vals, v_vals, indexing="ij")
+
+                    pts = np.zeros((n_pts * n_pts, 3), dtype=np.float64)
+                    pts[:, u_ax] = U_grid.ravel()
+                    pts[:, v_ax] = V_grid.ravel()
+                    pts[:, n_ax] = plane_n
 
                 # Nuclear ESP:
                 znuc = self.mol.atom_charges().astype(np.float64)
@@ -442,13 +533,27 @@ class ESP2DContourDialog(QtWidgets.QDialog):
 
             # Draw atom projections
             if self.chk_atoms.isChecked() and len(atom_coords_ang) > 0:
-                for sym, cat in zip(atom_symbols, atom_coords_ang):
-                    at_u = cat[u_ax]
-                    at_v = cat[v_ax]
-                    dist_from_plane = abs(cat[n_ax] - slice_pos_ang)
-                    alpha = max(0.25, min(1.0, 1.0 - (dist_from_plane / 2.0)))
-                    ax.scatter([at_u], [at_v], color="#f8fafc", s=60, edgecolors="#0f172a", linewidth=1.2, alpha=alpha, zorder=6)
-                    ax.text(at_u + 0.12, at_v + 0.12, sym, color="#f8fafc", fontsize=9, fontweight="bold", alpha=alpha, zorder=7)
+                if custom_frame is not None:
+                    origin_b, u_hat, v_hat, n_hat = custom_frame
+                    rel_ang = atom_coords_ang - (origin_b * BOHR_TO_ANGSTROM)[None, :]
+                    proj_u = rel_ang @ u_hat
+                    proj_v = rel_ang @ v_hat
+                    proj_n = rel_ang @ n_hat
+                    offset_ang = float(self.spin_offset.value())
+                    for idx_a, sym in enumerate(atom_symbols):
+                        at_u, at_v = float(proj_u[idx_a]), float(proj_v[idx_a])
+                        dist_from_plane = abs(float(proj_n[idx_a]) - offset_ang)
+                        alpha = max(0.25, min(1.0, 1.0 - (dist_from_plane / 2.0)))
+                        ax.scatter([at_u], [at_v], color="#f8fafc", s=60, edgecolors="#0f172a", linewidth=1.2, alpha=alpha, zorder=6)
+                        ax.text(at_u + 0.12, at_v + 0.12, sym, color="#f8fafc", fontsize=9, fontweight="bold", alpha=alpha, zorder=7)
+                else:
+                    for sym, cat in zip(atom_symbols, atom_coords_ang):
+                        at_u = cat[u_ax]
+                        at_v = cat[v_ax]
+                        dist_from_plane = abs(cat[n_ax] - slice_pos_ang)
+                        alpha = max(0.25, min(1.0, 1.0 - (dist_from_plane / 2.0)))
+                        ax.scatter([at_u], [at_v], color="#f8fafc", s=60, edgecolors="#0f172a", linewidth=1.2, alpha=alpha, zorder=6)
+                        ax.text(at_u + 0.12, at_v + 0.12, sym, color="#f8fafc", fontsize=9, fontweight="bold", alpha=alpha, zorder=7)
 
             axis_labels = {"XY": ("X (Å)", "Y (Å)"), "XZ": ("X (Å)", "Z (Å)"), "YZ": ("Y (Å)", "Z (Å)")}
             lx, ly = axis_labels.get(plane_mode, ("U (Å)", "V (Å)"))

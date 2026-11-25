@@ -99,6 +99,10 @@ class FileIOMixin:
         recent = [abs_path] + [p for p in recent if p != abs_path]
         s.setValue("recent_files", recent[:10])
         self._update_recent_files_menu()
+        if hasattr(self, "mol_tab_bar") and self.mol_tab_bar is not None:
+            idx = getattr(self, "_active_mol_tab_idx", 0)
+            if 0 <= idx < self.mol_tab_bar.count():
+                self.mol_tab_bar.setTabText(idx, os.path.basename(abs_path))
 
     def set_molecule_from_cartesian(
         self,
@@ -334,50 +338,332 @@ class FileIOMixin:
             except Exception as e:
                 dialog_service.error(self, "Chemical Name / Identifier Error", str(e), exc=e)
 
+    def _apply_2d_sketch_to_3d(self, syms, coords, bonds, bo):
+        """Apply a 2D sketcher structure to the 3D viewport and Z-matrix/model state."""
+        from .zmatrix import cartesian_to_zmatrix, ZAtom
+
+        self._push_undo_state()
+        self._clear_stale_surfaces_and_qm_state()
+        self.variables = {}
+        try:
+            zatoms = cartesian_to_zmatrix(syms, coords, user_bonds=bonds, strict_bonds=bool(bonds))
+            tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
+            self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
+            self.strict_topology = bool(bonds)
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
+        except Exception:
+            fallback_zatoms = [ZAtom(sym) for sym in syms]
+            self.cross_bonds = {norm_bond(u, v) for u, v in bonds}
+            self.strict_topology = bool(bonds)
+            self.zatoms = fallback_zatoms
+            self.coords = np.copy(coords)
+            self.viewer.set_molecule(syms, coords, user_bonds=bonds)
+            if hasattr(self, "table_widget"):
+                self.table_widget.load_zatoms(fallback_zatoms)
+            if hasattr(self, "model") and self.model is not None:
+                self.model.zatoms = list(fallback_zatoms)
+                self.model.coords = np.copy(coords)
+                self.model.cross_bonds = set(self.cross_bonds)
+                self.model.strict_topology = self.strict_topology
+                self.model.structure_changed.emit()
+                self.model.topology_changed.emit()
+            self._sync_raw_text()
+            self._update_chemical_summary()
+
+        if hasattr(self.viewer, "bond_orders"):
+            self.viewer.bond_orders = bo
+        self.viewer.auto_center()
+        self.viewer.update()
+        self.statusBar().showMessage(f"Converted 2D sketch to 3D structure ({len(syms)} atoms).", 4000)
+
+    def _sync_3d_to_2d_pane(self):
+        """Project the current 3D molecule into the embedded 2D sketcher pane."""
+        if not hasattr(self, "sketcher_2d_pane") or self.sketcher_2d_pane is None:
+            return
+        if not getattr(self, "zatoms", None) or len(self.zatoms) == 0:
+            return
+        syms = [a.symbol for a in self.zatoms]
+        coords = np.asarray(self.coords, dtype=np.float64)
+        bonds = list(getattr(self.viewer, "bonds", []))
+        bo = dict(getattr(self.viewer, "bond_orders", {}))
+        if self.sketcher_2d_pane.canvas.load_from_3d(syms, coords, bonds, bond_orders=bo):
+            self.sketcher_2d_pane._update_live_smiles()
+
+    def _on_toggle_2d_3d_split(self, checked: Optional[bool] = None):
+        """Toggle MolView-style two-pane 3D (left) + 2D Sketcher (right) view inside the right stack."""
+        from .dialog_2d_sketcher import Sketcher2DPane
+
+        if not hasattr(self, "sketcher_2d_pane") or self.sketcher_2d_pane is None:
+            self.sketcher_2d_pane = Sketcher2DPane(self, embedded=True)
+            self.sketcher_2d_pane.structure_generated.connect(self._apply_2d_sketch_to_3d)
+            self.sketcher_2d_pane.sync_from_3d_requested.connect(self._sync_3d_to_2d_pane)
+            self.sketcher_2d_pane.switch_to_inspector_requested.connect(lambda: self._on_toggle_2d_3d_split(False))
+            if hasattr(self, "right_stack") and self.right_stack is not None:
+                self.right_stack.addWidget(self.sketcher_2d_pane)
+
+        is_currently_2d = (
+            hasattr(self, "right_stack")
+            and self.right_stack is not None
+            and not self.right_stack.isHidden()
+            and self.right_stack.currentWidget() is self.sketcher_2d_pane
+        )
+        show = (not is_currently_2d) if checked is None else bool(checked)
+
+        if hasattr(self, "right_stack") and self.right_stack is not None:
+            if show:
+                self._on_toggle_right_pane(True)
+                self.right_stack.setCurrentWidget(self.sketcher_2d_pane)
+                if len(self.sketcher_2d_pane.canvas.atoms) == 0 and getattr(self, "zatoms", None):
+                    self._sync_3d_to_2d_pane()
+                if hasattr(self, "main_splitter") and self.main_splitter is not None:
+                    total_w = max(900, self.main_splitter.width(), self.width() - 20)
+                    self.main_splitter.setSizes([total_w // 2, total_w // 2])
+            else:
+                self.right_stack.setCurrentWidget(self.right_container)
+
+        if hasattr(self, "btn_2d_3d_split") and self.btn_2d_3d_split.isChecked() != show:
+            self.btn_2d_3d_split.blockSignals(True)
+            self.btn_2d_3d_split.setChecked(show)
+            self.btn_2d_3d_split.blockSignals(False)
+
+    def _on_toggle_right_pane(self, checked: Optional[bool] = None):
+        """Show Z-Matrix/Inspector panel (switching back from 2D Sketcher if active) or hide/show it."""
+        target = getattr(self, "right_stack", None) or getattr(self, "right_container", None)
+        if target is None:
+            return
+        pane_2d = getattr(self, "sketcher_2d_pane", None)
+        if (
+            getattr(self, "right_stack", None) is not None
+            and pane_2d is not None
+            and self.right_stack.currentWidget() is pane_2d
+            and checked is not True
+        ):
+            # User clicked ◧ Z-Mat while 2D Sketcher was active: switch back to Z-Matrix/Inspector & keep visible
+            self.right_stack.setCurrentWidget(self.right_container)
+            self.right_stack.setVisible(True)
+            if hasattr(self, "btn_2d_3d_split"):
+                self.btn_2d_3d_split.blockSignals(True)
+                self.btn_2d_3d_split.setChecked(False)
+                self.btn_2d_3d_split.blockSignals(False)
+            if hasattr(self, "btn_toggle_right_pane"):
+                self.btn_toggle_right_pane.blockSignals(True)
+                self.btn_toggle_right_pane.setChecked(True)
+                self.btn_toggle_right_pane.blockSignals(False)
+            return
+
+        show = target.isHidden() if checked is None else bool(checked)
+        target.setVisible(show)
+        if hasattr(self, "btn_toggle_right_pane") and self.btn_toggle_right_pane.isChecked() != show:
+            self.btn_toggle_right_pane.blockSignals(True)
+            self.btn_toggle_right_pane.setChecked(show)
+            self.btn_toggle_right_pane.blockSignals(False)
+
+    def _on_copy_camera_view(self):
+        """Copy the current 3D camera orientation, zoom, and pan as JSON to clipboard."""
+        import json
+
+        if not hasattr(self, "viewer") or not hasattr(self.viewer, "get_camera_state"):
+            return
+        payload = json.dumps(self.viewer.get_camera_state())
+        QtWidgets.QApplication.clipboard().setText(payload)
+        self.statusBar().showMessage("Copied 3D camera view to clipboard.", 3000)
+
+    def _on_paste_camera_view(self):
+        """Restore a copied 3D camera orientation, zoom, and pan from clipboard."""
+        import json
+
+        if not hasattr(self, "viewer") or not hasattr(self.viewer, "set_camera_state"):
+            return
+        txt = QtWidgets.QApplication.clipboard().text().strip()
+        try:
+            state = json.loads(txt)
+        except Exception:
+            self.statusBar().showMessage("Clipboard does not contain a valid AgyMolden camera view.", 3500)
+            return
+        if self.viewer.set_camera_state(state):
+            if hasattr(self, "btn_camera_proj"):
+                self.btn_camera_proj.setText("Ortho" if self.viewer.is_orthographic else "Persp")
+            self.statusBar().showMessage("Applied copied 3D camera view.", 3000)
+        else:
+            self.statusBar().showMessage("Clipboard camera data was invalid.", 3500)
+
+    def _on_open_user_manual(self):
+        """Display USER_MANUAL.md (or STUDENT_GUIDE.md) inside a clean scrollable viewer."""
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        doc_path = None
+        for fname in ("USER_MANUAL.md", "STUDENT_GUIDE.md"):
+            cand = os.path.join(root_dir, fname)
+            if os.path.isfile(cand):
+                doc_path = cand
+                break
+        if not doc_path:
+            QtWidgets.QMessageBox.information(self, "User Manual", "USER_MANUAL.md was not found in the application directory.")
+            return
+        with open(doc_path, "r", encoding="utf-8", errors="replace") as f:
+            md_text = f.read()
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(f"AgyMolden — {os.path.basename(doc_path)}")
+        dlg.resize(820, 620)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        browser = QtWidgets.QTextBrowser(dlg)
+        browser.setOpenExternalLinks(True)
+        browser.setMarkdown(md_text)
+        layout.addWidget(browser, 1)
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        layout.addWidget(btn_close, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        dlg.exec()
+
+    def _on_toggle_simple_mode(self, checked: Optional[bool] = None):
+        """Toggle Simple Mode to hide advanced QM toolbars and specialist ribbon controls."""
+        simple = (not getattr(self, "_simple_mode", False)) if checked is None else bool(checked)
+        self._simple_mode = simple
+        if hasattr(self, "toolbar_qm") and self.toolbar_qm is not None:
+            self.toolbar_qm.setVisible(not simple)
+        for attr in (
+            "btn_ribbon_tweezers",
+            "btn_auto_relax",
+            "chk_impose_symmetry",
+            "combo_view_sym_group",
+            "btn_orient_sym",
+        ):
+            w = getattr(self, attr, None)
+            if w is not None:
+                w.setVisible(not simple)
+        if hasattr(self, "act_simple_mode") and self.act_simple_mode.isChecked() != simple:
+            self.act_simple_mode.blockSignals(True)
+            self.act_simple_mode.setChecked(simple)
+            self.act_simple_mode.blockSignals(False)
+        try:
+            from .session_state import get_settings
+
+            get_settings("Preferences").setValue("ui/simple_mode", simple)
+        except Exception:
+            pass
+        self.statusBar().showMessage(
+            "Simple Mode enabled (advanced QM panels hidden)." if simple else "Full Mode enabled.", 3000
+        )
+
+    def _update_welcome_banner(self):
+        """Show the quick-start welcome banner only when no molecule is loaded."""
+        if hasattr(self, "welcome_banner") and self.welcome_banner is not None:
+            has_atoms = bool(getattr(self, "zatoms", None) and len(self.zatoms) > 0)
+            self.welcome_banner.setVisible(not has_atoms)
+
+    def _snapshot_current_mol_tab(self) -> Dict[str, Any]:
+        """Capture deep state of the active molecule workspace tab."""
+        import copy
+
+        zatoms_copy = [copy.copy(a) for a in getattr(self, "zatoms", [])]
+        cam = self.viewer.get_camera_state() if hasattr(self.viewer, "get_camera_state") else None
+        return {
+            "zatoms": zatoms_copy,
+            "coords": np.array(self.coords, copy=True) if getattr(self, "coords", None) is not None else np.empty((0, 3)),
+            "variables": dict(getattr(self, "variables", {})),
+            "cross_bonds": set(getattr(self, "cross_bonds", set())),
+            "strict_topology": bool(getattr(self, "strict_topology", False)),
+            "bond_orders": dict(getattr(self.viewer, "bond_orders", {})),
+            "file_path": getattr(self, "current_file_path", None),
+            "camera": cam,
+        }
+
+    def _restore_mol_tab(self, snap: Dict[str, Any]):
+        """Restore a molecule workspace tab snapshot."""
+        self._clear_stale_surfaces_and_qm_state()
+        zatoms = snap.get("zatoms", [])
+        coords = snap.get("coords")
+        self.variables = dict(snap.get("variables", {}))
+        self.cross_bonds = set(snap.get("cross_bonds", set()))
+        self.strict_topology = bool(snap.get("strict_topology", False))
+        self.current_file_path = snap.get("file_path")
+
+        if zatoms:
+            self.set_molecule_from_zatoms(zatoms, exact_coords=coords if coords is not None and len(coords) == len(zatoms) else None)
+            if hasattr(self.viewer, "bond_orders"):
+                self.viewer.bond_orders = dict(snap.get("bond_orders", {}))
+        else:
+            self.zatoms = []
+            self.coords = np.empty((0, 3), dtype=np.float64)
+            self.viewer.set_molecule([], np.empty((0, 3), dtype=np.float64))
+            if hasattr(self, "table_widget"):
+                self.table_widget.load_zatoms([])
+            self._sync_raw_text()
+            self._update_chemical_summary()
+
+        cam = snap.get("camera")
+        if cam and hasattr(self.viewer, "set_camera_state"):
+            self.viewer.set_camera_state(cam)
+        self._update_welcome_banner()
+        if (
+            hasattr(self, "sketcher_2d_pane")
+            and self.sketcher_2d_pane is not None
+            and hasattr(self, "right_stack")
+            and self.right_stack is not None
+            and not self.right_stack.isHidden()
+            and self.right_stack.currentWidget() is self.sketcher_2d_pane
+        ):
+            if zatoms:
+                self._sync_3d_to_2d_pane()
+            else:
+                self.sketcher_2d_pane.canvas.atoms.clear()
+                self.sketcher_2d_pane.canvas.bonds.clear()
+                self.sketcher_2d_pane.canvas.update()
+                self.sketcher_2d_pane._update_live_smiles()
+
+    def _on_new_mol_tab(self):
+        """Create and switch to a new empty molecule workspace tab."""
+        if not hasattr(self, "mol_tab_bar") or self.mol_tab_bar is None:
+            return
+        cur_idx = getattr(self, "_active_mol_tab_idx", 0)
+        if 0 <= cur_idx < len(self._mol_tabs):
+            self._mol_tabs[cur_idx] = self._snapshot_current_mol_tab()
+        self._mol_tabs.append({})
+        new_idx = len(self._mol_tabs) - 1
+        self.mol_tab_bar.blockSignals(True)
+        self.mol_tab_bar.addTab(f"Molecule {new_idx + 1}")
+        self.mol_tab_bar.setCurrentIndex(new_idx)
+        self.mol_tab_bar.blockSignals(False)
+        self._active_mol_tab_idx = new_idx
+        self._restore_mol_tab({})
+
+    def _on_switch_mol_tab(self, idx: int):
+        """Switch between open molecule workspace tabs."""
+        if not hasattr(self, "_mol_tabs") or idx < 0 or idx >= len(self._mol_tabs):
+            return
+        cur_idx = getattr(self, "_active_mol_tab_idx", 0)
+        if idx == cur_idx:
+            return
+        if 0 <= cur_idx < len(self._mol_tabs):
+            self._mol_tabs[cur_idx] = self._snapshot_current_mol_tab()
+        self._active_mol_tab_idx = idx
+        self._restore_mol_tab(self._mol_tabs[idx])
+
+    def _on_close_mol_tab(self, idx: int):
+        """Close a molecule workspace tab (keeping at least 1 tab open)."""
+        if not hasattr(self, "_mol_tabs") or idx < 0 or idx >= len(self._mol_tabs):
+            return
+        if len(self._mol_tabs) <= 1:
+            self._mol_tabs[0] = {}
+            self.mol_tab_bar.setTabText(0, "Molecule 1")
+            self._restore_mol_tab({})
+            return
+        cur_idx = getattr(self, "_active_mol_tab_idx", 0)
+        self._mol_tabs.pop(idx)
+        self.mol_tab_bar.blockSignals(True)
+        self.mol_tab_bar.removeTab(idx)
+        new_idx = min(cur_idx if idx > cur_idx else max(0, cur_idx - 1), len(self._mol_tabs) - 1)
+        self.mol_tab_bar.setCurrentIndex(new_idx)
+        self.mol_tab_bar.blockSignals(False)
+        self._active_mol_tab_idx = new_idx
+        if idx == cur_idx:
+            self._restore_mol_tab(self._mol_tabs[new_idx])
+
     def _on_open_2d_sketcher(self):
         """Open 2D Molecular Bond-Line Sketcher (Ctrl+Shift+K)."""
         from .dialog_2d_sketcher import MoleculeSketcher2DDialog
-        from .zmatrix import cartesian_to_zmatrix, ZAtom
 
         dlg = MoleculeSketcher2DDialog(self)
-
-        def _on_structure_generated(syms, coords, bonds, bo):
-            self._push_undo_state()
-            self._clear_stale_surfaces_and_qm_state()
-            self.variables = {}
-            try:
-                zatoms = cartesian_to_zmatrix(syms, coords, user_bonds=bonds, strict_bonds=bool(bonds))
-                tree = {norm_bond(a.ref1, i) for i, a in enumerate(zatoms) if a.ref1 is not None}
-                self.cross_bonds = {norm_bond(u, v) for u, v in bonds if norm_bond(u, v) not in tree}
-                self.strict_topology = bool(bonds)
-                self.set_molecule_from_zatoms(zatoms, exact_coords=coords)
-            except Exception as e:
-                # Direct fallback into MoleculeViewer and table
-                fallback_zatoms = [ZAtom(sym) for sym in syms]
-                self.cross_bonds = {norm_bond(u, v) for u, v in bonds}
-                self.strict_topology = bool(bonds)
-                self.zatoms = fallback_zatoms
-                self.coords = np.copy(coords)
-                self.viewer.set_molecule(syms, coords, user_bonds=bonds)
-                if hasattr(self, "table_widget"):
-                    self.table_widget.load_zatoms(fallback_zatoms)
-                if hasattr(self, "model") and self.model is not None:
-                    self.model.zatoms = list(fallback_zatoms)
-                    self.model.coords = np.copy(coords)
-                    self.model.cross_bonds = set(self.cross_bonds)
-                    self.model.strict_topology = self.strict_topology
-                    self.model.structure_changed.emit()
-                    self.model.topology_changed.emit()
-                self._sync_raw_text()
-                self._update_chemical_summary()
-
-            if hasattr(self.viewer, "bond_orders"):
-                self.viewer.bond_orders = bo
-            self.viewer.auto_center()
-            self.viewer.update()
-            self.statusBar().showMessage(f"Converted 2D sketch to 3D structure ({len(syms)} atoms).", 4000)
-
-        dlg.structure_generated.connect(_on_structure_generated)
+        dlg.structure_generated.connect(self._apply_2d_sketch_to_3d)
         dlg.exec()
 
     def _on_open_esp_2d_dialog(self):

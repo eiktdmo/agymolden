@@ -88,6 +88,16 @@ fi
 # 5. Create launcher symlinks and desktop entry if on Linux
 chmod +x run.py
 
+mkdir -p "$HOME/.local/bin"
+if [ -x "$PROJECT_DIR/.venv/bin/agymolden" ]; then
+    ln -sf "$PROJECT_DIR/.venv/bin/agymolden" "$HOME/.local/bin/agymolden"
+    echo "✔ Linked global command: $HOME/.local/bin/agymolden"
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) echo "  Note: Add '$HOME/.local/bin' to your PATH to run 'agymolden' from anywhere." ;;
+    esac
+fi
+
 if [ "$(uname -s)" = "Linux" ]; then
     if [ -f "./make_desktop_entry.sh" ]; then
         echo

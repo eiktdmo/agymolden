@@ -41,7 +41,10 @@ def test_compute_mayer_and_wiberg_orders():
     if not os.path.isfile(H2O_MOLDEN):
         pytest.skip("examples/h2o_orca.molden not found")
 
-    mayer, wiberg = compute_mayer_and_wiberg_orders(H2O_MOLDEN)
+    try:
+        mayer, wiberg = compute_mayer_and_wiberg_orders(H2O_MOLDEN)
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Neither runnable Multiwfn nor pyscf available: {exc}")
     assert len(mayer.bonds) >= 2  # Two O-H bonds
     assert len(wiberg.bonds) >= 2
 
@@ -91,7 +94,10 @@ def test_compute_qtaim_topology():
     if not bin_path or not os.path.isfile(H2O_MOLDEN):
         pytest.skip("Multiwfn not installed or h2o_orca.molden missing")
 
-    res = compute_qtaim_topology(H2O_MOLDEN)
+    try:
+        res = compute_qtaim_topology(H2O_MOLDEN)
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Neither runnable Multiwfn nor pyscf available: {exc}")
     assert res.num_nuclear == 3  # 3 atoms
     assert res.num_bcp >= 2      # At least 2 bond critical points (O-H)
     assert len(res.critical_points) == res.num_nuclear + res.num_bcp + res.num_rcp + res.num_ccp
@@ -168,6 +174,7 @@ def test_multiwfn_custom_path_and_missing_error(monkeypatch, tmp_path):
         mwa.compute_hirshfeld_and_cm5_charges(H2O_MOLDEN)
 
     # auto/pyscf fallback works even if Multiwfn is missing
+    pytest.importorskip("pyscf")
     qres = mwa.compute_qtaim_topology(H2O_MOLDEN, engine="auto")
     assert qres.method == "PySCF Analytical QTAIM"
     assert qres.num_bcp >= 2
@@ -181,6 +188,7 @@ def test_friendly_error_text_for_missing_pyscf():
 
 
 def test_pyscf_qtaim_analytical_water_and_benzene():
+    pytest.importorskip("pyscf")
     import agymolden.multiwfn_analysis as mwa
 
     # 1. Water QTAIM

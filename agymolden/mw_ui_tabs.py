@@ -18,13 +18,13 @@ class UIInspectorTabsMixin:
 
         # Header with calculation triggers
         vib_ctrl_top = QtWidgets.QHBoxLayout()
-        self.btn_calc_vibrations = QtWidgets.QPushButton("⚡ Calculate Frequencies (Force Field)")
+        self.btn_calc_vibrations = QtWidgets.QPushButton("⚡ Calc Frequencies (FF)")
         self.btn_calc_vibrations.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; padding: 6px;")
         self.btn_calc_vibrations.setToolTip("Calculate Hessian and normal vibrational modes using universal force field")
         self.btn_calc_vibrations.clicked.connect(self._on_calculate_vibrations)
         vib_ctrl_top.addWidget(self.btn_calc_vibrations, stretch=1)
 
-        self.btn_isotope_shifts = QtWidgets.QPushButton("⚗️ Isotopologue && KIE...")
+        self.btn_isotope_shifts = QtWidgets.QPushButton("⚗️ Isotopes / KIE...")
         self.btn_isotope_shifts.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 6px 10px;")
         self.btn_isotope_shifts.setToolTip(
             "GaussView / Chemcraft style Isotopologue Calculator:\n"
@@ -39,6 +39,8 @@ class UIInspectorTabsMixin:
         row_filter = QtWidgets.QHBoxLayout()
         row_filter.addWidget(QtWidgets.QLabel("Filter Modes:"))
         self.combo_vib_filter = QtWidgets.QComboBox()
+        self.combo_vib_filter.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_vib_filter.setMinimumContentsLength(16)
         self.combo_vib_filter.addItem("All Modes", "all")
         self.combo_vib_filter.addItem("Genuine Vibrations (>15 cm⁻¹)", "genuine")
         self.combo_vib_filter.addItem("Imaginary / TS Frequencies (<0 cm⁻¹)", "imag")
@@ -95,8 +97,8 @@ class UIInspectorTabsMixin:
 
         # Follow / Adopt Displaced Mode Geometry (GaussView style for breaking imaginary TS modes)
         row_adopt = QtWidgets.QHBoxLayout()
-        row_adopt.addWidget(QtWidgets.QLabel("Follow Mode:"))
-        self.btn_adopt_vib_pos = QtWidgets.QPushButton("📐 Adopt +Displaced Geometry")
+        row_adopt.addWidget(QtWidgets.QLabel("Follow:"))
+        self.btn_adopt_vib_pos = QtWidgets.QPushButton("📐 Adopt +Mode")
         self.btn_adopt_vib_pos.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
         self.btn_adopt_vib_pos.setToolTip(
             "GaussView style: Displace the molecular coordinates forward (+Amplitude × Normal Mode Vector)\n"
@@ -105,7 +107,7 @@ class UIInspectorTabsMixin:
         self.btn_adopt_vib_pos.clicked.connect(lambda: self._on_adopt_vibrational_displacement(sign=1.0))
         row_adopt.addWidget(self.btn_adopt_vib_pos, stretch=1)
 
-        self.btn_adopt_vib_neg = QtWidgets.QPushButton("📐 Adopt −Displaced Geometry")
+        self.btn_adopt_vib_neg = QtWidgets.QPushButton("📐 Adopt −Mode")
         self.btn_adopt_vib_neg.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold;")
         self.btn_adopt_vib_neg.setToolTip(
             "GaussView style: Displace the molecular coordinates backward (−Amplitude × Normal Mode Vector)\n"
@@ -262,6 +264,8 @@ class UIInspectorTabsMixin:
         row_sym_select.addWidget(self.lbl_choose_sym)
 
         self.combo_sym_group = QtWidgets.QComboBox()
+        self.combo_sym_group.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_sym_group.setMinimumContentsLength(12)
         self.combo_sym_group.setToolTip(
             "Choose from Higher (approximate supergroups at looser tolerance),\n"
             "Detected (exact point group), or Lower (subgroups down to C1) symmetries.\n"
@@ -272,14 +276,14 @@ class UIInspectorTabsMixin:
 
         self.btn_sym_higher = QtWidgets.QPushButton("⬆ Higher")
         self.btn_sym_higher.setToolTip("Step up to the next higher-order symmetry group (supergroup)")
-        self.btn_sym_higher.setStyleSheet("background-color: #334155; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        self.btn_sym_higher.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold; padding: 4px 8px;")
         self.btn_sym_higher.clicked.connect(self._on_step_higher_symmetry)
         self.btn_sym_higher.setEnabled(False)
         row_sym_select.addWidget(self.btn_sym_higher)
 
         self.btn_sym_lower = QtWidgets.QPushButton("⬇ Lower")
         self.btn_sym_lower.setToolTip("Step down to the next lower-order symmetry subgroup")
-        self.btn_sym_lower.setStyleSheet("background-color: #334155; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        self.btn_sym_lower.setStyleSheet("background-color: #7c3aed; color: #ffffff; font-weight: bold; padding: 4px 8px;")
         self.btn_sym_lower.clicked.connect(self._on_step_lower_symmetry)
         self.btn_sym_lower.setEnabled(False)
         row_sym_select.addWidget(self.btn_sym_lower)
@@ -287,21 +291,21 @@ class UIInspectorTabsMixin:
 
         # Action buttons row: Align to standard orientation, Enforce symmetry & Impose symmetry
         row_sym_actions = QtWidgets.QHBoxLayout()
-        self.btn_sym_align = QtWidgets.QPushButton("📐 Align to Standard Orientation")
+        self.btn_sym_align = QtWidgets.QPushButton("📐 Standard Orient")
         self.btn_sym_align.setToolTip("Align principal symmetry axis (highest Cn) along Z and plane in XZ/XY")
         self.btn_sym_align.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_sym_align.clicked.connect(self._on_align_symmetry)
         self.btn_sym_align.setEnabled(False)
         row_sym_actions.addWidget(self.btn_sym_align)
 
-        self.btn_sym_enforce = QtWidgets.QPushButton("⚖️ Enforce Symmetry")
+        self.btn_sym_enforce = QtWidgets.QPushButton("⚖️ Enforce")
         self.btn_sym_enforce.setToolTip("Project coordinates into exact representation subspace if tolerance is not fulfilled")
         self.btn_sym_enforce.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_sym_enforce.clicked.connect(self._on_enforce_symmetry)
         self.btn_sym_enforce.setEnabled(False)
         row_sym_actions.addWidget(self.btn_sym_enforce)
 
-        self.btn_impose_symmetry = QtWidgets.QPushButton("🔒 Impose Symmetry: OFF")
+        self.btn_impose_symmetry = QtWidgets.QPushButton("🔒 Impose: OFF")
         self.btn_impose_symmetry.setCheckable(True)
         self.btn_impose_symmetry.setChecked(False)
         self.btn_impose_symmetry.setToolTip(
@@ -309,7 +313,7 @@ class UIInspectorTabsMixin:
             "Replacing an atom or attaching a ligand (e.g. replacing H by CO in Oh CrH6)\n"
             "automatically applies the edit to all symmetry-equivalent atoms!"
         )
-        self.btn_impose_symmetry.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_impose_symmetry.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_impose_symmetry.toggled.connect(self._on_toggle_impose_symmetry)
         row_sym_actions.addWidget(self.btn_impose_symmetry)
         sym_ctrl_layout.addLayout(row_sym_actions)
@@ -318,7 +322,7 @@ class UIInspectorTabsMixin:
         row_sym_opts = QtWidgets.QHBoxLayout()
         self.btn_sym_matrices = QtWidgets.QPushButton("🔢 Show Symmetry Matrices")
         self.btn_sym_matrices.setToolTip("Display 3x3 transformation matrix for selected symmetry operation")
-        self.btn_sym_matrices.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold; padding: 5px;")
+        self.btn_sym_matrices.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; padding: 5px;")
         self.btn_sym_matrices.clicked.connect(self._on_show_symmetry_matrices)
         self.btn_sym_matrices.setEnabled(False)
         row_sym_opts.addWidget(self.btn_sym_matrices)
@@ -355,23 +359,23 @@ class UIInspectorTabsMixin:
         tab_sym_layout.addWidget(grp_sym_ctrl)
 
         # Coordinate Centering & Axis / Plane Alignment for Symmetry Matrices
-        grp_sym_orient = QtWidgets.QGroupBox("Coordinate Centering & Axis / Plane Alignment (for 3×3 Matrices)")
+        grp_sym_orient = QtWidgets.QGroupBox("Coordinate Centering & Alignment")
         sym_orient_layout = QtWidgets.QVBoxLayout(grp_sym_orient)
         sym_orient_layout.setSpacing(5)
 
         row_so_center = QtWidgets.QHBoxLayout()
         row_so_center.setSpacing(5)
         row_so_center.addWidget(QtWidgets.QLabel("Origin:"))
-        btn_so_com = QtWidgets.QPushButton("🎯 Center COM")
-        btn_so_com.setStyleSheet("background-color: #334155; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        btn_so_com = QtWidgets.QPushButton("🎯 COM")
+        btn_so_com.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; padding: 4px 8px;")
         btn_so_com.setToolTip("Place Center of Mass at (0, 0, 0)")
         btn_so_com.clicked.connect(lambda: self._on_center_molecule_mode("com"))
         btn_so_cent = QtWidgets.QPushButton("🎯 Centroid")
-        btn_so_cent.setStyleSheet("background-color: #334155; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        btn_so_cent.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; padding: 4px 8px;")
         btn_so_cent.setToolTip("Place Geometric Centroid at (0, 0, 0)")
         btn_so_cent.clicked.connect(lambda: self._on_center_molecule_mode("centroid"))
-        btn_so_atom = QtWidgets.QPushButton("🎯 Selected Atom → (0,0,0)")
-        btn_so_atom.setStyleSheet("background-color: #334155; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        btn_so_atom = QtWidgets.QPushButton("🎯 Atom → (0,0,0)")
+        btn_so_atom.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; padding: 4px 8px;")
         btn_so_atom.setToolTip("Place selected atom at (0, 0, 0)")
         btn_so_atom.clicked.connect(lambda: self._on_center_molecule_mode("atom"))
         row_so_center.addWidget(btn_so_com)
@@ -408,7 +412,7 @@ class UIInspectorTabsMixin:
         tab_sym_layout.addWidget(grp_sym_orient)
 
         # Table of Symmetry Operations
-        grp_ops = QtWidgets.QGroupBox("Symmetry Elements & Operations (Double-click or click 'Show Symmetry Matrices' for 3x3 matrix)")
+        grp_ops = QtWidgets.QGroupBox("Symmetry Elements & Operations")
         ops_layout = QtWidgets.QVBoxLayout(grp_ops)
 
         self.table_symmetry_ops = QtWidgets.QTableWidget(0, 3)
@@ -478,7 +482,7 @@ class UIInspectorTabsMixin:
 
         self.btn_quick_homo = QtWidgets.QPushButton("⚡ HOMO")
         self.btn_quick_homo.setMinimumWidth(55)
-        self.btn_quick_homo.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_quick_homo.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_homo.setToolTip("Quickly evaluate and display the Highest Occupied Molecular Orbital (HOMO)")
         self.btn_quick_homo.clicked.connect(self._on_quick_view_homo)
         mo_top_bar2.addWidget(self.btn_quick_homo, stretch=1)
@@ -490,9 +494,23 @@ class UIInspectorTabsMixin:
         self.btn_quick_lumo.clicked.connect(self._on_quick_view_lumo)
         mo_top_bar2.addWidget(self.btn_quick_lumo, stretch=1)
 
+        self.btn_quick_dens = QtWidgets.QPushButton("☁️ ρ(r) ▾")
+        self.btn_quick_dens.setMinimumWidth(58)
+        self.btn_quick_dens.setStyleSheet("background-color: #0891b2; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_quick_dens.setToolTip(
+            "Total Electron Density ρ(r):\n"
+            "Choose 3D Density Color Map (Slice), 3D Isosurface (Isovalue), or 2D Contour Map"
+        )
+        menu_dens = QtWidgets.QMenu(self.btn_quick_dens)
+        menu_dens.addAction("🌈 3D Density Color Map (Surface)", self._on_quick_view_density_colormap)
+        menu_dens.addAction("☁️ 3D Density Isosurface (Isovalue)", self._on_quick_view_electron_density)
+        menu_dens.addAction("📈 2D Density Contour Map...", self._on_quick_view_density_2d)
+        self.btn_quick_dens.setMenu(menu_dens)
+        mo_top_bar2.addWidget(self.btn_quick_dens, stretch=1)
+
         self.btn_quick_spin_dens = QtWidgets.QPushButton("🌀 Spin")
         self.btn_quick_spin_dens.setMinimumWidth(50)
-        self.btn_quick_spin_dens.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_quick_spin_dens.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_spin_dens.setToolTip(
             "1-Click Open-Shell Spin Density (Δρ = ρ_α − ρ_β):\n"
             "Evaluate and render excess α/β spin density lobes directly in the 3D viewport"
@@ -502,7 +520,7 @@ class UIInspectorTabsMixin:
 
         self.btn_quick_esp_map = QtWidgets.QPushButton("🌈 ESP")
         self.btn_quick_esp_map.setMinimumWidth(50)
-        self.btn_quick_esp_map.setStyleSheet("background-color: #db2777; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_quick_esp_map.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_quick_esp_map.setToolTip(
             "1-Click Electrostatic Potential (ESP) Mapped Electron Density Surface:\n"
             "Colors the electron density isosurface from Red (δ⁻ nucleophilic) to Blue (δ⁺ electrophilic) (Ctrl+Alt+P)"
@@ -512,7 +530,7 @@ class UIInspectorTabsMixin:
 
         self.btn_localize_mos = QtWidgets.QPushButton("🧲 LMO ▾")
         self.btn_localize_mos.setMinimumWidth(55)
-        self.btn_localize_mos.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
+        self.btn_localize_mos.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_localize_mos.setToolTip(
             "1-Click PySCF Unitary Orbital Localization (Pipek-Mezey or Foster-Boys):\n"
             "Transforms canonical delocalized MOs into Localized Molecular Orbitals (LMOs: σ bonds, π bonds, lone pairs)"
@@ -528,16 +546,66 @@ class UIInspectorTabsMixin:
         self.btn_localize_mos.setMenu(menu_loc)
         mo_top_bar2.addWidget(self.btn_localize_mos, stretch=1)
 
-        self.btn_positron_overlay = QtWidgets.QPushButton("⚛️ +Positron")
+        self.btn_positron_overlay = QtWidgets.QPushButton("⚛️ Positron ▾")
         self.btn_positron_overlay.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 6px;")
         self.btn_positron_overlay.setToolTip(
-            "Overlay companion Positron ground-state orbital surface (gold/green) onto the current Electron MO (blue/red)"
+            "Positron & Annihilation Tools: Overlay Positron MO #1, Positron Density (ρ₊), or Annihilation Density (ρ₋·ρ₊)"
         )
         self.btn_positron_overlay.setVisible(False)
-        self.btn_positron_overlay.clicked.connect(self._on_overlay_positron_orbital)
+        menu_pos = QtWidgets.QMenu(self.btn_positron_overlay)
+        act_pos_mo = menu_pos.addAction("⚛️ Overlay Positron MO #1 (Gold/Green)")
+        act_pos_mo.triggered.connect(self._on_overlay_positron_orbital)
+        act_pos_dens = menu_pos.addAction("☁️ Overlay Positron Density ρ₊ (Gold)")
+        act_pos_dens.triggered.connect(self._on_overlay_positron_density)
+        act_pos_ann = menu_pos.addAction("💥 Annihilation Density ρ₋·ρ₊ (Magenta)")
+        act_pos_ann.triggered.connect(self._on_view_annihilation_density)
+        self.btn_positron_overlay.setMenu(menu_pos)
         mo_top_bar2.addWidget(self.btn_positron_overlay, stretch=1)
 
         tab_mo_layout.addLayout(mo_top_bar2)
+
+        # Compact Live Density Color Map Controls (2 clean rows so it fits any narrow right pane)
+        self.grp_quick_dens_cmap = QtWidgets.QGroupBox("🌈 Density Color Map (Live 3D)")
+        dc_grid = QtWidgets.QGridLayout(self.grp_quick_dens_cmap)
+        dc_grid.setContentsMargins(6, 6, 6, 6)
+        dc_grid.setSpacing(4)
+        dc_grid.setColumnStretch(1, 2)
+        dc_grid.setColumnStretch(3, 1)
+
+        dc_grid.addWidget(QtWidgets.QLabel("Palette:"), 0, 0)
+        self.combo_quick_dens_cmap = QtWidgets.QComboBox()
+        self.combo_quick_dens_cmap.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_quick_dens_cmap.setMinimumContentsLength(7)
+        for c_name in ("viridis", "plasma", "inferno", "magma", "turbo", "jet", "coolwarm"):
+            self.combo_quick_dens_cmap.addItem(c_name, c_name)
+        self.combo_quick_dens_cmap.currentIndexChanged.connect(self._on_update_quick_density_colormap)
+        dc_grid.addWidget(self.combo_quick_dens_cmap, 0, 1)
+
+        dc_grid.addWidget(QtWidgets.QLabel("Mode:"), 0, 2)
+        self.combo_quick_dens_plane = QtWidgets.QComboBox()
+        self.combo_quick_dens_plane.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_quick_dens_plane.setMinimumContentsLength(8)
+        for p_lbl, p_key in (("3D Surface", "VDW"), ("Slice: Auto", "AUTO"), ("Slice: XY", "XY"), ("Slice: XZ", "XZ"), ("Slice: YZ", "YZ")):
+            self.combo_quick_dens_plane.addItem(p_lbl, p_key)
+        self.combo_quick_dens_plane.currentIndexChanged.connect(self._on_update_quick_density_colormap)
+        dc_grid.addWidget(self.combo_quick_dens_plane, 0, 3)
+
+        dc_grid.addWidget(QtWidgets.QLabel("Scale/Off:"), 1, 0)
+        self.spin_quick_dens_offset = QtWidgets.QDoubleSpinBox()
+        self.spin_quick_dens_offset.setRange(-10.0, 10.0)
+        self.spin_quick_dens_offset.setSingleStep(0.2)
+        self.spin_quick_dens_offset.setDecimals(1)
+        self.spin_quick_dens_offset.setSuffix(" Å")
+        self.spin_quick_dens_offset.valueChanged.connect(self._on_update_quick_density_colormap)
+        dc_grid.addWidget(self.spin_quick_dens_offset, 1, 1)
+
+        self.chk_quick_dens_log = QtWidgets.QCheckBox("Log10")
+        self.chk_quick_dens_log.setChecked(False)
+        self.chk_quick_dens_log.toggled.connect(self._on_update_quick_density_colormap)
+        dc_grid.addWidget(self.chk_quick_dens_log, 1, 2, 1, 2)
+
+        self.grp_quick_dens_cmap.setVisible(False)
+        tab_mo_layout.addWidget(self.grp_quick_dens_cmap)
 
         self.lbl_mo_status = QtWidgets.QLabel("No orbital/wavefunction data loaded. Run a calculation or open a .molden / .cube file.")
         self.lbl_mo_status.setStyleSheet("color: #64748b; font-style: italic; font-size: 11px;")
@@ -579,20 +647,22 @@ class UIInspectorTabsMixin:
 
         tab_mo_layout.addLayout(mo_split_layout, stretch=1)
 
-        # Quick Surface Parameter Bar (2 compact rows so Plot Box Size & Grid are always clearly visible)
+        # Quick Surface Parameter Bar (3 clean rows so Isovalue, Opacity, Grid, Plot Box, and Colors never clip)
         mo_params_group = QtWidgets.QGroupBox("Orbital Surface Controls")
-        mo_params_vbox = QtWidgets.QVBoxLayout(mo_params_group)
-        mo_params_vbox.setContentsMargins(6, 6, 6, 6)
-        mo_params_vbox.setSpacing(4)
+        self.mo_params_group = mo_params_group
+        mo_grid = QtWidgets.QGridLayout(mo_params_group)
+        mo_grid.setContentsMargins(6, 6, 6, 6)
+        mo_grid.setSpacing(5)
+        mo_grid.setColumnStretch(1, 2)
+        mo_grid.setColumnStretch(3, 1)
 
-        mo_row1 = QtWidgets.QHBoxLayout()
-        mo_row1.addWidget(QtWidgets.QLabel("Isovalue:"))
+        mo_grid.addWidget(QtWidgets.QLabel("Isovalue:"), 0, 0)
         self.slider_quick_iso = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_quick_iso.setRange(1, 1000)  # 0.0001 to 0.5000 (scaled by mapping)
         self.slider_quick_iso.setValue(60)
         self.slider_quick_iso.setToolTip("Adjust orbital isosurface boundary level")
         self.slider_quick_iso.valueChanged.connect(self._on_quick_slider_iso_changed)
-        mo_row1.addWidget(self.slider_quick_iso, stretch=2)
+        mo_grid.addWidget(self.slider_quick_iso, 0, 1, 1, 2)
 
         self.spin_quick_iso = QtWidgets.QDoubleSpinBox()
         self.spin_quick_iso.setRange(0.0001, 2.0)
@@ -600,47 +670,48 @@ class UIInspectorTabsMixin:
         self.spin_quick_iso.setSingleStep(0.005)
         self.spin_quick_iso.setValue(0.0300)
         self.spin_quick_iso.valueChanged.connect(self._on_quick_spin_iso_changed)
-        mo_row1.addWidget(self.spin_quick_iso)
+        mo_grid.addWidget(self.spin_quick_iso, 0, 3)
 
-        mo_row1.addWidget(QtWidgets.QLabel("Opacity:"))
+        mo_grid.addWidget(QtWidgets.QLabel("Opacity:"), 1, 0)
         self.slider_quick_opacity = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_quick_opacity.setRange(10, 100)
         self.slider_quick_opacity.setValue(80)
         self.slider_quick_opacity.valueChanged.connect(self._on_quick_opacity_changed)
-        mo_row1.addWidget(self.slider_quick_opacity, stretch=1)
-        mo_params_vbox.addLayout(mo_row1)
+        mo_grid.addWidget(self.slider_quick_opacity, 1, 1)
 
-        mo_row2 = QtWidgets.QHBoxLayout()
-        mo_row2.addWidget(QtWidgets.QLabel("Grid:"))
+        mo_grid.addWidget(QtWidgets.QLabel("Grid:"), 1, 2)
         self.combo_quick_grid = QtWidgets.QComboBox()
+        self.combo_quick_grid.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_quick_grid.setMinimumContentsLength(8)
         self.combo_quick_grid.addItem("Low (30³)", 30)
         self.combo_quick_grid.addItem("Med (40³)", 40)
         self.combo_quick_grid.addItem("High (60³)", 60)
         self.combo_quick_grid.setCurrentIndex(1)
         self.combo_quick_grid.setToolTip("3D voxel grid resolution for Molecular Orbital evaluation")
         self.combo_quick_grid.currentIndexChanged.connect(self._on_quick_grid_or_margin_changed)
-        mo_row2.addWidget(self.combo_quick_grid)
+        mo_grid.addWidget(self.combo_quick_grid, 1, 3)
 
-        mo_row2.addWidget(QtWidgets.QLabel("Plot Box Size:"))
+        mo_grid.addWidget(QtWidgets.QLabel("Plot Box:"), 2, 0)
         self.spin_quick_margin = QtWidgets.QDoubleSpinBox()
-        self.spin_quick_margin.setRange(1.0, 15.0)
+        self.spin_quick_margin.setRange(1.0, 30.0)
         self.spin_quick_margin.setSingleStep(0.5)
-        self.spin_quick_margin.setValue(3.0)
+        self.spin_quick_margin.setValue(5.5)
         self.spin_quick_margin.setSuffix(" a₀")
         self.spin_quick_margin.setToolTip("Cartesian evaluation box padding/margin beyond outer atoms (Bohr). Increase if diffuse orbital lobes are clipped.")
         self.spin_quick_margin.valueChanged.connect(self._on_quick_grid_or_margin_changed)
-        mo_row2.addWidget(self.spin_quick_margin)
+        mo_grid.addWidget(self.spin_quick_margin, 2, 1)
 
-        mo_row2.addWidget(QtWidgets.QLabel("Colors:"))
+        mo_grid.addWidget(QtWidgets.QLabel("Colors:"), 2, 2)
         self.combo_mo_phase_colors = QtWidgets.QComboBox()
+        self.combo_mo_phase_colors.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_mo_phase_colors.setMinimumContentsLength(10)
         self.combo_mo_phase_colors.addItem("Blue (+) / Red (-)", "blue_red")
         self.combo_mo_phase_colors.addItem("Cyan (+) / Orange (-)", "cyan_orange")
         self.combo_mo_phase_colors.addItem("Green (+) / Purple (-)", "green_purple")
         self.combo_mo_phase_colors.addItem("Gold (+) / Emerald (-)", "gold_emerald")
         self.combo_mo_phase_colors.setToolTip("Customize 3D orbital positive/negative phase lobe color scheme (Avogadro / VMD style)")
         self.combo_mo_phase_colors.currentIndexChanged.connect(lambda: self._remesh_current_mo(self.spin_quick_iso.value()))
-        mo_row2.addWidget(self.combo_mo_phase_colors, stretch=1)
-        mo_params_vbox.addLayout(mo_row2)
+        mo_grid.addWidget(self.combo_mo_phase_colors, 2, 3)
 
         tab_mo_layout.addWidget(mo_params_group)
         self.tab_orbitals_widget = tab_orbitals

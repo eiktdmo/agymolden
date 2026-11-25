@@ -1,7 +1,7 @@
 # AgyMolden User Manual & Comparative Evaluation
 
-**Version:** 1.0 (Modern Molden-Inspired Z-Matrix Generator & Molecular Modeling Suite)  
-**Platform:** Linux (X11 / Wayland via PyQt6 & Modern OpenGL)  
+**Version:** 1.2.1 (Modern Molden-Inspired Z-Matrix Generator & Molecular Modeling Suite)  
+**Platform:** Linux / macOS / Windows (PyQt6 & Modern OpenGL)  
 **Author:** AgyMolden Development Team  
 
 ---
@@ -216,6 +216,22 @@ Open **Analysis $\to$ Volumetric Grid & Isosurface Viewer** (or load a `.molden`
 - **🔢 Symmetry matrices**: *Show Symmetry Matrices* has an operation selector and a "display all operations" mode, with trace and determinant of each 3×3 matrix.
 - **Orbital isovalue**: the Molecular Orbitals tab has a slider plus spin box; the grid is cached so changing the isovalue re-meshes instantly.
 - **Optional dependency note**: ESP/ELF/NCI/CHELPG/Fukui/2D slicing need PySCF (`pip install .[qm]`; not available on Windows). The standalone executable does not bundle PySCF.
+
+### 5.4 New Capabilities in v1.2.1
+- **2D | 3D Split Sketcher with Ring Welder & Periodic Table**:
+  - Toggle **`✏️ 2D | 3D`** to sketch in 2D alongside live 3D synchronization, full `Ctrl+Z`/`Ctrl+Y` undo/redo, and **`⚛️ Other...`** Periodic Table access for any element.
+  - **2D Ring Welder**: Fuse or attach `Benzene`, `C6`, `C5`, `C4`, `C3`, or `C7` rings via apothem-matched magnetic bond/atom snapping (`Shift+Click` to chain multiple rings), while keeping **`◧ Z-Mat`** / **`📋 Z-Matrix`** and **XYZ** tabs accessible at all times.
+- **3D Electron Density Color Map (`☁️ ρ(r) ▾`)**:
+  - **3D Color Map (Surface)** renders a smooth 3D molecular van der Waals surface colored by interpolated 3D electron density $\rho(r)$ with a dynamic HUD colorbar, `Log10` scaling, and live palette/scale/mode controls (including optional **3D Slice**, **3D Isosurface**, and **2D Contour Map**).
+- **ORCA Studio External Export & MO Printing (`Ctrl+R`)**:
+  - **`💾 Save Input Only...`** exports standalone `.inp` decks for HPC clusters or external runs without launching ORCA locally, and remembers the user's chosen working directory.
+  - **`⚛️ Print Molecular Orbitals & AO Composition`** injects `%output Print[P_MOs] 1 Print[P_ReducedOrbPopMO_L] 1 Print[P_Basis] 2 end` for complete MO/AO analysis in `.out` files.
+- **QM Output Viewer Teaching Quick-Jump Bar (`F2`)**:
+  - Dedicated 1-click navigation buttons (**`⭐ Final E`**, **`🧮 E-Parts`**, **`🔬 E-Corr`**, **`⚛️ MOs`**, **`🎵 Vibs`**) for ORCA, Gaussian, PySCF, and Psi4 output logs.
+- **AgyMolden ↔ Agemacs Bridge**:
+  - **`🚀 Agemacs ▾`** toolbar menu and 1-click **`🚀 Open in Agemacs`** buttons inside ORCA Studio, QM Studio, and Output Viewer.
+- **Cross-OS White/Dark Responsive UI**:
+  - High-contrast White and Dark themes with zero dark-on-light buttons, screen-aware scrollable dialogs (`fit_dialog_to_screen`), and compact right-pane controls that remain readable on 13" laptops.
 
 ---
 

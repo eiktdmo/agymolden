@@ -159,13 +159,61 @@ class UIMixin(UIInspectorTabsMixin):
         main_layout.setSpacing(6)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.main_splitter = splitter
         main_layout.addWidget(splitter)
 
-        # Left Widget: 3D Viewport + View controls bar
+        # Left Widget: Multi-Molecule Tab Bar + Welcome Banner + 3D Viewport + View controls bar
         left_container = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(4)
+
+        mol_tab_row = QtWidgets.QHBoxLayout()
+        mol_tab_row.setContentsMargins(0, 0, 0, 0)
+        mol_tab_row.setSpacing(2)
+        self.mol_tab_bar = QtWidgets.QTabBar()
+        self.mol_tab_bar.setTabsClosable(True)
+        self.mol_tab_bar.setExpanding(False)
+        self.mol_tab_bar.setDocumentMode(True)
+        self.mol_tab_bar.addTab("Molecule 1")
+        self._mol_tabs = [{}]
+        self._active_mol_tab_idx = 0
+        self.mol_tab_bar.currentChanged.connect(self._on_switch_mol_tab)
+        self.mol_tab_bar.tabCloseRequested.connect(self._on_close_mol_tab)
+        mol_tab_row.addWidget(self.mol_tab_bar, stretch=1)
+
+        self.btn_new_mol_tab = QtWidgets.QToolButton()
+        self.btn_new_mol_tab.setText("+")
+        self.btn_new_mol_tab.setToolTip("Open a new molecule workspace tab")
+        self.btn_new_mol_tab.setStyleSheet("font-weight: bold; padding: 2px 8px;")
+        self.btn_new_mol_tab.clicked.connect(self._on_new_mol_tab)
+        mol_tab_row.addWidget(self.btn_new_mol_tab)
+        left_layout.addLayout(mol_tab_row)
+
+        self.welcome_banner = QtWidgets.QFrame()
+        self.welcome_banner.setStyleSheet(
+            "QFrame { background-color: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; padding: 4px 8px; }"
+            "QPushButton { background-color: #2563eb; color: #ffffff; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #1d4ed8; }"
+        )
+        wb_layout = QtWidgets.QHBoxLayout(self.welcome_banner)
+        wb_layout.setContentsMargins(6, 4, 6, 4)
+        wb_layout.setSpacing(6)
+        lbl_wb = QtWidgets.QLabel("<b>Get Started:</b>")
+        self.lbl_welcome_banner = lbl_wb
+        lbl_wb.setStyleSheet("color: #1e293b; border: none;")
+        wb_layout.addWidget(lbl_wb)
+        for w_lbl, w_slot in (
+            ("📂 Open File...", self._on_open_universal_file),
+            ("✏️ 2D → 3D Sketch", lambda: self._on_toggle_2d_3d_split(True)),
+            ("🧪 Example Gallery", self._on_open_example_gallery),
+            ("🎓 Quick Tour", self._on_open_onboarding_tour),
+        ):
+            wb_btn = QtWidgets.QPushButton(w_lbl)
+            wb_btn.clicked.connect(w_slot)
+            wb_layout.addWidget(wb_btn)
+        wb_layout.addStretch()
+        left_layout.addWidget(self.welcome_banner)
 
         # 3D Viewport
         self.viewer = MoleculeViewer()
@@ -214,11 +262,11 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_ribbon_tweezers.setChecked(False)
         self.btn_ribbon_tweezers.setStyleSheet("""
             QPushButton {
-                background-color: #334155;
-                color: #e2e8f0;
+                background-color: #dbeafe;
+                color: #1d4ed8;
                 font-weight: bold;
                 padding: 2px 8px;
-                border: 1px solid #475569;
+                border: 1px solid #93c5fd;
                 border-radius: 3px;
             }
             QPushButton:checked {
@@ -236,11 +284,11 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_auto_relax.setChecked(False)
         self.btn_auto_relax.setStyleSheet("""
             QPushButton {
-                background-color: #334155;
-                color: #e2e8f0;
+                background-color: #ede9fe;
+                color: #6d28d9;
                 font-weight: bold;
                 padding: 2px 8px;
-                border: 1px solid #475569;
+                border: 1px solid #c4b5fd;
                 border-radius: 3px;
             }
             QPushButton:checked {
@@ -251,6 +299,51 @@ class UIMixin(UIInspectorTabsMixin):
         """)
         self.btn_auto_relax.setToolTip("⚡ Auto-Relax (UFF): When active, drawing new atoms or bonds automatically relaxes the 3D geometry with UFF.")
         view_ctrls.addWidget(self.btn_auto_relax)
+
+        self.btn_2d_3d_split = QtWidgets.QPushButton("✏️ 2D | 3D")
+        self.btn_2d_3d_split.setCheckable(True)
+        self.btn_2d_3d_split.setChecked(False)
+        self.btn_2d_3d_split.setStyleSheet("""
+            QPushButton {
+                background-color: #e0f2fe;
+                color: #0369a1;
+                font-weight: bold;
+                padding: 2px 8px;
+                border: 1px solid #7dd3fc;
+                border-radius: 3px;
+            }
+            QPushButton:checked {
+                background-color: #0284c7;
+                color: #ffffff;
+                border: 1.5px solid #38bdf8;
+            }
+        """)
+        self.btn_2d_3d_split.setToolTip("Toggle MolView-style 2-pane 2D Sketcher + live 3D Viewport")
+        self.btn_2d_3d_split.toggled.connect(self._on_toggle_2d_3d_split)
+        view_ctrls.addWidget(self.btn_2d_3d_split)
+
+        self.btn_toggle_right_pane = QtWidgets.QPushButton("◧ Z-Mat")
+        self.btn_toggle_right_pane.setCheckable(True)
+        self.btn_toggle_right_pane.setChecked(True)
+        self.btn_toggle_right_pane.setShortcut("F9")
+        self.btn_toggle_right_pane.setStyleSheet("""
+            QPushButton {
+                background-color: #ccfbf1;
+                color: #0f766e;
+                font-weight: bold;
+                padding: 2px 8px;
+                border: 1px solid #5eead4;
+                border-radius: 3px;
+            }
+            QPushButton:checked {
+                background-color: #0d9488;
+                color: #ffffff;
+                border: 1.5px solid #2dd4bf;
+            }
+        """)
+        self.btn_toggle_right_pane.setToolTip("Show Z-Matrix / XYZ / Orbitals panel (switches back from 2D Sketcher, or click again to hide/show panel) (F9)")
+        self.btn_toggle_right_pane.toggled.connect(self._on_toggle_right_pane)
+        view_ctrls.addWidget(self.btn_toggle_right_pane)
 
         # Compact Element Brush Selector (replaces 8 separate element buttons)
         self.combo_brush_element = QtWidgets.QComboBox()
@@ -268,7 +361,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_quick_stamp.setText("📌 Stamp ▾")
         self.btn_quick_stamp.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_quick_stamp.setToolTip("GaussView / Avogadro style: Stamp functional groups or rings onto selected atom in 1 click")
-        self.btn_quick_stamp.setStyleSheet("background-color: #334155; color: white; font-weight: 600; padding: 2px 6px;")
+        self.btn_quick_stamp.setStyleSheet("background-color: #0d9488; color: white; font-weight: 600; padding: 2px 6px;")
         menu_stamp = QtWidgets.QMenu(self)
         for st_name in ["Phenyl (-C6H5)", "Methyl (-CH3)", "Hydroxyl (-OH)", "Amino (-NH2)", "Carbonyl (=O)", "Nitro (-NO2)", "Carboxyl (-COOH)", "Water (H2O)"]:
             act = menu_stamp.addAction(st_name)
@@ -279,7 +372,7 @@ class UIMixin(UIInspectorTabsMixin):
         btn_h_ribbon = QtWidgets.QToolButton()
         btn_h_ribbon.setText("💧 Add H")
         btn_h_ribbon.setToolTip("Complete valence with hydrogens (Ctrl+H)")
-        btn_h_ribbon.setStyleSheet("background-color: #334155; color: white; font-weight: 600; padding: 2px 6px;")
+        btn_h_ribbon.setStyleSheet("background-color: #0284c7; color: white; font-weight: 600; padding: 2px 6px;")
         btn_h_ribbon.clicked.connect(self._on_add_hydrogens)
         view_ctrls.addWidget(btn_h_ribbon)
 
@@ -287,7 +380,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_clean_selection.setToolTip(
             "Clean / pre-optimize selected atoms with UFF (freezes unselected atoms), or optimize whole molecule if none selected"
         )
-        self.btn_clean_selection.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 2px 8px;")
+        self.btn_clean_selection.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 2px 8px;")
         self.btn_clean_selection.clicked.connect(self._on_clean_selection)
         view_ctrls.addWidget(self.btn_clean_selection)
 
@@ -343,7 +436,7 @@ class UIMixin(UIInspectorTabsMixin):
         view_ctrls.addWidget(btn_axes)
 
         self.btn_orient_sym = QtWidgets.QPushButton("📐 Orient")
-        self.btn_orient_sym.setStyleSheet("font-weight: 600; padding: 2px 6px; background-color: #0d9488; color: #ffffff;")
+        self.btn_orient_sym.setStyleSheet("font-weight: 600; padding: 2px 6px; background-color: #6366f1; color: #ffffff;")
         self.btn_orient_sym.setToolTip(
             "Universal Symmetry Orientation (Alt+S):\n"
             "Align molecule coordinates to standard Schoenflies/IUPAC convention for ANY point group\n"
@@ -477,6 +570,17 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_clear_surface_ribbon.setStyleSheet("background-color: #dc2626; color: white; font-weight: bold; padding: 2px 8px;")
         self.btn_clear_surface_ribbon.clicked.connect(self._on_clear_orbital_surface)
         display_layout.addWidget(self.btn_clear_surface_ribbon)
+
+        cam_row = QtWidgets.QHBoxLayout()
+        btn_copy_cam = QtWidgets.QPushButton("📷 Copy View")
+        btn_copy_cam.setToolTip("Copy current 3D camera angle & zoom to clipboard for matching publication figures")
+        btn_copy_cam.clicked.connect(self._on_copy_camera_view)
+        cam_row.addWidget(btn_copy_cam)
+        btn_paste_cam = QtWidgets.QPushButton("📋 Paste View")
+        btn_paste_cam.setToolTip("Apply copied 3D camera angle & zoom from clipboard")
+        btn_paste_cam.clicked.connect(self._on_paste_camera_view)
+        cam_row.addWidget(btn_paste_cam)
+        display_layout.addLayout(cam_row)
 
         act_display_panel = QtWidgets.QWidgetAction(self)
         act_display_panel.setDefaultWidget(display_panel)
@@ -707,7 +811,7 @@ class UIMixin(UIInspectorTabsMixin):
         row2_layout.addWidget(self.btn_irc_sweeper)
 
         self.btn_view_loaded_log = QtWidgets.QPushButton("📄 Log...")
-        self.btn_view_loaded_log.setStyleSheet("background-color: #334155; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
+        self.btn_view_loaded_log.setStyleSheet("background-color: #0891b2; color: #ffffff; padding: 3px 10px; font-weight: bold; font-size: 11px; white-space: nowrap;")
         self.btn_view_loaded_log.setToolTip("Open full calculation output log with search and section indexing (F2)")
         self.btn_view_loaded_log.clicked.connect(self._on_view_qm_output_file)
         row2_layout.addWidget(self.btn_view_loaded_log)
@@ -824,7 +928,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_reorder_zmat.clicked.connect(self._on_reorder_zmat_clicked)
 
         self.btn_read_zmat = QtWidgets.QPushButton("📂 Open ZMAT")
-        self.btn_read_zmat.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
+        self.btn_read_zmat.setStyleSheet("background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 6px;")
         self.btn_read_zmat.setToolTip("Open and load a Z-matrix file (*.zmat, *.dat, *.inp, *.txt)")
         self.btn_read_zmat.clicked.connect(self._on_open_zmat)
         self.btn_read_zmat.setVisible(False)  # Accessible via File -> Open File (Ctrl+O) and Raw ZMAT tab
@@ -836,7 +940,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_more_tools = QtWidgets.QPushButton("🧰 More Tools ▾")
         self.btn_more_tools.setCheckable(True)
         self.btn_more_tools.setChecked(False)
-        self.btn_more_tools.setStyleSheet("background-color: #334155; color: #e2e8f0; font-size: 11px; font-weight: bold; padding: 4px 8px;")
+        self.btn_more_tools.setStyleSheet("background-color: #0891b2; color: #ffffff; font-size: 11px; font-weight: bold; padding: 4px 8px;")
         self.btn_more_tools.setToolTip("Show/hide secondary tools (Form Bond, Reorder ZMAT, Conformers, Z-Matrix Variables)")
         self.more_tools_widget = QtWidgets.QWidget()
         more_tools_layout = QtWidgets.QVBoxLayout(self.more_tools_widget)
@@ -922,12 +1026,12 @@ class UIMixin(UIInspectorTabsMixin):
         self.btn_sym_all.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_assign_symmetric_variables()))
 
         self.btn_indiv_vars = QtWidgets.QPushButton("🔤 All Individual Variables")
-        self.btn_indiv_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold;")
+        self.btn_indiv_vars.setStyleSheet("background-color: #6366f1; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_indiv_vars.setToolTip("Assign an individual variable (R1..Rn, A1..An, D1..Dn) to every coordinate")
         self.btn_indiv_vars.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_assign_individual_variables()))
 
         self.btn_clear_vars = QtWidgets.QPushButton("🔢 Numbers Only (Clear Variables)")
-        self.btn_clear_vars.setStyleSheet("background-color: #475569; color: #ffffff; font-size: 11px; font-weight: bold;")
+        self.btn_clear_vars.setStyleSheet("background-color: #d97706; color: #ffffff; font-size: 11px; font-weight: bold;")
         self.btn_clear_vars.setToolTip("Clear all symbolic variables and use explicit numbers")
         self.btn_clear_vars.clicked.connect(lambda: (menu_zmat_vars.close(), self._on_clear_variables()))
 
@@ -972,16 +1076,17 @@ class UIMixin(UIInspectorTabsMixin):
             "• Move Single Atom Only: Moves only the terminal selected atom"
         )
         row_smart_mode.addWidget(self.combo_smart_mode, stretch=1)
-        adjust_layout.addLayout(row_smart_mode, 0, 0, 1, 3)
 
-        self.btn_invert_center = QtWidgets.QPushButton("🔄 Invert Chiral Center (R/S)")
-        self.btn_invert_center.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; font-size: 11px; padding: 4px 8px;")
+        self.btn_invert_center = QtWidgets.QPushButton("🔄 Invert R/S")
+        self.btn_invert_center.setMaximumWidth(105)
+        self.btn_invert_center.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; font-size: 11px; padding: 2px 6px;")
         self.btn_invert_center.setToolTip(
             "Invert local tetrahedral/pyramidal stereocenter (select chiral center atom or center + 2 substituents)\n"
             "without flipping the rest of the molecule!"
         )
         self.btn_invert_center.clicked.connect(self._on_invert_stereocenter)
-        adjust_layout.addWidget(self.btn_invert_center, 1, 0, 1, 3)
+        row_smart_mode.addWidget(self.btn_invert_center)
+        adjust_layout.addLayout(row_smart_mode, 0, 0, 1, 3)
 
         # Bond length slider
         lbl_bond = QtWidgets.QLabel("Bond (Å):")
@@ -1081,8 +1186,8 @@ class UIMixin(UIInspectorTabsMixin):
         self.text_raw_zmat.setPlaceholderText("Enter Z-matrix coordinates or variables...\nPress Ctrl+Enter or Shift+Enter to immediately apply changes.")
         
         raw_header_layout = QtWidgets.QHBoxLayout()
-        raw_header_layout.addWidget(QtWidgets.QLabel("Direct Z-Matrix Text (Molden / Gaussian format):"))
-        self.chk_auto_apply_raw = QtWidgets.QCheckBox("Auto-apply changes as you type")
+        raw_header_layout.addWidget(QtWidgets.QLabel("Z-Matrix Text:"))
+        self.chk_auto_apply_raw = QtWidgets.QCheckBox("Auto-apply")
         self.chk_auto_apply_raw.setChecked(True)
         self.chk_auto_apply_raw.setToolTip("When checked, valid Z-matrix text changes update the 3D model automatically without having to press any buttons.")
         raw_header_layout.addWidget(self.chk_auto_apply_raw, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
@@ -1096,8 +1201,8 @@ class UIMixin(UIInspectorTabsMixin):
         self._raw_zmat_timer.timeout.connect(self._on_auto_apply_text_zmat)
         self.text_raw_zmat.textChanged.connect(self._on_raw_zmat_text_changed)
 
-        raw_vars_layout = QtWidgets.QHBoxLayout()
-        raw_vars_layout.setSpacing(6)
+        raw_vars_layout = QtWidgets.QGridLayout()
+        raw_vars_layout.setSpacing(5)
         btn_raw_sym_bonds = QtWidgets.QPushButton("🔗 Symm. Bonds")
         btn_raw_sym_bonds.setStyleSheet("background-color: #0369a1; color: #ffffff; font-weight: bold;")
         btn_raw_sym_bonds.setToolTip("Assign symmetric variables ONLY to bond distances (keep angles & dihedrals fixed)")
@@ -1106,25 +1211,27 @@ class UIMixin(UIInspectorTabsMixin):
         btn_raw_sym_all.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
         btn_raw_sym_all.clicked.connect(self._on_assign_symmetric_variables)
         btn_raw_indiv = QtWidgets.QPushButton("🔤 All Variables")
-        btn_raw_indiv.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_raw_indiv.setStyleSheet("background-color: #6366f1; color: #ffffff; font-weight: bold;")
         btn_raw_indiv.clicked.connect(self._on_assign_individual_variables)
         btn_raw_clear = QtWidgets.QPushButton("🔢 Numbers Only")
-        btn_raw_clear.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_raw_clear.setStyleSheet("background-color: #d97706; color: #ffffff; font-weight: bold;")
         btn_raw_clear.clicked.connect(self._on_clear_variables)
-        raw_vars_layout.addWidget(btn_raw_sym_bonds)
-        raw_vars_layout.addWidget(btn_raw_sym_all)
-        raw_vars_layout.addWidget(btn_raw_indiv)
-        raw_vars_layout.addWidget(btn_raw_clear)
+        raw_vars_layout.addWidget(btn_raw_sym_bonds, 0, 0)
+        raw_vars_layout.addWidget(btn_raw_sym_all, 0, 1)
+        raw_vars_layout.addWidget(btn_raw_indiv, 1, 0)
+        raw_vars_layout.addWidget(btn_raw_clear, 1, 1)
         tab_raw_layout.addLayout(raw_vars_layout)
 
         raw_btn_layout = QtWidgets.QHBoxLayout()
-        btn_open_raw = QtWidgets.QPushButton("📂 Open ZMAT File...")
-        btn_open_raw.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_open_raw = QtWidgets.QPushButton("📂 Open ZMAT")
+        btn_open_raw.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold;")
+        btn_open_raw.setToolTip("Open Z-Matrix file...")
         btn_open_raw.clicked.connect(self._on_open_zmat)
-        btn_save_raw = QtWidgets.QPushButton("💾 Save ZMAT File...")
+        btn_save_raw = QtWidgets.QPushButton("💾 Save ZMAT")
         btn_save_raw.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+        btn_save_raw.setToolTip("Save Z-Matrix file...")
         btn_save_raw.clicked.connect(self._on_save_zmat)
-        btn_apply_raw = QtWidgets.QPushButton("⚡ Apply Text Z-Matrix (Ctrl+Enter)")
+        btn_apply_raw = QtWidgets.QPushButton("⚡ Apply (Ctrl+Enter)")
         btn_apply_raw.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
         btn_apply_raw.setToolTip("Apply the raw Z-matrix text to the 3D model and table (Shortcut: Ctrl+Enter or Shift+Enter)")
         btn_apply_raw.clicked.connect(self._on_apply_text_zmat)
@@ -1190,10 +1297,10 @@ class UIMixin(UIInspectorTabsMixin):
         btn_paste_clip.clicked.connect(self._on_xyz_tab_paste_clipboard)
         btn_copy_xyz_tab = QtWidgets.QPushButton("📋 Copy XYZ")
         btn_copy_xyz_tab.setToolTip("Copy the current XYZ text to system clipboard")
-        btn_copy_xyz_tab.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_copy_xyz_tab.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
         btn_copy_xyz_tab.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(self.text_raw_xyz.toPlainText()))
         btn_clear_xyz = QtWidgets.QPushButton("🧹 Clear")
-        btn_clear_xyz.setStyleSheet("background-color: #475569; color: #ffffff;")
+        btn_clear_xyz.setStyleSheet("background-color: #d97706; color: #ffffff; font-weight: bold;")
         btn_clear_xyz.clicked.connect(lambda: self.text_raw_xyz.clear())
         xyz_quick_actions.addWidget(btn_paste_clip)
         xyz_quick_actions.addWidget(btn_copy_xyz_tab)
@@ -1201,13 +1308,15 @@ class UIMixin(UIInspectorTabsMixin):
         tab_xyz_layout.addLayout(xyz_quick_actions)
 
         xyz_btn_layout = QtWidgets.QHBoxLayout()
-        btn_import_xyz_file = QtWidgets.QPushButton("📂 Open XYZ File...")
-        btn_import_xyz_file.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        btn_import_xyz_file = QtWidgets.QPushButton("📂 Open XYZ")
+        btn_import_xyz_file.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold;")
+        btn_import_xyz_file.setToolTip("Open Cartesian XYZ file...")
         btn_import_xyz_file.clicked.connect(self._on_import_xyz)
-        btn_export_xyz_file = QtWidgets.QPushButton("💾 Save XYZ File...")
+        btn_export_xyz_file = QtWidgets.QPushButton("💾 Save XYZ")
         btn_export_xyz_file.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold;")
+        btn_export_xyz_file.setToolTip("Save Cartesian XYZ file...")
         btn_export_xyz_file.clicked.connect(self._on_export_xyz)
-        btn_apply_xyz = QtWidgets.QPushButton("⚡ Apply Cartesian XYZ (Ctrl+Enter)")
+        btn_apply_xyz = QtWidgets.QPushButton("⚡ Apply XYZ (Ctrl+Enter)")
         btn_apply_xyz.setStyleSheet("background-color: #0284c7; color: #ffffff; font-weight: bold;")
         btn_apply_xyz.setToolTip("Apply the Cartesian coordinates to the 3D model, table, and Z-Matrix (Ctrl+Enter)")
         btn_apply_xyz.clicked.connect(self._on_apply_text_xyz)
@@ -1314,7 +1423,7 @@ class UIMixin(UIInspectorTabsMixin):
         row_freeze.addWidget(self.btn_freeze_sel)
 
         self.btn_unfreeze_all = QtWidgets.QPushButton("🔥 Unfreeze All (0 frozen)")
-        self.btn_unfreeze_all.setStyleSheet("background-color: #475569; color: #ffffff; font-weight: bold;")
+        self.btn_unfreeze_all.setStyleSheet("background-color: #d97706; color: #ffffff; font-weight: bold;")
         self.btn_unfreeze_all.setVisible(False)
         self.btn_unfreeze_all.setToolTip("Clear all frozen atom coordinate constraints")
         self.btn_unfreeze_all.clicked.connect(self._on_unfreeze_all_atoms)
@@ -1323,8 +1432,8 @@ class UIMixin(UIInspectorTabsMixin):
 
         row_invert_scan = QtWidgets.QHBoxLayout()
         row_invert_scan.setSpacing(6)
-        btn_invert_local = QtWidgets.QPushButton("🔄 Invert Chiral Center (R/S)")
-        btn_invert_local.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold;")
+        btn_invert_local = QtWidgets.QPushButton("🔄 Invert R/S")
+        btn_invert_local.setStyleSheet("background-color: #b45309; color: #ffffff; font-weight: bold; padding: 3px 8px;")
         btn_invert_local.setToolTip("Invert local tetrahedral/pyramidal stereocenter (or whole molecule if 0 atoms selected)")
         btn_invert_local.clicked.connect(self._on_invert_stereocenter)
         row_invert_scan.addWidget(btn_invert_local)
@@ -1416,8 +1525,12 @@ class UIMixin(UIInspectorTabsMixin):
         right_layout.addWidget(self.tabs)
         # Tab contents must never dictate the window width
         self.tabs.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Expanding)
-        right_container.setMinimumWidth(320)
-        splitter.addWidget(right_container)
+        self.right_container = right_container
+        self.right_stack = QtWidgets.QStackedWidget()
+        self.right_stack.setMinimumWidth(260)
+        self.right_stack.addWidget(right_container)
+        splitter.setHandleWidth(6)
+        splitter.addWidget(self.right_stack)
 
         # Splitter dynamic sizing: responsive in full window view
         # 3D Viewport gets ~65% width by default, inspector panel ~35%
@@ -2482,6 +2595,17 @@ class UIMixin(UIInspectorTabsMixin):
         act_tour.setToolTip("Interactive 4-step guided walkthrough of AgyMolden core features")
         act_tour.triggered.connect(self._on_open_onboarding_tour)
         menu_help.addAction(act_tour)
+
+        act_manual = QtGui.QAction("📖 &User Manual...", self)
+        act_manual.setToolTip("Open the built-in AgyMolden User Manual")
+        act_manual.triggered.connect(self._on_open_user_manual)
+        menu_help.addAction(act_manual)
+
+        self.act_simple_mode = QtGui.QAction("🎓 &Simple Mode (Hide Advanced Panels)", self)
+        self.act_simple_mode.setCheckable(True)
+        self.act_simple_mode.setToolTip("Hide specialist QM toolbars and advanced ribbon controls for a cleaner workspace")
+        self.act_simple_mode.toggled.connect(self._on_toggle_simple_mode)
+        menu_help.addAction(self.act_simple_mode)
         menu_help.addSeparator()
 
         act_about = QtGui.QAction("&About AgyMolden", self)
@@ -2577,6 +2701,7 @@ class UIMixin(UIInspectorTabsMixin):
         toolbar.addWidget(self.btn_redo)
 
         toolbar_qm = QtWidgets.QToolBar("Calculations & Surfaces")
+        self.toolbar_qm = toolbar_qm
         toolbar_qm.setObjectName("QMAndSurfacesToolbar")
         toolbar_qm.setIconSize(QtCore.QSize(18, 18))
         self.addToolBar(toolbar_qm)
@@ -2651,9 +2776,24 @@ class UIMixin(UIInspectorTabsMixin):
         btn_cmd_palette = QtWidgets.QToolButton()
         btn_cmd_palette.setText("⚡ Command Palette")
         btn_cmd_palette.setToolTip("Search all tools, calculation engines, and dialogs (Ctrl+K)")
-        btn_cmd_palette.setStyleSheet("background-color: #1e293b; color: #38bdf8; font-weight: bold; padding: 2px 8px; border: 1px solid #334155; border-radius: 4px;")
+        btn_cmd_palette.setStyleSheet("background-color: #4f46e5; color: #ffffff; font-weight: bold; padding: 2px 8px; border: 1px solid #4338ca; border-radius: 4px;")
         btn_cmd_palette.clicked.connect(self._on_open_command_palette)
         toolbar_qm.addWidget(btn_cmd_palette)
+
+        self.btn_agemacs_menu = QtWidgets.QToolButton()
+        self.btn_agemacs_menu.setText("🚀 Agemacs ▾")
+        self.btn_agemacs_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_agemacs_menu.setToolTip("Open or export inputs, outputs, XYZ, Z-Matrix, or any file directly into Agemacs")
+        self.btn_agemacs_menu.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
+        menu_agemacs = QtWidgets.QMenu(self)
+        menu_agemacs.addAction("📄 Open Active File / Geometry in Agemacs", self._on_open_in_agemacs)
+        menu_agemacs.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
+        menu_agemacs.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
+        menu_agemacs.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
+        menu_agemacs.addSeparator()
+        menu_agemacs.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
+        self.btn_agemacs_menu.setMenu(menu_agemacs)
+        toolbar_qm.addWidget(self.btn_agemacs_menu)
 
         toolbar_qm.addSeparator()
 
@@ -2899,37 +3039,86 @@ class UIMixin(UIInspectorTabsMixin):
     def _on_open_in_agemacs(self):
         """Open the current file or exported XYZ geometry in agemacs."""
         import os
-        import tempfile
-        from .companion import send_to_agemacs
+        from .companion import send_to_agemacs, send_text_to_agemacs
 
-        targets = []
         cur = getattr(self, "current_file", None)
         if cur and os.path.exists(cur):
-            targets.append(cur)
-        elif getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
-            tmp_path = os.path.join(tempfile.gettempdir(), "agymolden_export.xyz")
-            with open(tmp_path, "w", encoding="utf-8") as fh:
-                fh.write(f"{len(self.zatoms)}\nExported from AgyMolden\n")
-                for atom, xyz in zip(self.zatoms, self.coords):
-                    sym = getattr(atom, "element", "X")
-                    fh.write(f"{sym:<3s} {xyz[0]:14.8f} {xyz[1]:14.8f} {xyz[2]:14.8f}\n")
-            targets.append(tmp_path)
-
-        if not targets:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Open in agemacs",
-                "No molecule or file is currently loaded to send to agemacs.",
-            )
+            if not send_to_agemacs([cur], self):
+                QtWidgets.QMessageBox.information(
+                    self, "Open in agemacs",
+                    f"Could not find 'agemacs' on PATH or in standard project folders.\n\nFile ready to open:\n{cur}",
+                )
             return
 
-        if not send_to_agemacs(targets, self):
-            QtWidgets.QMessageBox.information(
-                self,
-                "Open in agemacs",
-                "Could not find 'agemacs' on PATH or in standard project folders.\n\nFiles ready to open:\n"
-                + "\n".join(targets),
-            )
+        if getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
+            lines = [f"{len(self.zatoms)}", "Exported from AgyMolden"]
+            for atom, xyz in zip(self.zatoms, self.coords):
+                sym = getattr(atom, "symbol", getattr(atom, "element", "X"))
+                lines.append(f"{sym:<3s} {xyz[0]:14.8f} {xyz[1]:14.8f} {xyz[2]:14.8f}")
+            if not send_text_to_agemacs("agymolden_export.xyz", "\n".join(lines) + "\n", self):
+                QtWidgets.QMessageBox.information(
+                    self, "Open in agemacs",
+                    "Could not find 'agemacs' on PATH or in standard project folders.",
+                )
+            return
+
+        QtWidgets.QMessageBox.information(
+            self, "Open in agemacs", "No molecule or file is currently loaded to send to agemacs."
+        )
+
+    def _on_send_xyz_to_agemacs(self):
+        """Export current Cartesian XYZ coordinates directly to agemacs."""
+        from .companion import send_text_to_agemacs
+
+        txt = self.text_raw_xyz.toPlainText().strip() if hasattr(self, "text_raw_xyz") else ""
+        if not txt and getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
+            lines = [f"{len(self.zatoms)}", "Exported from AgyMolden"]
+            for atom, xyz in zip(self.zatoms, self.coords):
+                sym = getattr(atom, "symbol", getattr(atom, "element", "X"))
+                lines.append(f"{sym:<3s} {xyz[0]:14.8f} {xyz[1]:14.8f} {xyz[2]:14.8f}")
+            txt = "\n".join(lines) + "\n"
+        if not txt:
+            QtWidgets.QMessageBox.information(self, "Export XYZ to Agemacs", "No molecule loaded.")
+            return
+        if not send_text_to_agemacs("agymolden_structure.xyz", txt + "\n", self):
+            QtWidgets.QMessageBox.information(self, "Open in agemacs", "Could not launch 'agemacs'.")
+
+    def _on_send_zmat_to_agemacs(self):
+        """Export current Z-Matrix text directly to agemacs."""
+        from .companion import send_text_to_agemacs
+
+        txt = self.text_raw_zmat.toPlainText().strip() if hasattr(self, "text_raw_zmat") else ""
+        if not txt:
+            QtWidgets.QMessageBox.information(self, "Export Z-Matrix to Agemacs", "No Z-Matrix available.")
+            return
+        if not send_text_to_agemacs("agymolden_structure.zmat", txt + "\n", self):
+            QtWidgets.QMessageBox.information(self, "Open in agemacs", "Could not launch 'agemacs'.")
+
+    def _on_send_qm_output_to_agemacs(self):
+        """Open active QM output log or Molden file in agemacs."""
+        import os
+        from .companion import send_to_agemacs
+
+        for attr in ("current_qm_output_file", "current_molden_file", "current_file"):
+            p = getattr(self, attr, None)
+            if p and os.path.isfile(p):
+                if not send_to_agemacs([p], self):
+                    QtWidgets.QMessageBox.information(self, "Open in agemacs", f"Could not launch 'agemacs'.\n\nFile: {p}")
+                return
+        QtWidgets.QMessageBox.information(self, "Open QM Log in Agemacs", "No QM output, log, or Molden file is currently loaded.")
+
+    def _on_send_any_file_to_agemacs(self):
+        """Browse for any input, output, or coordinate file and open it in agemacs."""
+        from .companion import send_to_agemacs
+
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open File in Agemacs",
+            "",
+            "Chemistry Files (*.inp *.gjf *.com *.out *.log *.xyz *.zmat *.molden *.molden.input);;All Files (*)",
+        )
+        if path and not send_to_agemacs([path], self):
+            QtWidgets.QMessageBox.information(self, "Open in agemacs", f"Could not launch 'agemacs'.\n\nFile: {path}")
 
 
     # Core logic

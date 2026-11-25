@@ -165,6 +165,8 @@ uniform int u_use_instancing;
 uniform int u_publication_outline;
 uniform int u_modern_glossy;
 uniform int u_depth_cue;
+uniform vec3 u_bg_color;
+uniform float u_cam_dist;
 
 out vec4 frag_color;
 
@@ -241,6 +243,14 @@ void main() {
         float ndotv = abs(dot(norm, view_dir));
         float edge = smoothstep(0.24, 0.34, ndotv);
         result = mix(vec3(0.06, 0.08, 0.12), result, edge);
+    }
+
+    if (u_depth_cue == 1) {
+        float dist = max(0.0, -v_frag_pos.z);
+        float fog_start = max(1.0, u_cam_dist * 0.75);
+        float fog_end = max(fog_start + 4.0, u_cam_dist * 2.2);
+        float fog_factor = clamp((dist - fog_start) / (fog_end - fog_start), 0.0, 0.42);
+        result = mix(result, u_bg_color, fog_factor);
     }
 
     frag_color = vec4(result, 1.0);
