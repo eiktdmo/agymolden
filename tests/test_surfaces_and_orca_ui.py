@@ -619,7 +619,7 @@ def test_quick_orca_save_input_only_without_running(main_win, tmp_path, monkeypa
 
     zatoms = [ZAtom("O"), ZAtom("H", ref1=0, dist=0.96), ZAtom("H", ref1=0, dist=0.96, ref2=1, angle=104.5)]
     dlg = QuickOrcaDialog(win, zatoms=zatoms)
-    dlg.chk_print_mos.setChecked(True)
+    assert dlg.chk_print_mos.isChecked()
     dlg.btn_save_only.click()
     assert out_inp.is_file()
     txt = out_inp.read_text(encoding="utf-8")

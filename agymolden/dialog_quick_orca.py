@@ -299,7 +299,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             "Appends %output Print[P_MOs] 1, Print[P_ReducedOrbPopMO_L] 1, Print[P_Basis] 2 end "
             "so ORCA prints full MO LCAO coefficients and per-MO atomic orbital percentages in the .out file."
         )
-        self.chk_print_mos.setChecked(False)
+        self.chk_print_mos.setChecked(True)
         self.chk_print_mos.toggled.connect(self._update_deck_preview)
         props_layout.addWidget(self.chk_print_mos, 2, 1)
 
