@@ -120,6 +120,7 @@ def test_microkinetics_catalytic_cycle():
 
 def test_ibo_localization_pyscf():
     """Verify PySCF IAO/IBO localization on a sample molden file."""
+    pytest.importorskip("pyscf")
     sample_molden = "examples/h2o_orca.molden"
     if not os.path.exists(sample_molden):
         pytest.skip(f"{sample_molden} not found")
@@ -163,7 +164,9 @@ def test_apex_triad_dialog_smoke(app):
     assert micro_dlg.result is not None
     micro_dlg.close()
 
-    # 3. IBO Dialog
-    ibo_dlg = IBODialog(molden_path="examples/h2o_orca.molden")
-    assert ibo_dlg.tbl_ibos.rowCount() == 5
-    ibo_dlg.close()
+    # 3. IBO Dialog (requires PySCF; skip on non-PySCF environments to avoid modal warning)
+    import importlib.util
+    if importlib.util.find_spec("pyscf") is not None:
+        ibo_dlg = IBODialog(molden_path="examples/h2o_orca.molden")
+        assert ibo_dlg.tbl_ibos.rowCount() == 5
+        ibo_dlg.close()
