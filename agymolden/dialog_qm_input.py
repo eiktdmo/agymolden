@@ -221,11 +221,20 @@ class QMCalculationDialog(QtWidgets.QDialog):
         self.combo_method.currentTextChanged.connect(self._update_preview)
         t1_layout.addRow("Method / Functional:", self.combo_method)
 
+        basis_row = QtWidgets.QHBoxLayout()
+        basis_row.setContentsMargins(0, 0, 0, 0)
+        basis_row.setSpacing(6)
         self.combo_basis = QtWidgets.QComboBox()
         self.combo_basis.setEditable(True)
         self.combo_basis.addItems(COMMON_BASIS_SETS)
         self.combo_basis.currentTextChanged.connect(self._update_preview)
-        t1_layout.addRow("Basis Set:", self.combo_basis)
+        basis_row.addWidget(self.combo_basis, 1)
+
+        self.btn_browse_basis = QtWidgets.QPushButton("🔍 Browse BSE...")
+        self.btn_browse_basis.setToolTip("Open Smart Basis Set Selector (Basis Set Exchange + STO/Pople/def2/Dunning catalog)")
+        self.btn_browse_basis.clicked.connect(self._on_browse_basis)
+        basis_row.addWidget(self.btn_browse_basis)
+        t1_layout.addRow("Basis Set:", basis_row)
 
         self.combo_dispersion = QtWidgets.QComboBox()
         self.combo_dispersion.addItems(["D3BJ", "D4", "D3Zero", "None"])
@@ -609,6 +618,21 @@ class QMCalculationDialog(QtWidgets.QDialog):
                 self.spin_mem.setValue(2)
         self._update_route_ui()
         self._update_preview()
+
+    def _on_browse_basis(self):
+        from .brorsen_builder.dialog_basis import SmartBasisDialog
+        from .qm_input_generator import GaussianGenerator
+        dlg = SmartBasisDialog(self, elements=list(self.symbols), current_basis=self.combo_basis.currentText())
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted and dlg.selected_basis_name:
+            chosen = dlg.selected_basis_name.strip()
+            if "gaussian" in self.combo_qm_code.currentText().lower():
+                chosen = GaussianGenerator._normalize_gaussian_basis(chosen)
+            idx = self.combo_basis.findText(chosen)
+            if idx >= 0:
+                self.combo_basis.setCurrentIndex(idx)
+            else:
+                self.combo_basis.setEditText(chosen)
+            self._update_preview()
 
     def _update_route_ui(self):
         qm_name = self.combo_qm_code.currentText()

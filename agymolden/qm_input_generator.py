@@ -40,7 +40,11 @@ COMMON_METHODS = [
 ]
 
 COMMON_BASIS_SETS = [
-    "def2-SVP", "def2-TZVP", "def2-QZVP", "6-31G*", "6-31+G(d,p)", "6-311++G(d,p)", "cc-pVDZ", "cc-pVTZ", "sto-3g"
+    "def2-SVP", "def2-SV(P)", "def2-TZVP", "def2-TZVPP", "def2-QZVP",
+    "ma-def2-SVP", "ma-def2-TZVP",
+    "STO-3G", "STO-6G", "3-21G", "6-31G", "6-31G*", "6-31G(d,p)", "6-31+G(d,p)", "6-311G(d,p)", "6-311++G(d,p)",
+    "cc-pVDZ", "cc-pVTZ", "cc-pVQZ", "aug-cc-pVDZ", "aug-cc-pVTZ",
+    "pc-1", "pc-2", "LANL2DZ",
 ]
 
 COMMON_SOLVENTS = [
@@ -85,7 +89,10 @@ class GaussianGenerator(BaseQMGenerator):
         "B3LYP", "PBE0", "wB97XD", "M062X", "CAM-B3LYP", "B97D3", "HF", "MP2", "CCSD(T)"
     ]
     supported_basis_sets = [
-        "def2SVP", "def2TZVP", "def2QZVP", "6-31G*", "6-31+G(d,p)", "6-311++G(d,p)", "cc-pVDZ", "cc-pVTZ", "sto-3g"
+        "def2SVP", "def2TZVP", "def2TZVPP", "def2QZVP",
+        "STO-3G", "STO-6G", "3-21G", "6-31G", "6-31G*", "6-31G(d,p)", "6-31+G(d,p)", "6-311G(d,p)", "6-311++G(d,p)",
+        "cc-pVDZ", "cc-pVTZ", "cc-pVQZ", "aug-cc-pVDZ", "aug-cc-pVTZ",
+        "LANL2DZ", "SDD",
     ]
 
     @staticmethod
@@ -96,10 +103,16 @@ class GaussianGenerator(BaseQMGenerator):
         b_lower = b.lower()
         if b_lower == "sto-3g":
             return "STO-3G"
+        if b_lower == "sto-6g":
+            return "STO-6G"
         if b_lower in ("6-31g*", "6-31g(d)"):
             return "6-31G*"
+        if b_lower in ("6-31g**", "6-31g(d,p)"):
+            return "6-31G(d,p)"
         if b_lower in ("6-31+g(d,p)", "6-31+g*", "6-31+g**"):
             return "6-31+G(d,p)"
+        if b_lower in ("6-311g(d,p)", "6-311g**"):
+            return "6-311G(d,p)"
         if b_lower in ("6-311++g(d,p)", "6-311++g**"):
             return "6-311++G(d,p)"
         if b_lower == "cc-pvdz":
@@ -108,6 +121,12 @@ class GaussianGenerator(BaseQMGenerator):
             return "cc-pVTZ"
         if b_lower in ("cc-pvqz", "cc-pqvdz"):
             return "cc-pVQZ"
+        if b_lower == "aug-cc-pvdz":
+            return "aug-cc-pVDZ"
+        if b_lower == "aug-cc-pvtz":
+            return "aug-cc-pVTZ"
+        if b_lower == "aug-cc-pvqz":
+            return "aug-cc-pVQZ"
         return b
 
     @staticmethod
@@ -558,7 +577,8 @@ class OpenLOWDINGenerator(BaseQMGenerator):
 
     # Standard basis sets well-supported by openLOWDIN library
     supported_basis_sets = [
-        "STO-3G", "3-21G", "6-31G", "6-31G*", "6-311G", "6-311G*",
+        "STO-3G", "STO-6G", "3-21G", "6-31G", "6-31G*", "6-31G**", "6-31+G*",
+        "6-311G", "6-311G*", "6-311++G**",
         "CC-PVDZ", "CC-PVTZ", "CC-PVQZ",
         "AUG-CC-PVDZ", "AUG-CC-PVTZ", "AUG-CC-PVQZ",
         "DEF2-SVP", "DEF2-TZVP", "DEF2-QZVP",
@@ -567,6 +587,7 @@ class OpenLOWDINGenerator(BaseQMGenerator):
     # Map general basis names to openLOWDIN basis library conventions
     BASIS_MAP = {
         "sto-3g": "STO-3G",
+        "sto-6g": "STO-6G",
         "3-21g": "3-21G",
         "6-31g": "6-31G",
         "6-31g*": "6-31G.D",

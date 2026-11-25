@@ -96,16 +96,37 @@ ORCA_METHODS = [
 
 ORCA_BASIS_SETS = [
     ("def2-SVP (Split valence polarized - Fast & standard)", "def2-SVP"),
+    ("def2-SV(P) (Split valence heavy-atom polarized)", "def2-SV(P)"),
     ("def2-TZVP (Triple-zeta polarized - Publication quality)", "def2-TZVP"),
     ("def2-TZVPP (Triple-zeta valence double-polarization)", "def2-TZVPP"),
     ("def2-QZVP (Quadruple-zeta - Benchmark accuracy)", "def2-QZVP"),
+    ("def2-QZVPP (Quadruple-zeta double-polarization)", "def2-QZVPP"),
     ("ma-def2-SVP (Minimally augmented diffuse - Anions/Rydberg)", "ma-def2-SVP"),
     ("ma-def2-TZVP (Augmented triple-zeta diffuse)", "ma-def2-TZVP"),
+    ("ma-def2-TZVPP (Augmented triple-zeta double-pol)", "ma-def2-TZVPP"),
+    ("STO-3G (Slater-type minimal - 3 Gaussians, fast teaching)", "STO-3G"),
+    ("STO-6G (Slater-type minimal - 6 Gaussians)", "STO-6G"),
+    ("3-21G (Pople split-valence minimal/fast)", "3-21G"),
+    ("6-31G (Pople split-valence double-zeta)", "6-31G"),
     ("6-31G* (Pople double-zeta polarized)", "6-31G*"),
+    ("6-31G** (Pople double-zeta polarized on all atoms)", "6-31G**"),
     ("6-31+G(d,p) (Pople diffuse & polarized)", "6-31+G(d,p)"),
+    ("6-311G(d,p) (Pople triple-zeta polarized)", "6-311G(d,p)"),
     ("6-311++G(d,p) (Pople triple-zeta diffuse)", "6-311++G(d,p)"),
     ("cc-pVDZ (Dunning correlation consistent double-zeta)", "cc-pVDZ"),
     ("cc-pVTZ (Dunning correlation consistent triple-zeta)", "cc-pVTZ"),
+    ("cc-pVQZ (Dunning correlation consistent quadruple-zeta)", "cc-pVQZ"),
+    ("aug-cc-pVDZ (Augmented Dunning double-zeta)", "aug-cc-pVDZ"),
+    ("aug-cc-pVTZ (Augmented Dunning triple-zeta)", "aug-cc-pVTZ"),
+    ("aug-cc-pVQZ (Augmented Dunning quadruple-zeta)", "aug-cc-pVQZ"),
+    ("pc-1 (Jensen polarization-consistent double-zeta)", "pc-1"),
+    ("pc-2 (Jensen polarization-consistent triple-zeta)", "pc-2"),
+    ("aug-pc-1 (Augmented Jensen double-zeta)", "aug-pc-1"),
+    ("aug-pc-2 (Augmented Jensen triple-zeta)", "aug-pc-2"),
+    ("DKH-def2-SVP (Relativistic Douglas-Kroll-Hess SVP)", "DKH-def2-SVP"),
+    ("DKH-def2-TZVP (Relativistic Douglas-Kroll-Hess TZVP)", "DKH-def2-TZVP"),
+    ("ZORA-def2-SVP (Relativistic ZORA SVP)", "ZORA-def2-SVP"),
+    ("ZORA-def2-TZVP (Relativistic ZORA TZVP)", "ZORA-def2-TZVP"),
 ]
 
 ORCA_JOBS = [
@@ -185,11 +206,23 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         theory_grid.addWidget(self.combo_method, 1, 1)
 
         theory_grid.addWidget(QtWidgets.QLabel("Basis Set:"), 2, 0)
+        basis_row = QtWidgets.QHBoxLayout()
+        basis_row.setContentsMargins(0, 0, 0, 0)
+        basis_row.setSpacing(6)
         self.combo_basis = QtWidgets.QComboBox()
+        self.combo_basis.setEditable(True)
+        self.combo_basis.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         for label, val in ORCA_BASIS_SETS:
             self.combo_basis.addItem(label, val)
         self.combo_basis.currentIndexChanged.connect(self._on_combo_options_changed)
-        theory_grid.addWidget(self.combo_basis, 2, 1)
+        self.combo_basis.currentTextChanged.connect(self._on_combo_options_changed)
+        basis_row.addWidget(self.combo_basis, 1)
+
+        self.btn_browse_basis = QtWidgets.QPushButton("🔍 Browse BSE...")
+        self.btn_browse_basis.setToolTip("Open Smart Basis Set Selector (Basis Set Exchange + STO/Pople/def2/Dunning catalog)")
+        self.btn_browse_basis.clicked.connect(self._on_browse_basis)
+        basis_row.addWidget(self.btn_browse_basis)
+        theory_grid.addLayout(basis_row, 2, 1)
 
         theory_grid.addWidget(QtWidgets.QLabel("Grid Quality:"), 3, 0)
         self.combo_grid = QtWidgets.QComboBox()
@@ -513,6 +546,34 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         if parent and hasattr(parent, "_on_open_qm_dialog"):
             parent._on_open_qm_dialog(target_code="orca")
 
+    def _current_basis_value(self) -> str:
+        idx = self.combo_basis.currentIndex()
+        txt = self.combo_basis.currentText().strip()
+        if idx >= 0 and txt == self.combo_basis.itemText(idx).strip():
+            data = self.combo_basis.itemData(idx)
+            if data:
+                return str(data)
+        return txt.split(" (")[0].strip() or "def2-SVP"
+
+    def _set_basis_value(self, basis_name: str):
+        bs = (basis_name or "").strip()
+        if not bs:
+            return
+        for i in range(self.combo_basis.count()):
+            data = str(self.combo_basis.itemData(i) or "")
+            if data.lower() == bs.lower() or self.combo_basis.itemText(i).split(" (")[0].strip().lower() == bs.lower():
+                self.combo_basis.setCurrentIndex(i)
+                return
+        self.combo_basis.setEditText(bs)
+
+    def _on_browse_basis(self):
+        from .brorsen_builder.dialog_basis import SmartBasisDialog
+        elements = [getattr(a, "symbol", "C") for a in self.zatoms] if self.zatoms else []
+        dlg = SmartBasisDialog(self, elements=elements, current_basis=self._current_basis_value())
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted and dlg.selected_basis_name:
+            self._set_basis_value(dlg.selected_basis_name)
+            self._on_combo_options_changed()
+
     def _compose_route_from_controls(self):
         """Construct the ORCA route line string from current combo and checkbox controls."""
         if self._syncing_route:
@@ -521,7 +582,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         tokens = ["!"]
         method = self.combo_method.currentData() or "B3LYP"
-        basis = self.combo_basis.currentData() or "def2-SVP"
+        basis = self._current_basis_value()
         job = self.combo_job.currentData() or "Opt"
         grid = self.combo_grid.currentData() or "DefGrid2"
         disp = self.combo_dispersion.currentText()
@@ -530,6 +591,8 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         # xTB and composite methods have fixed basis & dispersion
         is_composite = method in ("GFN2-xTB", "r2SCAN-3c", "B97-3c")
         self.combo_basis.setEnabled(not is_composite)
+        if hasattr(self, "btn_browse_basis"):
+            self.btn_browse_basis.setEnabled(not is_composite)
         self.combo_dispersion.setEnabled(not is_composite)
         if hasattr(self, "lbl_compat_info"):
             if is_composite:

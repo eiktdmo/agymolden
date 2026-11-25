@@ -34,10 +34,50 @@ FAMILY_DISPLAY_NAMES = {
 }
 
 POPULAR_BASIS_SETS = [
-    "def2-svp", "def2-tzvp", "def2-tzvpp", "def2-qzvp", "def2-qzvpp",
+    "def2-svp", "def2-sv(p)", "def2-tzvp", "def2-tzvpp", "def2-qzvp", "def2-qzvpp",
+    "ma-def2-svp", "ma-def2-tzvp",
     "cc-pvdz", "cc-pvtz", "cc-pvqz", "aug-cc-pvdz", "aug-cc-pvtz", "aug-cc-pvqz",
-    "6-31g*", "6-31+g*", "6-311g**", "6-311++g**", "sto-3g", "ano-rcc-dzp"
+    "sto-3g", "sto-6g", "3-21g", "6-31g", "6-31g*", "6-31g**", "6-31+g(d,p)",
+    "6-311g**", "6-311++g(d,p)", "pc-1", "pc-2", "ano-rcc-dzp",
 ]
+
+OFFLINE_BASIS_CATALOG = {
+    "sto-2g": {"display_name": "STO-2G", "family": "sto", "description": "Minimal Slater-type orbital expansion (2 Gaussians per STO)."},
+    "sto-3g": {"display_name": "STO-3G", "family": "sto", "description": "Standard minimal Slater-type orbital expansion (3 Gaussians per STO)."},
+    "sto-4g": {"display_name": "STO-4G", "family": "sto", "description": "Minimal Slater-type orbital expansion (4 Gaussians per STO)."},
+    "sto-5g": {"display_name": "STO-5G", "family": "sto", "description": "Minimal Slater-type orbital expansion (5 Gaussians per STO)."},
+    "sto-6g": {"display_name": "STO-6G", "family": "sto", "description": "High-accuracy minimal Slater-type orbital expansion (6 Gaussians per STO)."},
+    "3-21g": {"display_name": "3-21G", "family": "pople", "description": "Pople split-valence double-zeta basis set."},
+    "6-31g": {"display_name": "6-31G", "family": "pople", "description": "Pople split-valence double-zeta basis set."},
+    "6-31g*": {"display_name": "6-31G*", "family": "pople", "description": "Pople split-valence with heavy-atom d polarization (6-31G(d))."},
+    "6-31g**": {"display_name": "6-31G**", "family": "pople", "description": "Pople split-valence with heavy-atom d and H p polarization (6-31G(d,p))."},
+    "6-31+g(d,p)": {"display_name": "6-31+G(d,p)", "family": "pople", "description": "Pople polarized double-zeta with diffuse functions on heavy atoms."},
+    "6-311g(d,p)": {"display_name": "6-311G(d,p)", "family": "pople", "description": "Pople triple-zeta valence with polarization."},
+    "6-311++g(d,p)": {"display_name": "6-311++G(d,p)", "family": "pople", "description": "Pople triple-zeta valence with diffuse and polarization functions on all atoms."},
+    "def2-sv(p)": {"display_name": "def2-SV(P)", "family": "ahlrichs", "description": "Karlsruhe split-valence with polarization on heavy atoms only."},
+    "def2-svp": {"display_name": "def2-SVP", "family": "ahlrichs", "description": "Karlsruhe split-valence double-zeta with polarization."},
+    "def2-tzvp": {"display_name": "def2-TZVP", "family": "ahlrichs", "description": "Karlsruhe triple-zeta valence with polarization."},
+    "def2-tzvpp": {"display_name": "def2-TZVPP", "family": "ahlrichs", "description": "Karlsruhe triple-zeta valence with double polarization."},
+    "def2-qzvp": {"display_name": "def2-QZVP", "family": "ahlrichs", "description": "Karlsruhe quadruple-zeta valence with polarization."},
+    "def2-qzvpp": {"display_name": "def2-QZVPP", "family": "ahlrichs", "description": "Karlsruhe quadruple-zeta valence with double polarization."},
+    "ma-def2-svp": {"display_name": "ma-def2-SVP", "family": "ahlrichs", "description": "Minimally augmented def2-SVP with diffuse functions."},
+    "ma-def2-tzvp": {"display_name": "ma-def2-TZVP", "family": "ahlrichs", "description": "Minimally augmented def2-TZVP with diffuse functions."},
+    "cc-pvdz": {"display_name": "cc-pVDZ", "family": "dunning", "description": "Dunning correlation-consistent polarized valence double-zeta."},
+    "cc-pvtz": {"display_name": "cc-pVTZ", "family": "dunning", "description": "Dunning correlation-consistent polarized valence triple-zeta."},
+    "cc-pvqz": {"display_name": "cc-pVQZ", "family": "dunning", "description": "Dunning correlation-consistent polarized valence quadruple-zeta."},
+    "aug-cc-pvdz": {"display_name": "aug-cc-pVDZ", "family": "dunning", "description": "Augmented Dunning double-zeta with diffuse functions."},
+    "aug-cc-pvtz": {"display_name": "aug-cc-pVTZ", "family": "dunning", "description": "Augmented Dunning triple-zeta with diffuse functions."},
+    "aug-cc-pvqz": {"display_name": "aug-cc-pVQZ", "family": "dunning", "description": "Augmented Dunning quadruple-zeta with diffuse functions."},
+    "pc-1": {"display_name": "pc-1", "family": "jensen", "description": "Jensen polarization-consistent double-zeta for DFT."},
+    "pc-2": {"display_name": "pc-2", "family": "jensen", "description": "Jensen polarization-consistent triple-zeta for DFT."},
+    "aug-pc-1": {"display_name": "aug-pc-1", "family": "jensen", "description": "Augmented Jensen polarization-consistent double-zeta."},
+    "aug-pc-2": {"display_name": "aug-pc-2", "family": "jensen", "description": "Augmented Jensen polarization-consistent triple-zeta."},
+    "ano-rcc-dzp": {"display_name": "ANO-RCC-DZP", "family": "ano", "description": "Relativistic Atomic Natural Orbital double-zeta polarized."},
+    "dkh-def2-svp": {"display_name": "DKH-def2-SVP", "family": "jorge", "description": "Douglas-Kroll-Hess relativistic recontraction of def2-SVP."},
+    "dkh-def2-tzvp": {"display_name": "DKH-def2-TZVP", "family": "jorge", "description": "Douglas-Kroll-Hess relativistic recontraction of def2-TZVP."},
+    "zora-def2-svp": {"display_name": "ZORA-def2-SVP", "family": "jorge", "description": "ZORA scalar-relativistic recontraction of def2-SVP."},
+    "zora-def2-tzvp": {"display_name": "ZORA-def2-TZVP", "family": "jorge", "description": "ZORA scalar-relativistic recontraction of def2-TZVP."},
+}
 
 
 class SmartBasisDialog(QtWidgets.QDialog):
@@ -46,7 +86,8 @@ class SmartBasisDialog(QtWidgets.QDialog):
     def __init__(self, parent: QtWidgets.QWidget, elements: Optional[List[str]] = None, current_basis: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Smart Electronic Basis Set Selector (Basis Set Exchange)")
-        self.resize(750, 560)
+        from ..theme import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 750, 560)
         self.elements = sorted(list(set(elements))) if elements else []
         self.current_basis = current_basis.strip()
         self.selected_basis_name = self.current_basis
@@ -144,19 +185,18 @@ class SmartBasisDialog(QtWidgets.QDialog):
     def _populate_basis_sets(self):
         self.tree.clear()
         if not _HAS_BSE:
-            item = QtWidgets.QTreeWidgetItem(["basis-set-exchange library not installed", "", ""])
-            self.tree.addTopLevelItem(item)
-            return
-
-        meta = bse.get_metadata()
-        filter_elements = self.elements if self.chk_match_only.isChecked() and self.elements else None
-        if filter_elements:
-            try:
-                allowed_keys = set(bse.filter_basis_sets(elements=filter_elements, role="orbital").keys())
-            except Exception:
-                allowed_keys = set(meta.keys())
+            meta = OFFLINE_BASIS_CATALOG
+            allowed_keys = set(meta.keys())
         else:
-            allowed_keys = {k for k, v in meta.items() if v.get("role") == "orbital"}
+            meta = bse.get_metadata()
+            filter_elements = self.elements if self.chk_match_only.isChecked() and self.elements else None
+            if filter_elements:
+                try:
+                    allowed_keys = set(bse.filter_basis_sets(elements=filter_elements, role="orbital").keys())
+                except Exception:
+                    allowed_keys = set(meta.keys())
+            else:
+                allowed_keys = {k for k, v in meta.items() if v.get("role") == "orbital"}
 
         # Group basis sets by family
         family_groups: Dict[str, List[QtWidgets.QTreeWidgetItem]] = {}

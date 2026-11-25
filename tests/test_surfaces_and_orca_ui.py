@@ -640,6 +640,61 @@ def test_right_pane_tabs_compact_and_readable(main_win):
         assert win.tabs.widget(idx).minimumSizeHint().width() <= 410
 
 
+def test_basis_set_upgrade_orca_and_all_codes(main_win, monkeypatch):
+    """Verify expanded STO/Pople/def2/Dunning basis sets & SmartBasisDialog across ORCA and QM Studio."""
+    import numpy as np
+    import agymolden.brorsen_builder.dialog_basis as db_mod
+    from agymolden.dialog_quick_orca import QuickOrcaDialog
+    from agymolden.dialog_qm_input import QMCalculationDialog
+    from agymolden.zmatrix import ZAtom
+
+    app, win = main_win
+    zatoms = [ZAtom("O"), ZAtom("H", ref1=0, dist=0.96), ZAtom("H", ref1=0, dist=0.96, ref2=1, angle=104.5)]
+
+    # 1. ORCA Studio: STO-3G, STO-6G, aug-cc-pVTZ, custom basis, and Browse BSE button
+    orca_dlg = QuickOrcaDialog(win, zatoms=zatoms)
+    basis_vals = [str(orca_dlg.combo_basis.itemData(i) or "") for i in range(orca_dlg.combo_basis.count())]
+    for req in ("def2-SVP", "STO-3G", "STO-6G", "6-31+G(d,p)", "aug-cc-pVTZ", "pc-1", "ZORA-def2-TZVP"):
+        assert req in basis_vals, f"Missing {req} in ORCA_BASIS_SETS"
+    assert hasattr(orca_dlg, "btn_browse_basis")
+    orca_dlg._set_basis_value("STO-3G")
+    orca_dlg._on_combo_options_changed()
+    assert "STO-3G" in orca_dlg.get_orca_input_text()
+    orca_dlg._set_basis_value("def2-QZVPD")
+    orca_dlg._on_combo_options_changed()
+    assert "def2-QZVPD" in orca_dlg.get_orca_input_text()
+    orca_dlg.close()
+
+    # 2. QM Calculation Studio: STO-3G / STO-6G across ORCA, Gaussian, PySCF, Psi4, OpenLOWDIN
+    coords = np.array([[0.0, 0.0, 0.11], [0.0, 0.76, -0.47], [0.0, -0.76, -0.47]])
+    qm_dlg = QMCalculationDialog(win, symbols=["O", "H", "H"], coords=coords, zatoms=zatoms)
+    assert hasattr(qm_dlg, "btn_browse_basis")
+    qm_bases = [qm_dlg.combo_basis.itemText(i) for i in range(qm_dlg.combo_basis.count())]
+    assert "STO-3G" in qm_bases and "STO-6G" in qm_bases
+    for code_idx in range(qm_dlg.combo_qm_code.count()):
+        qm_dlg.combo_qm_code.setCurrentIndex(code_idx)
+        code_name = qm_dlg.combo_qm_code.currentText()
+        if "xtb" in code_name.lower():
+            continue
+        qm_dlg.combo_basis.setEditText("STO-3G")
+        qm_dlg._update_preview()
+        txt = qm_dlg.text_preview.toPlainText()
+        assert "sto-3g" in txt.lower(), f"STO-3G missing in {code_name} input"
+    qm_dlg.close()
+
+    # 3. SmartBasisDialog offline fallback (ensures STO & all families work even without BSE package)
+    monkeypatch.setattr(db_mod, "_HAS_BSE", False)
+    sbd = db_mod.SmartBasisDialog(win, elements=["C", "H", "O"], current_basis="STO-3G")
+    top_titles = [sbd.tree.topLevelItem(i).text(0) for i in range(sbd.tree.topLevelItemCount())]
+    assert any("Slater-Type Minimal" in t for t in top_titles), f"Missing STO family in {top_titles}"
+    sbd.txt_search.setText("STO-6G")
+    app.processEvents()
+    sto_group = [sbd.tree.topLevelItem(i) for i in range(sbd.tree.topLevelItemCount()) if "Slater-Type" in sbd.tree.topLevelItem(i).text(0)][0]
+    assert any(not sto_group.child(j).isHidden() and "STO-6G" in sto_group.child(j).text(0) for j in range(sto_group.childCount()))
+    sbd.close()
+
+
+
 
 
 
