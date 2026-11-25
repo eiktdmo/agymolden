@@ -180,6 +180,8 @@ def main(argv=None):
             if os.path.isfile(sys_lib):
                 cur_preload = os.environ.get("LD_PRELOAD", "")
                 if sys_lib not in cur_preload:
+                    # Remember the user's own value so child engines (ORCA etc.) don't inherit our preload
+                    os.environ["_AGYMOLDEN_ORIG_LD_PRELOAD"] = cur_preload
                     os.environ["LD_PRELOAD"] = f"{sys_lib}:{cur_preload}".strip(":")
                     os.execv(sys.executable, [sys.executable, "-m", "agymolden"] + sys.argv[1:])
                 break

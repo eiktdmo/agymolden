@@ -18,6 +18,23 @@ from PyQt6 import QtCore
 log = logging.getLogger(__name__)
 
 
+
+def _restore_user_ld_preload(q_env) -> None:
+    """Undo the GUI-only libstdc++ LD_PRELOAD (see run.py / agymolden.__init__) for child engines.
+
+    The system libstdc++ is preloaded so Mesa/OpenGL work under Conda, but QM engines that ship
+    their own C++ runtime (e.g. ORCA 6.x) abort with "free(): invalid pointer" when they inherit it.
+    """
+    if not q_env.contains("_AGYMOLDEN_ORIG_LD_PRELOAD"):
+        return
+    orig = q_env.value("_AGYMOLDEN_ORIG_LD_PRELOAD")
+    q_env.remove("_AGYMOLDEN_ORIG_LD_PRELOAD")
+    q_env.remove("_AGYMOLDEN_LIBSTDCPP_CHECKED")
+    if orig:
+        q_env.insert("LD_PRELOAD", orig)
+    else:
+        q_env.remove("LD_PRELOAD")
+
 class JobStatus(enum.Enum):
     IDLE = "Idle"
     STARTING = "Starting"
@@ -85,11 +102,12 @@ class BaseCalcRunner(QtCore.QObject):
     def _setup_process(self, program: str, arguments: List[str], work_dir: str, extra_env: Optional[Dict[str, str]] = None):
         self.process = QtCore.QProcess(self)
         self.process.setWorkingDirectory(work_dir)
+        q_env = QtCore.QProcessEnvironment.systemEnvironment()
+        _restore_user_ld_preload(q_env)
         if extra_env:
-            q_env = QtCore.QProcessEnvironment.systemEnvironment()
             for k, v in extra_env.items():
                 q_env.insert(k, v)
-            self.process.setProcessEnvironment(q_env)
+        self.process.setProcessEnvironment(q_env)
         if getattr(self, "stdin_file", None) and os.path.isfile(self.stdin_file):
             self.process.setStandardInputFile(self.stdin_file)
         self.process.readyReadStandardOutput.connect(self._on_stdout_ready)

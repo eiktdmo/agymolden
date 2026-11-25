@@ -20,6 +20,8 @@ if sys.platform.startswith("linux"):
             if os.path.isfile(sys_lib):
                 current_preload = os.environ.get("LD_PRELOAD", "")
                 if sys_lib not in current_preload:
+                    # Remember the user's own value so child engines (ORCA etc.) don't inherit our preload
+                    os.environ["_AGYMOLDEN_ORIG_LD_PRELOAD"] = current_preload
                     os.environ["LD_PRELOAD"] = f"{sys_lib}:{current_preload}".strip(":")
                     os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
                 break
