@@ -452,7 +452,6 @@ class UIInspectorTabsMixin:
 
         self.combo_mo_file_source = QtWidgets.QComboBox()
         self.combo_mo_file_source.setMinimumWidth(120)
-        self.combo_mo_file_source.setStyleSheet("font-size: 11px;")
         self.combo_mo_file_source.setToolTip(
             "Switch the orbital table & energy ladder between Electronic MOs and Positronic MOs "
             "(or multiple stages from the same calculation)"
@@ -569,7 +568,7 @@ class UIInspectorTabsMixin:
         dc_grid = QtWidgets.QGridLayout(self.grp_quick_dens_cmap)
         dc_grid.setContentsMargins(6, 6, 6, 6)
         dc_grid.setSpacing(4)
-        dc_grid.setColumnStretch(1, 2)
+        dc_grid.setColumnStretch(1, 1)
         dc_grid.setColumnStretch(3, 1)
 
         dc_grid.addWidget(QtWidgets.QLabel("Palette:"), 0, 0)
@@ -592,6 +591,7 @@ class UIInspectorTabsMixin:
 
         dc_grid.addWidget(QtWidgets.QLabel("Scale/Off:"), 1, 0)
         self.spin_quick_dens_offset = QtWidgets.QDoubleSpinBox()
+        self.spin_quick_dens_offset.setMinimumWidth(84)
         self.spin_quick_dens_offset.setRange(-10.0, 10.0)
         self.spin_quick_dens_offset.setSingleStep(0.2)
         self.spin_quick_dens_offset.setDecimals(1)
@@ -653,7 +653,7 @@ class UIInspectorTabsMixin:
         mo_grid = QtWidgets.QGridLayout(mo_params_group)
         mo_grid.setContentsMargins(6, 6, 6, 6)
         mo_grid.setSpacing(5)
-        mo_grid.setColumnStretch(1, 2)
+        mo_grid.setColumnStretch(1, 1)
         mo_grid.setColumnStretch(3, 1)
 
         mo_grid.addWidget(QtWidgets.QLabel("Isovalue:"), 0, 0)
@@ -665,6 +665,7 @@ class UIInspectorTabsMixin:
         mo_grid.addWidget(self.slider_quick_iso, 0, 1, 1, 2)
 
         self.spin_quick_iso = QtWidgets.QDoubleSpinBox()
+        self.spin_quick_iso.setMinimumWidth(88)
         self.spin_quick_iso.setRange(0.0001, 2.0)
         self.spin_quick_iso.setDecimals(4)
         self.spin_quick_iso.setSingleStep(0.005)
@@ -693,6 +694,7 @@ class UIInspectorTabsMixin:
 
         mo_grid.addWidget(QtWidgets.QLabel("Plot Box:"), 2, 0)
         self.spin_quick_margin = QtWidgets.QDoubleSpinBox()
+        self.spin_quick_margin.setMinimumWidth(88)
         self.spin_quick_margin.setRange(1.0, 30.0)
         self.spin_quick_margin.setSingleStep(0.5)
         self.spin_quick_margin.setValue(5.5)

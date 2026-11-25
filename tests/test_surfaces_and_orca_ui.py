@@ -694,6 +694,23 @@ def test_basis_set_upgrade_orca_and_all_codes(main_win, monkeypatch):
     sbd.close()
 
 
+def test_lower_right_pane_and_spinbox_qss_readability(main_win):
+    """Ensure QSpinBox/QDoubleSpinBox/QComboBox inner QLineEdits aren't double-padded and right-pane inputs are clean."""
+    from agymolden.theme import DARK_THEME_QSS, LIGHT_THEME_QSS
+
+    for qss in (DARK_THEME_QSS, LIGHT_THEME_QSS):
+        assert "QSpinBox QLineEdit, QDoubleSpinBox QLineEdit, QComboBox QLineEdit" in qss
+        assert "min-height: 0px;" in qss
+
+    app, win = main_win
+    for attr in ("combo_opt_method", "combo_smart_mode", "spin_bond", "spin_angle", "spin_dihedral", "txt_zmat_filter", "combo_mo_file_source"):
+        w = getattr(win, attr)
+        assert w.styleSheet().strip() == "", f"{attr} should not have inline styleSheet override: {w.styleSheet()!r}"
+    for spin_attr in ("spin_bond", "spin_angle", "spin_dihedral", "spin_quick_iso", "spin_quick_margin"):
+        assert getattr(win, spin_attr).minimumWidth() >= 84
+
+
+
 
 
 

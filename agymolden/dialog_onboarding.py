@@ -88,10 +88,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         cl1 = QtWidgets.QVBoxLayout(card1)
         cl1.addWidget(QtWidgets.QLabel(
             "<h3 style='color:#38bdf8; margin:0;'>1. Interactive 3D Canvas Navigation</h3>"
-            "<p style='color:#cbd5e1; line-height: 1.5; font-size: 13px;'>"
+            "<p style='line-height: 1.5; font-size: 13px;'>"
             "AgyMolden provides a high-performance OpenGL molecular viewport with hardware-accelerated instanced rendering:"
             "</p>"
-            "<ul style='color:#cbd5e1; line-height: 1.6; font-size: 12px;'>"
+            "<ul style='line-height: 1.6; font-size: 12px;'>"
             "<li><b>Left-Click Drag:</b> Rotate molecule smoothly in 3D arcball space.</li>"
             "<li><b>Right-Click Drag:</b> Pan and translate camera along viewport plane.</li>"
             "<li><b>Scroll Wheel:</b> Zoom in and out smoothly.</li>"
@@ -128,10 +128,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         cl2 = QtWidgets.QVBoxLayout(card2)
         cl2.addWidget(QtWidgets.QLabel(
             "<h3 style='color:#38bdf8; margin:0;'>2. Parametric Z-Matrix & Interactive Builder</h3>"
-            "<p style='color:#cbd5e1; line-height: 1.5; font-size: 13px;'>"
+            "<p style='line-height: 1.5; font-size: 13px;'>"
             "Seamless bidirectional synchronization between 3D Cartesian coordinates and internal coordinates (Z-Matrix):"
             "</p>"
-            "<ul style='color:#cbd5e1; line-height: 1.6; font-size: 12px;'>"
+            "<ul style='line-height: 1.6; font-size: 12px;'>"
             "<li><b>Drag-to-Add:</b> Drag from any atom to instantly spawn a bonded substituent.</li>"
             "<li><b>Bond Orders:</b> Double-click any bond or press <b>1, 2, 3</b> to switch Single/Double/Triple order.</li>"
             "<li><b>Ring Welder (Ctrl+Shift+W):</b> 1-click fuse aromatic benzene, cyclohexane, or cyclopentane rings.</li>"
@@ -152,10 +152,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         cl3 = QtWidgets.QVBoxLayout(card3)
         cl3.addWidget(QtWidgets.QLabel(
             "<h3 style='color:#38bdf8; margin:0;'>3. Quantum Chemistry Engine Matrix & Live Monitor</h3>"
-            "<p style='color:#cbd5e1; line-height: 1.5; font-size: 13px;'>"
+            "<p style='line-height: 1.5; font-size: 13px;'>"
             "Execute and monitor quantum chemical calculations across top industry codes:"
             "</p>"
-            "<ul style='color:#cbd5e1; line-height: 1.6; font-size: 12px;'>"
+            "<ul style='line-height: 1.6; font-size: 12px;'>"
             "<li><b>Supported Engines:</b> Gaussian 16/09, ORCA, PySCF, Psi4, and newBRORSEN.</li>"
             "<li><b>Automated Input Generation (Ctrl+G):</b> Generates complete route cards, basis sets, and charge/multiplicity specs.</li>"
             "<li><b>Live Job Monitor (Ctrl+J):</b> Stream output logs with real-time electronic SCF convergence plots and 3D geometry step tracking.</li>"
@@ -175,10 +175,10 @@ class OnboardingTourDialog(QtWidgets.QDialog):
         cl4 = QtWidgets.QVBoxLayout(card4)
         cl4.addWidget(QtWidgets.QLabel(
             "<h3 style='color:#38bdf8; margin:0;'>4. Wavefunction Surfaces, Spectroscopy & Command Palette</h3>"
-            "<p style='color:#cbd5e1; line-height: 1.5; font-size: 13px;'>"
+            "<p style='line-height: 1.5; font-size: 13px;'>"
             "Publication-ready spectroscopic analysis and productivity accelerators:"
             "</p>"
-            "<ul style='color:#cbd5e1; line-height: 1.6; font-size: 12px;'>"
+            "<ul style='line-height: 1.6; font-size: 12px;'>"
             "<li><b>3D Molecular Orbitals & ESP:</b> Render HOMO/LUMO isosurfaces and electrostatic potential maps directly from Molden or cube files.</li>"
             "<li><b>Vibrational IR Animation:</b> Interactive harmonic normal mode player with animated vectors and GIF export.</li>"
             "<li><b>Command Palette (Ctrl+K):</b> Instant fuzzy search for all 60+ tools, exporters, and dialogs.</li>"

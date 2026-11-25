@@ -126,7 +126,7 @@ class FMOAlignmentDialog(QtWidgets.QDialog):
         # Bottom Bar: Summary Metrics & Actions
         b_bar = QtWidgets.QHBoxLayout()
         self.lbl_metrics = QtWidgets.QLabel("")
-        self.lbl_metrics.setStyleSheet("font-size: 11px; color: #e2e8f0;")
+        self.lbl_metrics.setStyleSheet("font-size: 11px;")
         b_bar.addWidget(self.lbl_metrics, 1)
 
         btn_save = QtWidgets.QPushButton("💾 Export Diagram (PNG/SVG)...")

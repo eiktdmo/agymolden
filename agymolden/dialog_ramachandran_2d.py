@@ -86,7 +86,7 @@ class Ramachandran2DScanDialog(QtWidgets.QDialog):
         # Bottom Bar
         b_bar = QtWidgets.QHBoxLayout()
         self.lbl_status = QtWidgets.QLabel("Ready. Select two dihedrals and click Compute.")
-        self.lbl_status.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+        self.lbl_status.setStyleSheet("font-size: 11px;")
         b_bar.addWidget(self.lbl_status, 1)
 
         btn_save = QtWidgets.QPushButton("💾 Save Surface (SVG/PNG)...")

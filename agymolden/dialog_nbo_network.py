@@ -86,7 +86,7 @@ class NBONetworkDialog(QtWidgets.QDialog):
         # Bottom Bar
         b_bar = QtWidgets.QHBoxLayout()
         self.lbl_stats = QtWidgets.QLabel("")
-        self.lbl_stats.setStyleSheet("color: #e2e8f0; font-size: 11px;")
+        self.lbl_stats.setStyleSheet("font-size: 11px;")
         b_bar.addWidget(self.lbl_stats, 1)
 
         btn_save = QtWidgets.QPushButton("💾 Export Diagram (SVG / PNG)...")

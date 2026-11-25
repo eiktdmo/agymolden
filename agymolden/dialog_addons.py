@@ -189,7 +189,7 @@ class ExtensionManagerDialog(QtWidgets.QDialog):
             "Manage optional computational chemistry engines and accelerated plugins directly from this environment.<br>"
             "Zero command-line manual steps required."
         )
-        h_desc.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+        h_desc.setStyleSheet("color: #64748b; font-size: 11px;")
         h_desc.setWordWrap(True)
         h_layout.addWidget(h_title)
         h_layout.addWidget(h_desc)

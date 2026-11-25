@@ -145,10 +145,10 @@ QTextEdit, QPlainTextEdit {
 QGroupBox {
     border: 1px solid #333342;
     border-radius: 6px;
-    margin-top: 10px;
+    margin-top: 12px;
     font-weight: bold;
     color: #93c5fd;
-    padding: 14px 10px 8px 10px;
+    padding: 16px 8px 8px 8px;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -197,6 +197,12 @@ QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
     border-radius: 4px;
     padding: 3px 8px;
     min-height: 26px;
+}
+QSpinBox QLineEdit, QDoubleSpinBox QLineEdit, QComboBox QLineEdit {
+    border: none;
+    padding: 0px 2px;
+    min-height: 0px;
+    background: transparent;
 }
 QComboBox QAbstractItemView, QComboBoxPrivateContainer, QComboBoxPrivateContainer QFrame, QListView, QTreeView, QTableView, QListWidget {
     background-color: #24242c;
@@ -452,10 +458,10 @@ QTextEdit, QPlainTextEdit {
 QGroupBox {
     border: 1px solid #cbd5e1;
     border-radius: 6px;
-    margin-top: 10px;
+    margin-top: 12px;
     font-weight: bold;
     color: #2563eb;
-    padding: 14px 10px 8px 10px;
+    padding: 16px 8px 8px 8px;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -505,6 +511,12 @@ QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
     border-radius: 4px;
     padding: 3px 8px;
     min-height: 26px;
+}
+QSpinBox QLineEdit, QDoubleSpinBox QLineEdit, QComboBox QLineEdit {
+    border: none;
+    padding: 0px 2px;
+    min-height: 0px;
+    background: transparent;
 }
 QComboBox QAbstractItemView, QComboBoxPrivateContainer, QComboBoxPrivateContainer QFrame, QListView, QTreeView, QTableView, QListWidget {
     background-color: #ffffff;

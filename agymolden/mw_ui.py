@@ -852,7 +852,6 @@ class UIMixin(UIInspectorTabsMixin):
         self.txt_zmat_filter = QtWidgets.QLineEdit()
         self.txt_zmat_filter.setPlaceholderText("🔍 Filter atoms (e.g. C, H, 1-20, >10)...")
         self.txt_zmat_filter.setClearButtonEnabled(True)
-        self.txt_zmat_filter.setStyleSheet("font-size: 11px; padding: 2px 4px;")
         filter_row.addWidget(self.txt_zmat_filter, stretch=1)
 
         btn_show_all = QtWidgets.QPushButton("Show All")
@@ -965,7 +964,6 @@ class UIMixin(UIInspectorTabsMixin):
         self.combo_opt_method.addItem("Auto (Hybrid MMFF / UFF)", "auto_hybrid")
         self.combo_opt_method.addItem("GFN0-xTB (Semiempirical QM)", "semiempirical")
         self.combo_opt_method.addItem("🧠 MLIP (ANI-2x / MACE / Hybrid QM)", "mlip")
-        self.combo_opt_method.setStyleSheet("font-size: 11px; padding: 3px 6px;")
         self.combo_opt_method.setToolTip(
             "Select geometry optimization & vibrational engine:\n"
             "• Analytical UFF / MMFF94s: Built-in pure analytical force field (universal coverage, periodic torsions)\n"
@@ -1057,6 +1055,7 @@ class UIMixin(UIInspectorTabsMixin):
         adjust_layout = QtWidgets.QGridLayout(self.grp_adjust)
         adjust_layout.setHorizontalSpacing(8)
         adjust_layout.setVerticalSpacing(5)
+        adjust_layout.setColumnStretch(2, 1)
 
         # SmartSlides Displacement Mode & Stereocenter Inversion bar
         row_smart_mode = QtWidgets.QHBoxLayout()
@@ -1068,7 +1067,6 @@ class UIMixin(UIInspectorTabsMixin):
         self.combo_smart_mode.addItem("Move Substituent Group", "group")
         self.combo_smart_mode.addItem("Move Both Symmetrically", "symmetric")
         self.combo_smart_mode.addItem("Move Single Atom Only", "atom")
-        self.combo_smart_mode.setStyleSheet("font-size: 11px; padding: 2px 4px;")
         self.combo_smart_mode.setToolTip(
             "GaussView SmartSlides mode when 2, 3, or 4 atoms are selected in the 3D viewport:\n"
             "• Move Substituent Group: Translates/rotates the connected substituent subgraph\n"
@@ -1095,7 +1093,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.spin_bond = QtWidgets.QDoubleSpinBox()
         self.spin_bond.setRange(0.1, 10.0)
         self.spin_bond.setSingleStep(0.01)
-        self.spin_bond.setStyleSheet("font-size: 11px;")
+        self.spin_bond.setMinimumWidth(88)
         self.spin_bond.valueChanged.connect(self._on_spin_bond_changed)
         adjust_layout.addWidget(self.spin_bond, 2, 1)
 
@@ -1112,7 +1110,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.spin_angle = QtWidgets.QDoubleSpinBox()
         self.spin_angle.setRange(0.0, 180.0)
         self.spin_angle.setSingleStep(0.5)
-        self.spin_angle.setStyleSheet("font-size: 11px;")
+        self.spin_angle.setMinimumWidth(88)
         self.spin_angle.valueChanged.connect(self._on_spin_angle_changed)
         adjust_layout.addWidget(self.spin_angle, 3, 1)
 
@@ -1129,7 +1127,7 @@ class UIMixin(UIInspectorTabsMixin):
         self.spin_dihedral = QtWidgets.QDoubleSpinBox()
         self.spin_dihedral.setRange(-180.0, 180.0)
         self.spin_dihedral.setSingleStep(1.0)
-        self.spin_dihedral.setStyleSheet("font-size: 11px;")
+        self.spin_dihedral.setMinimumWidth(88)
         self.spin_dihedral.valueChanged.connect(self._on_spin_dihedral_changed)
         adjust_layout.addWidget(self.spin_dihedral, 4, 1)
 

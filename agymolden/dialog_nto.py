@@ -78,7 +78,7 @@ class NTODialog(QtWidgets.QDialog):
         d_lay = QtWidgets.QVBoxLayout(det_grp)
 
         self.lbl_details = QtWidgets.QLabel("Select an excited state above to inspect Hole and Particle NTO orbital compositions.")
-        self.lbl_details.setStyleSheet("color: #f1f5f9; font-family: monospace; font-size: 11px;")
+        self.lbl_details.setStyleSheet("font-family: monospace; font-size: 11px;")
         self.lbl_details.setWordWrap(True)
         d_lay.addWidget(self.lbl_details)
 

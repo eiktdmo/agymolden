@@ -166,7 +166,7 @@ class MicrokineticsDialog(QtWidgets.QDialog):
         self.lbl_ton = QtWidgets.QLabel("<b>TON:</b> -")
         self.lbl_ton.setStyleSheet("color: #4ade80; font-size: 13px;")
         self.lbl_prod = QtWidgets.QLabel("<b>Target Product:</b> -")
-        self.lbl_prod.setStyleSheet("color: #f1f5f9; font-size: 12px;")
+        self.lbl_prod.setStyleSheet("font-size: 12px;")
 
         b_lay.addWidget(self.lbl_tof)
         b_lay.addWidget(self.lbl_ton)

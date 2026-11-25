@@ -86,7 +86,7 @@ class IRCReactionSweeperDialog(QtWidgets.QDialog):
         thermo_layout.setContentsMargins(8, 6, 8, 6)
 
         self.lbl_thermo_summary = QtWidgets.QLabel("No IRC Pathway loaded.")
-        self.lbl_thermo_summary.setStyleSheet("font-size: 12px; font-weight: bold; color: #f8fafc;")
+        self.lbl_thermo_summary.setStyleSheet("font-size: 12px; font-weight: bold;")
         thermo_layout.addWidget(self.lbl_thermo_summary, stretch=1)
 
         self.lbl_status_badge = QtWidgets.QLabel("")

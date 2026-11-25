@@ -357,7 +357,7 @@ class ConformerEnsembleDialog(QtWidgets.QDialog):
 
         m_layout.addWidget(QtWidgets.QLabel("99% Population:"), 2, 2)
         self.lbl_stat_pop99 = QtWidgets.QLabel("—")
-        self.lbl_stat_pop99.setStyleSheet("color: #a7f3d0; font-weight: bold;")
+        self.lbl_stat_pop99.setStyleSheet("color: #059669; font-weight: bold;")
         m_layout.addWidget(self.lbl_stat_pop99, 2, 3)
 
         m_layout.addWidget(QtWidgets.QLabel("S_conf (Entropy):"), 3, 0)

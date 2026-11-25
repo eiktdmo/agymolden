@@ -50,7 +50,7 @@ class ReactionThermoDialog(QtWidgets.QDialog):
 
         # Temperature setting
         temp_box = QtWidgets.QHBoxLayout()
-        temp_box.addWidget(QtWidgets.QLabel("<b style='color: #f1f5f9;'>Temperature (K):</b>"))
+        temp_box.addWidget(QtWidgets.QLabel("<b>Temperature (K):</b>"))
         self.spin_temp = QtWidgets.QDoubleSpinBox()
         self.spin_temp.setRange(1.0, 5000.0)
         self.spin_temp.setValue(298.15)
@@ -103,7 +103,7 @@ class ReactionThermoDialog(QtWidgets.QDialog):
         res_lay.addWidget(self.lbl_delta_h_rxn, 0, 1)
 
         self.lbl_keq = QtWidgets.QLabel("Keq: —")
-        self.lbl_keq.setStyleSheet("font-size: 13px; font-weight: bold; color: #a7f3d0;")
+        self.lbl_keq.setStyleSheet("font-size: 13px; font-weight: bold; color: #059669;")
         res_lay.addWidget(self.lbl_keq, 0, 2)
 
         self.lbl_delta_g_act = QtWidgets.QLabel("ΔG‡ (Barrier): —")
