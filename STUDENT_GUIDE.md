@@ -12,9 +12,9 @@ Welcome to your Computational Chemistry laboratory! **AgyMolden** lets you sketc
      ```bash
      ./setup.sh
      ```
-   - **Windows** *(PowerShell / Command Prompt, or double-click `setup.bat`)*:
+   - **Windows** *(PowerShell / Command Prompt, or double-click `windows-installer.bat`)*:
      ```bat
-     .\setup.bat
+     .\windows-installer.bat
      ```
    *(The installer creates an isolated `.venv`, installs AgyMolden + all required packages, and links a desktop/terminal launcher automatically.)*
 3. **Launch AgyMolden**:

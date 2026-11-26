@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-if not exist .venv call setup.bat
+if not exist .venv call windows-installer.bat
 .venv\Scripts\pip install pyinstaller
 if "%1"=="--onedir" (
     set AGYMOLDEN_ONEDIR=1

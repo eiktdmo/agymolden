@@ -122,7 +122,7 @@ agymolden
 python run.py
 
 # Windows
-setup.bat
+windows-installer.bat
 python run.py
 ```
 

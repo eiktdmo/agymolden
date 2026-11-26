@@ -25,6 +25,7 @@ dist/
 *.out
 *.chk
 *.zip
+!AgyMolden_Student_Release.zip
 *profile.txt
 *summary.txt
 *_checkpoint.xyz

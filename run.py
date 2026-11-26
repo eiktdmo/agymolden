@@ -45,7 +45,7 @@ def _venv_python():
 if __name__ == "__main__":
     venv = _venv_python()
     if venv is None and not os.path.isdir(os.path.join(ROOT, ".venv")):
-        setup_script = os.path.join(ROOT, "setup.bat" if os.name == "nt" else "setup.sh")
+        setup_script = os.path.join(ROOT, "windows-installer.bat" if os.name == "nt" else "setup.sh")
         if os.path.isfile(setup_script):
             print("AgyMolden is not installed yet. Running automatic setup first...")
             if os.name == "nt":
