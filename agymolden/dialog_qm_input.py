@@ -134,7 +134,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Quantum Chemistry Calculation Setup")
         from .theme import fit_dialog_to_screen
-        fit_dialog_to_screen(self, 780, 680)
+        fit_dialog_to_screen(self, 860, 900, full_height=True)
 
         self.symbols = symbols
         self.coords = coords

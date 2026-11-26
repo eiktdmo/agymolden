@@ -662,7 +662,8 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("newBRORSEN Input Builder (Positrons, NEO & CCSD(T))")
-        self.resize(850, 720)
+        from ..theme import fit_dialog_to_screen
+        fit_dialog_to_screen(self, 920, 900, full_height=True)
 
         self.symbols = symbols or []
         self.coords = coords if coords is not None else np.zeros((len(self.symbols), 3))

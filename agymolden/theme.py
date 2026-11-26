@@ -642,16 +642,25 @@ QStatusBar {
 """.replace("__ARROW_DARK_PATH__", ARROW_DARK_PATH).replace("__CHECKMARK_PATH__", CHECKMARK_PATH).replace("__SPIN_UP_DARK_PATH__", SPIN_UP_DARK_PATH).replace("__SPIN_DOWN_DARK_PATH__", SPIN_DOWN_DARK_PATH)
 
 
-def fit_dialog_to_screen(dialog, pref_w: int, pref_h: int):
+def fit_dialog_to_screen(dialog, pref_w: int, pref_h: int, full_height: bool = False):
     """Resize a dialog to preferred dimensions, clamped cleanly to the primary screen's available area."""
     try:
         from PyQt6 import QtGui
         scr = QtGui.QGuiApplication.primaryScreen()
         if scr is not None:
             avail = scr.availableGeometry()
-            w = min(pref_w, max(480, int(avail.width() * 0.90)))
-            h = min(pref_h, max(420, int(avail.height() * 0.88)))
-            dialog.resize(w, h)
+            if full_height:
+                w = min(pref_w, max(520, int(avail.width() * 0.90)))
+                h = max(520, int(avail.height() * 0.94))
+                dialog.resize(w, h)
+                dialog.move(
+                    avail.left() + max(0, (avail.width() - w) // 2),
+                    avail.top() + max(8, (avail.height() - h) // 2),
+                )
+            else:
+                w = min(pref_w, max(480, int(avail.width() * 0.90)))
+                h = min(pref_h, max(420, int(avail.height() * 0.88)))
+                dialog.resize(w, h)
             return
     except Exception:
         pass

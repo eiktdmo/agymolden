@@ -841,6 +841,35 @@ def test_preset_bond_orders_never_leak_or_double_bond_hydrogen(main_win):
     assert win.viewer.bond_orders == {}
 
 
+def test_organized_menus_and_full_height_qm_dialogs(main_win):
+    """Verify File/Edit/Tools menus are compactly organized and QM generators open full-height."""
+    import numpy as np
+    from agymolden.dialog_quick_orca import QuickOrcaDialog
+    from agymolden.dialog_qm_input import QMCalculationDialog
+    from agymolden.zmatrix import ZAtom
+
+    app, win = main_win
+    mb = win.menuBar()
+    menus = {act.text().replace("&", ""): act.menu() for act in mb.actions() if act.menu()}
+    for m_name in ("File", "Edit", "Tools"):
+        m = menus[m_name]
+        non_sep = [a for a in m.actions() if not a.isSeparator()]
+        assert len(non_sep) <= 14, f"{m_name} menu still overloaded: {len(non_sep)} top-level items"
+
+    tools_texts = [a.text() for a in menus["Tools"].actions() if not a.isSeparator()]
+    assert any("Unit Converter" in t for t in tools_texts)
+
+    zatoms = [ZAtom("O"), ZAtom("H", ref1=0, dist=0.96), ZAtom("H", ref1=0, dist=0.96, ref2=1, angle=104.5)]
+    coords = np.array([[0.0, 0.0, 0.11], [0.0, 0.76, -0.47], [0.0, -0.76, -0.47]])
+    orca_dlg = QuickOrcaDialog(win, zatoms=zatoms)
+    qm_dlg = QMCalculationDialog(win, symbols=["O", "H", "H"], coords=coords, zatoms=zatoms)
+    assert orca_dlg.height() >= 520
+    assert qm_dlg.height() >= 520
+    orca_dlg.close()
+    qm_dlg.close()
+
+
+
 
 
 

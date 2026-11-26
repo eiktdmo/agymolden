@@ -1577,65 +1577,71 @@ class UIMixin(UIInspectorTabsMixin):
         act_open_any.triggered.connect(self._on_open_universal_file)
         menu_file.addAction(act_open_any)
 
+        self.menu_recent = menu_file.addMenu("Open &Recent")
+        self._update_recent_files_menu()
+
+        menu_open_fmt = menu_file.addMenu("📁 Open &Specific Format / Builder...")
+
         act_open_zmat = QtGui.QAction("Open &Z-Matrix File...", self)
         act_open_zmat.triggered.connect(self._on_open_zmat)
-        menu_file.addAction(act_open_zmat)
-
-        act_gallery = QtGui.QAction("📚 Chemistry &Sample & Benchmark Gallery...", self)
-        act_gallery.setToolTip("Open curated benchmark structures (Ferrocene, C60, Diels-Alder TS, Water Prism) in 1 click")
-        act_gallery.triggered.connect(self._on_open_sample_gallery)
-        menu_file.addAction(act_gallery)
+        menu_open_fmt.addAction(act_open_zmat)
 
         act_open_xyz = QtGui.QAction("Import &XYZ File...", self)
         act_open_xyz.triggered.connect(self._on_import_xyz)
-        menu_file.addAction(act_open_xyz)
+        menu_open_fmt.addAction(act_open_xyz)
 
         act_paste_xyz_file = QtGui.QAction("📥 Paste &Cartesian Coordinates from Clipboard...", self)
         act_paste_xyz_file.setToolTip("Parse and load Cartesian XYZ coordinates from clipboard directly into the 3D viewer (Ctrl+Shift+V)")
         act_paste_xyz_file.triggered.connect(self._on_paste_as_new_molecule)
-        menu_file.addAction(act_paste_xyz_file)
+        menu_open_fmt.addAction(act_paste_xyz_file)
 
         act_open_inp = QtGui.QAction("Open newBRORSEN &Input File (*.inp)...", self)
         act_open_inp.setShortcut("Ctrl+I")
         act_open_inp.setToolTip("Open a newBRORSEN input file (.inp) into AGYMolden and the Input Builder")
         act_open_inp.triggered.connect(self._on_open_brorsen_input_file)
-        menu_file.addAction(act_open_inp)
+        menu_open_fmt.addAction(act_open_inp)
+
+        menu_open_fmt.addSeparator()
 
         act_open_smiles = QtGui.QAction("Build from &Name / SMILES / InChI...", self)
         act_open_smiles.setShortcut("Ctrl+Shift+B")
         act_open_smiles.setToolTip("Type a chemical name (e.g. aspirin, caffeine), SMILES (e.g. c1ccccc1), or InChI to build a 3D structure automatically (Ctrl+Shift+B)")
         act_open_smiles.triggered.connect(self._on_prompt_smiles_or_inchi)
-        menu_file.addAction(act_open_smiles)
+        menu_open_fmt.addAction(act_open_smiles)
 
         act_2d_sketcher = QtGui.QAction("✏️ 2D &Molecular Bond-Line Sketcher (ChemDraw / Marvin Style)...", self)
         act_2d_sketcher.setShortcut("Ctrl+Shift+K")
         act_2d_sketcher.setToolTip("Sketch 2D chemical bond-line formulas (rings, heteroatoms, multiple bonds) and convert automatically to 3D (Ctrl+Shift+K)")
         act_2d_sketcher.triggered.connect(self._on_open_2d_sketcher)
-        menu_file.addAction(act_2d_sketcher)
+        menu_open_fmt.addAction(act_2d_sketcher)
+
+        act_gallery = QtGui.QAction("📚 Chemistry &Sample & Benchmark Gallery...", self)
+        act_gallery.setToolTip("Open curated benchmark structures (Ferrocene, C60, Diels-Alder TS, Water Prism) in 1 click")
+        act_gallery.triggered.connect(self._on_open_sample_gallery)
+        menu_open_fmt.addAction(act_gallery)
+
+        menu_open_fmt.addSeparator()
 
         act_open_qm_log = QtGui.QAction("Import &QM Log / Output File (newBRORSEN, Gaussian, ORCA)...", self)
         act_open_qm_log.setToolTip("Open output file from newBRORSEN (.out), Gaussian, ORCA, Q-Chem, or xTB to view structures, optimization steps and frequencies")
         act_open_qm_log.triggered.connect(self._on_import_qm_log)
-        menu_file.addAction(act_open_qm_log)
+        menu_open_fmt.addAction(act_open_qm_log)
+
+        act_open_cube = QtGui.QAction("Open Volumetric &Grid / Orbitals (.cube, .molden)...", self)
+        act_open_cube.setToolTip("Open Gaussian .cube file or Molden file to extract and view 3D Molecular Orbitals (HOMO/LUMO) and ESP isosurfaces")
+        act_open_cube.triggered.connect(self._on_open_volumetric_dialog)
+        menu_open_fmt.addAction(act_open_cube)
+
+        act_orb_gallery = QtGui.QAction("📸 All Molecular Orbitals Snapshot &Gallery...", self)
+        act_orb_gallery.setToolTip("Batch capture all or selected molecular orbitals into a contact sheet collage or folder of images (like Gabedit)")
+        act_orb_gallery.triggered.connect(self._on_open_orbital_snapshot_gallery)
+        menu_open_fmt.addAction(act_orb_gallery)
 
         act_view_out = QtGui.QAction("📄 View &Calculation Output Log (*.out, *.log)...", self)
         act_view_out.setToolTip("Inspect full output log with clickable section indexing and search (F2)")
         act_view_out.setShortcut("F2")
         act_view_out.triggered.connect(self._on_view_qm_output_file)
         menu_file.addAction(act_view_out)
-
-        act_open_cube = QtGui.QAction("Open Volumetric &Grid / Orbitals (.cube, .molden)...", self)
-        act_open_cube.setToolTip("Open Gaussian .cube file or Molden file to extract and view 3D Molecular Orbitals (HOMO/LUMO) and ESP isosurfaces")
-        act_open_cube.triggered.connect(self._on_open_volumetric_dialog)
-        menu_file.addAction(act_open_cube)
-
-        act_orb_gallery = QtGui.QAction("📸 All Molecular Orbitals Snapshot &Gallery...", self)
-        act_orb_gallery.setToolTip("Batch capture all or selected molecular orbitals into a contact sheet collage or folder of images (like Gabedit)")
-        act_orb_gallery.triggered.connect(self._on_open_orbital_snapshot_gallery)
-        menu_file.addAction(act_orb_gallery)
-
-        self.menu_recent = menu_file.addMenu("Open &Recent")
-        self._update_recent_files_menu()
 
         menu_file.addSeparator()
 
@@ -1649,15 +1655,17 @@ class UIMixin(UIInspectorTabsMixin):
         act_save_zmat.triggered.connect(self._on_save_zmat)
         menu_file.addAction(act_save_zmat)
 
+        menu_save_zmat_fmt = menu_file.addMenu("💾 Save &Z-Matrix Format...")
+
         act_save_num = QtGui.QAction("Save Z-Matrix with &Numbers...", self)
         act_save_num.setToolTip("Every bond, angle and dihedral written as a number")
         act_save_num.triggered.connect(lambda: self._on_save_zmat_format("numeric"))
-        menu_file.addAction(act_save_num)
+        menu_save_zmat_fmt.addAction(act_save_num)
 
         act_save_var = QtGui.QAction("Save Z-Matrix with &Variables...", self)
         act_save_var.setToolTip("Every coordinate written as a variable, with a Variables: block of values (shared/symmetric variables are preserved)")
         act_save_var.triggered.connect(lambda: self._on_save_zmat_format("variables"))
-        menu_file.addAction(act_save_var)
+        menu_save_zmat_fmt.addAction(act_save_var)
 
         act_save_xyz = QtGui.QAction("Export Coordinates (&XYZ)...", self)
         act_save_xyz.triggered.connect(self._on_export_xyz)
@@ -1729,15 +1737,13 @@ class UIMixin(UIInspectorTabsMixin):
         ])
         act_export_png.setToolTip("Save a high-resolution PNG image of the 3D viewport (Ctrl+E)")
         act_export_png.triggered.connect(self._on_export_image)
-        menu_file.addAction(act_export_png)
+        menu_export.addAction(act_export_png)
 
         act_clip_img = QtGui.QAction("📷 Copy Viewport Image to Clipboard", self)
         act_clip_img.setShortcut("Ctrl+Shift+C")
         act_clip_img.setToolTip("Copy publication-quality 3D image with transparent background directly to system clipboard (Ctrl+Shift+C)")
         act_clip_img.triggered.connect(lambda: self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True))
-        menu_file.addAction(act_clip_img)
-
-        menu_file.addSeparator()
+        menu_export.addAction(act_clip_img)
 
         act_prefs = QtGui.QAction("⚙️ &Preferences...", self)
         act_prefs.setShortcut("Ctrl+,")
@@ -1843,50 +1849,52 @@ class UIMixin(UIInspectorTabsMixin):
 
         menu_edit.addSeparator()
 
+        menu_edit_struct = menu_edit.addMenu("🧱 &Atoms && Z-Matrix Structure...")
+
         act_add_line = QtGui.QAction("&Add Atom Line", self)
         act_add_line.triggered.connect(self._on_add_line)
-        menu_edit.addAction(act_add_line)
+        menu_edit_struct.addAction(act_add_line)
 
         act_del = QtGui.QAction("&Delete Selected Atom", self)
         act_del.triggered.connect(self._on_delete_selected_atom)
-        menu_edit.addAction(act_del)
+        menu_edit_struct.addAction(act_del)
 
         act_reorder = QtGui.QAction("&Reorder Z-Matrix (Full)", self)
         act_reorder.setShortcut("Ctrl+Shift+R")
         act_reorder.setToolTip("Reorder entire Z-Matrix sequentially (Molden ZMEORD) (Ctrl+Shift+R)")
         act_reorder.triggered.connect(self._on_reorder_zmat_clicked)
-        menu_edit.addAction(act_reorder)
+        menu_edit_struct.addAction(act_reorder)
 
         act_adj_b = QtGui.QAction("Adjust &Bond (Alt+B)", self)
         act_adj_b.setShortcut("Alt+B")
         act_adj_b.setToolTip("Click 2 atoms to redefine bond partner of the 1st atom (Alt+B)")
         act_adj_b.triggered.connect(lambda: self._start_partial_reorder("bond"))
-        menu_edit.addAction(act_adj_b)
+        menu_edit_struct.addAction(act_adj_b)
 
         act_adj_a = QtGui.QAction("Adjust &Angle (Alt+A)", self)
         act_adj_a.setShortcut("Alt+A")
         act_adj_a.setToolTip("Click 3 atoms to redefine bond & angle partners of the 1st atom (Alt+A)")
         act_adj_a.triggered.connect(lambda: self._start_partial_reorder("angle"))
-        menu_edit.addAction(act_adj_a)
+        menu_edit_struct.addAction(act_adj_a)
 
         act_adj_d = QtGui.QAction("Adjust &Dihedral (Alt+D)", self)
         act_adj_d.setShortcut("Alt+D")
         act_adj_d.setToolTip("Click 4 atoms to redefine bond, angle & dihedral partners of the 1st atom (Alt+D)")
         act_adj_d.triggered.connect(lambda: self._start_partial_reorder("dihedral"))
-        menu_edit.addAction(act_adj_d)
+        menu_edit_struct.addAction(act_adj_d)
 
-        menu_edit.addSeparator()
+        menu_edit_struct.addSeparator()
 
         act_add_h = QtGui.QAction("&Complete Valence with Hydrogens", self)
         act_add_h.setShortcut("Ctrl+H")
         act_add_h.triggered.connect(self._on_add_hydrogens)
-        menu_edit.addAction(act_add_h)
+        menu_edit_struct.addAction(act_add_h)
 
         act_cycle_welder = QtGui.QAction("💍 &Weld / Fuse Molecular Rings...", self)
         act_cycle_welder.setShortcut("Ctrl+Shift+W")
         act_cycle_welder.setToolTip("Fuse aromatic or saturated rings onto selected bonds, or create bicyclic bridgeheads (Ctrl+Shift+W)")
         act_cycle_welder.triggered.connect(self._on_open_cycle_welder)
-        menu_edit.addAction(act_cycle_welder)
+        menu_edit_struct.addAction(act_cycle_welder)
 
         menu_origin = menu_edit.addMenu("🎯 &Translate to Origin (0, 0, 0)...")
         act_orig_com = QtGui.QAction("Center of Mass to Origin", self)
@@ -1926,11 +1934,9 @@ class UIMixin(UIInspectorTabsMixin):
         act_mir_yz.triggered.connect(lambda: self._invert_molecule_coordinates("yz"))
         menu_invert.addAction(act_mir_yz)
 
-        act_flush_mem = QtGui.QAction("Flush &Memory Clipboard", self)
-        act_flush_mem.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
-        act_flush_mem.setToolTip("Flush atom and fragment clipboard memory (Ctrl+Shift+X). Double-clicking canvas will prompt Periodic Table / Fragment picker.")
-        act_flush_mem.triggered.connect(self._on_flush_memory)
-        menu_edit.addAction(act_flush_mem)
+        menu_edit.addSeparator()
+
+        menu_edit_model = menu_edit.addMenu("⚡ &Geometry && Modeling...")
 
         act_opt = QtGui.QAction("&Optimize Geometry (Force Field)", self)
         act_opt.setShortcuts([
@@ -1939,7 +1945,7 @@ class UIMixin(UIInspectorTabsMixin):
         ])
         act_opt.setToolTip("Optimize molecular geometry using force field / xTB (Ctrl+M or Ctrl+Shift+O)")
         act_opt.triggered.connect(self._on_optimize_geometry)
-        menu_edit.addAction(act_opt)
+        menu_edit_model.addAction(act_opt)
 
         self.act_tweezers = QtGui.QAction("🧲 Interactive Molecular Tweezers (Live UFF Drag)", self)
         self.act_tweezers.setCheckable(True)
@@ -1949,22 +1955,28 @@ class UIMixin(UIInspectorTabsMixin):
         if hasattr(self, "btn_ribbon_tweezers"):
             self.act_tweezers.toggled.connect(self.btn_ribbon_tweezers.setChecked)
             self.btn_ribbon_tweezers.toggled.connect(self.act_tweezers.setChecked)
-        menu_edit.addAction(self.act_tweezers)
+        menu_edit_model.addAction(self.act_tweezers)
 
         act_conf = QtGui.QAction("🔄 &Conformational Search (Find Lowest-Energy Rotamer)...", self)
         act_conf.setToolTip("Sample rotatable bonds, minimize candidate rotamers, and rank conformers by energy")
         act_conf.triggered.connect(self._on_conformer_search)
-        menu_edit.addAction(act_conf)
+        menu_edit_model.addAction(act_conf)
 
         act_vib = QtGui.QAction("🎵 &Vibrational Frequencies (Normal Modes)", self)
         act_vib.setToolTip("Compute vibrational frequencies and normal modes simulation")
         act_vib.triggered.connect(self._on_calculate_vibrations)
-        menu_edit.addAction(act_vib)
+        menu_edit_model.addAction(act_vib)
 
         act_sym = QtGui.QAction("🔮 &Detect Point Group Symmetry", self)
         act_sym.setToolTip("Analyze molecular point group symmetry (Schoenflies notation)")
         act_sym.triggered.connect(lambda _checked=False: self._on_detect_symmetry(switch_tab=True))
-        menu_edit.addAction(act_sym)
+        menu_edit_model.addAction(act_sym)
+
+        act_flush_mem = QtGui.QAction("Flush &Memory Clipboard", self)
+        act_flush_mem.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
+        act_flush_mem.setToolTip("Flush atom and fragment clipboard memory (Ctrl+Shift+X). Double-clicking canvas will prompt Periodic Table / Fragment picker.")
+        act_flush_mem.triggered.connect(self._on_flush_memory)
+        menu_edit.addAction(act_flush_mem)
 
         # Variables Menu
         menu_vars = menubar.addMenu("&Variables")
@@ -2023,262 +2035,267 @@ class UIMixin(UIInspectorTabsMixin):
 
         menu_tools.addSeparator()
 
+        menu_tools_qm = menu_tools.addMenu("🚀 &Quantum Chemistry && Jobs...")
+        menu_tools_struct = menu_tools.addMenu("🧬 &Structure, Geometry && Sterics...")
+        menu_tools_thermo = menu_tools.addMenu("🌡️ &Thermochemistry && Kinetics...")
+        menu_tools_elec = menu_tools.addMenu("⚛️ &Electronic Structure && Spectroscopy...")
+        menu_tools_pub = menu_tools.addMenu("📄 &Publication && Benchmarking...")
+
         act_quick_orca = QtGui.QAction("🚀 Quick Run &ORCA Calculation...", self)
         act_quick_orca.setShortcut("Ctrl+R")
         act_quick_orca.setToolTip("Quick 1-Click setup and execution of ORCA calculations for coursework")
         act_quick_orca.triggered.connect(self._on_quick_run_orca)
-        menu_tools.addAction(act_quick_orca)
+        menu_tools_qm.addAction(act_quick_orca)
 
         act_generate_qm_input = QtGui.QAction("⚡ Generate &QM Calculation Input...", self)
         act_generate_qm_input.setShortcut("Ctrl+G")
         act_generate_qm_input.setToolTip("Set up and generate input files for Gaussian, ORCA, PySCF, openLOWDIN, or xTB")
         act_generate_qm_input.triggered.connect(self._on_open_qm_dialog)
-        menu_tools.addAction(act_generate_qm_input)
+        menu_tools_qm.addAction(act_generate_qm_input)
 
         act_generate_brorsen_input = QtGui.QAction("✨ new&BRORSEN Input Builder (Positrons, NEO)...", self)
         act_generate_brorsen_input.setShortcut("Ctrl+B")
         act_generate_brorsen_input.setToolTip("Set up multi-stage input files for newBRORSEN (Positrons, NEO, and CCSD(T))")
         act_generate_brorsen_input.triggered.connect(self._on_open_brorsen_dialog)
-        menu_tools.addAction(act_generate_brorsen_input)
+        menu_tools_qm.addAction(act_generate_brorsen_input)
+
+        menu_tools_qm.addSeparator()
 
         act_job_monitor = QtGui.QAction("🖥️ Calculation &Job Monitor...", self)
         act_job_monitor.setShortcut("Ctrl+J")
         act_job_monitor.setToolTip("View live calculation progress, streaming output logs, and real-time 3D updates")
         act_job_monitor.triggered.connect(self._on_open_job_monitor)
-        menu_tools.addAction(act_job_monitor)
+        menu_tools_qm.addAction(act_job_monitor)
 
         act_workflow_dag = QtGui.QAction("🔀 Visual &Workflow DAG Pipeline Editor (Multi-Stage QM)...", self)
         act_workflow_dag.setShortcut("Ctrl+Shift+D")
         act_workflow_dag.setToolTip("Design and execute chained multi-stage QM workflows (Opt → Freq → TD-DFT / TS → IRC / SP) on an interactive visual DAG canvas (Ctrl+Shift+D)")
         act_workflow_dag.triggered.connect(self._on_open_workflow_dag)
-        menu_tools.addAction(act_workflow_dag)
+        menu_tools_qm.addAction(act_workflow_dag)
 
         act_remote_transfer = QtGui.QAction("📁 Remote &File Transfer (SSH / Cluster)...", self)
         act_remote_transfer.setToolTip("Browse and transfer input and output files between local machine and remote cluster")
         act_remote_transfer.triggered.connect(self._on_open_remote_file_manager)
-        menu_tools.addAction(act_remote_transfer)
+        menu_tools_qm.addAction(act_remote_transfer)
 
         act_qm_engines = QtGui.QAction("🔧 Configure &QM Engines & Routes...", self)
         act_qm_engines.setToolTip("Detect installed QM packages (ORCA, PySCF, Gaussian, openLOWDIN, xTB, Q-Chem) and configure custom executable routes")
         act_qm_engines.triggered.connect(self._on_configure_qm_engines)
-        menu_tools.addAction(act_qm_engines)
-
-        menu_tools.addSeparator()
+        menu_tools_qm.addAction(act_qm_engines)
 
         act_dihed_scan = QtGui.QAction("🔄 1D &Dihedral Rotor Scan / PES Drive...", self)
         act_dihed_scan.setToolTip("Step selected 4-atom dihedral through 360° with real-time forcefield relaxation (conformer search)")
         act_dihed_scan.triggered.connect(self._on_open_dihedral_scan_dialog)
-        menu_tools.addAction(act_dihed_scan)
+        menu_tools_struct.addAction(act_dihed_scan)
 
         act_clash = QtGui.QAction("⚠️ Highlight &Steric Clashes...", self)
         act_clash.setToolTip("Scan molecular geometry and highlight severe non-bonded steric overlaps (< 70% Σr_vdw)")
         act_clash.triggered.connect(self._check_and_highlight_steric_clashes)
-        menu_tools.addAction(act_clash)
+        menu_tools_struct.addAction(act_clash)
 
         act_steric_desc = QtGui.QAction("🛡️ Catalysis &Steric && Coordination Descriptors (%V_bur, Sterimol, τ₄/τ₅)...", self)
         act_steric_desc.setToolTip("Compute SambVca / SEQCROW Percent Buried Volume (%V_bur), Verloop Sterimol (L, B1, B5), Tolman Cone Angle, and Coordination Geometry Indices (τ₄, τ₄', τ₅, Σ)")
         act_steric_desc.triggered.connect(self._on_open_steric_descriptors_dialog)
-        menu_tools.addAction(act_steric_desc)
+        menu_tools_struct.addAction(act_steric_desc)
 
         act_ring_homa = QtGui.QAction("💍 &Ring Aromaticity (HOMA Index) && Planarity Inspector...", self)
         act_ring_homa.setToolTip("Compute Kruszewski–Krygowski HOMA aromaticity index, Hückel π-electron count, and ring planarity RMSD for all rings")
         act_ring_homa.triggered.connect(self._on_open_ring_aromaticity_dialog)
-        menu_tools.addAction(act_ring_homa)
+        menu_tools_struct.addAction(act_ring_homa)
 
         act_iso_kie = QtGui.QAction("⚗️ &Isotopologue Vibrational Shift && KIE Calculator...", self)
         act_iso_kie.setToolTip("Substitute isotopes (H→D, ¹²C→¹³C, ¹⁶O→¹⁸O) and compute frequency shifts Δν, ΔZPE, and Kinetic Isotope Effects (k_H/k_D)")
         act_iso_kie.triggered.connect(self._on_open_isotopologue_dialog)
-        menu_tools.addAction(act_iso_kie)
+        menu_tools_thermo.addAction(act_iso_kie)
 
         act_pbc = QtGui.QAction("📦 &Periodic Boundary Conditions (PBC) && Supercell Generator...", self)
         act_pbc.setToolTip("View/edit crystallographic unit cell parameters (a, b, c, α, β, γ), fractional coordinates, and replicate Nx×Ny×Nz supercells")
         act_pbc.triggered.connect(self._on_open_pbc_dialog)
-        menu_tools.addAction(act_pbc)
+        menu_tools_struct.addAction(act_pbc)
 
         act_quick_pyscf = QtGui.QAction("⚡ Quick In-Memory DFT / HF (PySCF)...", self)
         act_quick_pyscf.setToolTip("Solve B3LYP / def2-SVP directly in RAM within seconds (no external binaries or files required)")
         act_quick_pyscf.triggered.connect(lambda: self._on_quick_in_memory_pyscf_dft())
-        menu_tools.addAction(act_quick_pyscf)
+        menu_tools_qm.addAction(act_quick_pyscf)
 
         act_overlay = QtGui.QAction("🔬 &Compare & Align Structures (RMSD Overlay)...", self)
         act_overlay.setShortcut("Ctrl+Shift+A")
         act_overlay.setToolTip("Superimpose two structures with Kabsch SVD alignment and calculate all-atom/heavy-atom RMSD")
         act_overlay.triggered.connect(self._on_open_structure_overlay)
-        menu_tools.addAction(act_overlay)
+        menu_tools_struct.addAction(act_overlay)
 
         act_fmo_align = QtGui.QAction("⚡ &Frontier Orbital (FMO) Alignment & Reactivity Matcher...", self)
         act_fmo_align.setToolTip("Compare Donor-Acceptor HOMO/LUMO levels side-by-side with chemical hardness (η) and electrophilicity (ω)")
         act_fmo_align.triggered.connect(self._on_open_fmo_alignment)
-        menu_tools.addAction(act_fmo_align)
+        menu_tools_elec.addAction(act_fmo_align)
 
         act_cdft = QtGui.QAction("⚛️ &Conceptual DFT (CDFT) & Fukui Reactivity Workbench...", self)
         act_cdft.setShortcut("Ctrl+Shift+F")
         act_cdft.setToolTip("Evaluate global CDFT indices (μ, η, ω, N_Nu) and atomic Fukui functions (f+, f-, Δf) with 3D color mapping (Ctrl+Shift+F)")
         act_cdft.triggered.connect(self._on_open_cdft_workbench)
-        menu_tools.addAction(act_cdft)
+        menu_tools_elec.addAction(act_cdft)
 
         act_benchmark = QtGui.QAction("⚖️ Cross-Engine &Benchmark & Result Comparison...", self)
         act_benchmark.setShortcut("Ctrl+Shift+M")
         act_benchmark.setToolTip("Compare multiple calculation logs side-by-side across Gaussian, ORCA, PySCF, and xTB (energetics, ΔE, frontier gap, and Kabsch SVD RMSD matrix) (Ctrl+Shift+M)")
         act_benchmark.triggered.connect(self._on_open_benchmark_dialog)
-        menu_tools.addAction(act_benchmark)
+        menu_tools_pub.addAction(act_benchmark)
 
         act_thermo = QtGui.QAction("⚗️ Reaction &Thermochemistry && Eyring Kinetics (ΔG‡, ΔGrxn, Keq)...", self)
         act_thermo.setShortcut("Alt+Shift+R")
         act_thermo.setToolTip("Compute reaction free energies (ΔGrxn), activation barriers (ΔG‡), equilibrium constant (Keq), and Eyring rate constants k(T) from QM logs (Alt+Shift+R)")
         act_thermo.triggered.connect(self._on_open_reaction_thermo_dialog)
-        menu_tools.addAction(act_thermo)
+        menu_tools_thermo.addAction(act_thermo)
 
         act_solvation = QtGui.QAction("💧 &Continuum Solvation Free Energy (SMD / PCM / CPCM)...", self)
         act_solvation.setToolTip("Estimate solvent effects, dielectric response (ΔG_el), and cavitation/dispersion (ΔG_cds) across 11 standard solvents")
         act_solvation.triggered.connect(self._on_open_solvation_dialog)
-        menu_tools.addAction(act_solvation)
+        menu_tools_thermo.addAction(act_solvation)
 
         act_sterics = QtGui.QAction("🛡️ &Catalysis Sterics: Buried Volume (%V_bur) & Sterimol (L, B1, B5)...", self)
         act_sterics.setToolTip("Calculate ligand buried volume (%V_bur), SambVca-style 2D topographic steric altitude maps, and Verloop Sterimol descriptors (L, B1, B5)")
         act_sterics.triggered.connect(self._on_open_sterics_dialog)
-        menu_tools.addAction(act_sterics)
+        menu_tools_struct.addAction(act_sterics)
 
         act_marcus = QtGui.QAction("⚡ &Marcus Electron Transfer & Photoredox Kinetics...", self)
         act_marcus.setToolTip("Evaluate inner/outer-sphere reorganization energies (λ_in, λ_out), Marcus activation barrier (ΔG‡), non-adiabatic rate k_ET, and diabatic PES parabolas")
         act_marcus.triggered.connect(self._on_open_marcus_dialog)
-        menu_tools.addAction(act_marcus)
+        menu_tools_thermo.addAction(act_marcus)
 
         act_spin = QtGui.QAction("⚛️ Open-Shell &Spin Diagnostics & Yamaguchi Projection (<S²>, J)...", self)
         act_spin.setToolTip("Diagnose <S²> spin contamination, compute Yamaguchi approximate spin-projected energies, and Heisenberg exchange coupling (J)")
         act_spin.triggered.connect(self._on_open_spin_diagnostics)
-        menu_tools.addAction(act_spin)
+        menu_tools_elec.addAction(act_spin)
 
         act_redox = QtGui.QAction("⚡ Electrochemical &Redox Potentials & Born-Haber Cycle (E° vs SHE/SCE)...", self)
         act_redox.setToolTip("Calculate standard reduction/oxidation potentials (E° vs. SHE, SCE, Ag/AgCl, Fc/Fc⁺) via thermodynamic Born-Haber solvation cycles")
         act_redox.triggered.connect(self._on_open_redox_dialog)
-        menu_tools.addAction(act_redox)
+        menu_tools_thermo.addAction(act_redox)
 
         act_mecp = QtGui.QAction("🔀 &Minimum Energy Crossing Point (MECP) & Spin-Inversion Explorer...", self)
         act_mecp.setToolTip("Interpolate crossing seams (ΔE → 0) between two spin states in two-state reactivity and export ORCA SurfCross MECP search decks")
         act_mecp.triggered.connect(self._on_open_mecp_dialog)
-        menu_tools.addAction(act_mecp)
+        menu_tools_thermo.addAction(act_mecp)
 
         act_eda = QtGui.QAction("🧩 &Energy Decomposition Analysis (EDA / SAPT / ALMO)...", self)
         act_eda.setToolTip("Decompose interaction energies into Electrostatics, Pauli Repulsion, Orbital/Charge-Transfer, and Dispersion terms from Q-Chem ALMO-EDA or Psi4 SAPT")
         act_eda.triggered.connect(self._on_open_eda_dialog)
-        menu_tools.addAction(act_eda)
+        menu_tools_elec.addAction(act_eda)
 
         act_pes_2d = QtGui.QAction("🗺️ &2D Relaxed PES Scan Grid Builder (ORCA / Gaussian)...", self)
         act_pes_2d.setToolTip("Build two-dimensional coordinate scan grids (distances, angles, dihedrals) and generate ORCA and Gaussian ModRedundant decks")
         act_pes_2d.triggered.connect(self._on_open_pes_2d_builder)
-        menu_tools.addAction(act_pes_2d)
+        menu_tools_struct.addAction(act_pes_2d)
 
         act_huckel = QtGui.QAction("🎓 &Hückel Molecular Orbital (HMO) Theory Teaching Workbench...", self)
         act_huckel.setShortcut("Ctrl+Alt+H")
         act_huckel.setToolTip("Explore Hückel secular determinants |H - E·I| = 0, Frost-Musulin circles, Hund's rule Aufbau electron filling, Coulson bond orders, and LCAO orbital lobes (Ctrl+Alt+H)")
         act_huckel.triggered.connect(self._on_open_huckel_teaching_dialog)
-        menu_tools.addAction(act_huckel)
+        menu_tools_elec.addAction(act_huckel)
 
         act_nmr = QtGui.QAction("🧲 &NMR Chemical Shift Referencing & 1D Spectrum Plotter...", self)
         act_nmr.setToolTip("Convert raw QM isotropic shieldings (σ_iso) to referenced chemical shifts (δ ppm for 1H, 13C, 19F, 31P) and synthesize 1D spectra")
         act_nmr.triggered.connect(self._on_open_nmr_dialog)
-        menu_tools.addAction(act_nmr)
+        menu_tools_elec.addAction(act_nmr)
 
         act_microkinetics = QtGui.QAction("📈 &Microkinetics & Catalytic Cycle Simulator (TOF, [C] vs. t)...", self)
         act_microkinetics.setToolTip("Simulate multi-step catalytic cycles and reaction networks via numerical ODE rate equation integration with TOF and TON")
         act_microkinetics.triggered.connect(self._on_open_microkinetics_dialog)
-        menu_tools.addAction(act_microkinetics)
+        menu_tools_thermo.addAction(act_microkinetics)
 
         act_ibo = QtGui.QAction("🧬 &Intrinsic Bond Orbitals (IBO / IAO) & Lewis Localization...", self)
         act_ibo.setToolTip("Localize canonical molecular orbitals into Lewis chemical bonds (σ, π), lone pairs, and core pairs via PySCF IAO/IBO")
         act_ibo.triggered.connect(self._on_open_ibo_dialog)
-        menu_tools.addAction(act_ibo)
+        menu_tools_elec.addAction(act_ibo)
 
         act_qtaim = QtGui.QAction("⚛️ &QTAIM Topology & Bond Critical Points (3, -1)...", self)
         act_qtaim.setToolTip("Locate (3, -1) Bond Critical Points, ρ_BCP, and ∇²ρ_BCP from Molden wavefunctions via Bader AIM theory")
         act_qtaim.triggered.connect(self._on_open_qtaim_dialog)
-        menu_tools.addAction(act_qtaim)
+        menu_tools_elec.addAction(act_qtaim)
 
         act_quasiharmonic = QtGui.QAction("🌡️ &Quasi-Harmonic Thermochemistry (Grimme mRRHO & Truhlar)...", self)
         act_quasiharmonic.setToolTip("Evaluate Grimme mRRHO and Truhlar quasi-harmonic vibrational entropy corrections for low-frequency modes")
         act_quasiharmonic.triggered.connect(self._on_open_quasiharmonic_dialog)
-        menu_tools.addAction(act_quasiharmonic)
+        menu_tools_thermo.addAction(act_quasiharmonic)
 
         act_si_gen = QtGui.QAction("📄 &1-Click Supporting Information (SI) & Methods Synthesizer...", self)
         act_si_gen.setToolTip("Generate publication-ready LaTeX SI documents, Markdown/Word tables, and formatted Cartesian XYZ appendices")
         act_si_gen.triggered.connect(self._on_open_si_generator_dialog)
-        menu_tools.addAction(act_si_gen)
+        menu_tools_pub.addAction(act_si_gen)
 
         act_sasa = QtGui.QAction("💧 &Solvent-Accessible Surface Area (SASA) & Polar Area...", self)
         act_sasa.setToolTip("Calculate total SASA, polar surface area (PSA), and project solvent accessibility onto 3D atoms")
-        menu_tools.addSeparator()
-        menu_tools_adv = menu_tools.addMenu("🔬 &Advanced Research && Wavefunction...")
-
         act_sasa.triggered.connect(self._on_open_sasa_dialog)
-        menu_tools_adv.addAction(act_sasa)
+        menu_tools_elec.addAction(act_sasa)
 
         act_nto = QtGui.QAction("☀️ &Natural Transition Orbitals (NTO) & Photochemistry (Hole-Particle)...", self)
         act_nto.setToolTip("SVD analysis of TD-DFT transition density matrices into dominant Hole -> Particle exciton pairs")
         act_nto.triggered.connect(self._on_open_nto_dialog)
-        menu_tools_adv.addAction(act_nto)
+        menu_tools_elec.addAction(act_nto)
 
         act_ts_builder = QtGui.QAction("🔄 &Reaction Path && Transition State (TS) Guess Interpolator (IDPP / QST2 / NEB-TS)...", self)
         act_ts_builder.setShortcut("Ctrl+Shift+T")
         act_ts_builder.setToolTip("Interpolate smooth, collision-free reaction paths between Reactant and Product geometries using IDPP and generate ORCA NEB-TS or Gaussian QST2/3 inputs (Ctrl+Shift+T)")
         act_ts_builder.triggered.connect(self._on_open_reaction_path_dialog)
-        menu_tools_adv.addAction(act_ts_builder)
+        menu_tools_struct.addAction(act_ts_builder)
 
         act_crest_explorer = QtGui.QAction("🧬 &CREST && Conformer Ensemble Explorer (Boltzmann, RMSD, Overlays)...", self)
         act_crest_explorer.setShortcut("Ctrl+Shift+E")
         act_crest_explorer.setToolTip("Explore, rank, and analyze conformer ensembles with Boltzmann populations, Kabsch RMSDs, duplicate pruning, and batch QM generation (Ctrl+Shift+E)")
         act_crest_explorer.triggered.connect(self._on_open_crest_explorer)
-        menu_tools_adv.addAction(act_crest_explorer)
+        menu_tools_struct.addAction(act_crest_explorer)
 
         act_ramachandran = QtGui.QAction("🗺️ &2D Dihedral Conformational Landscape (Ramachandran PES)...", self)
         act_ramachandran.setToolTip("Generate 2D conformational energy contour surfaces E(φ, ψ) across two rotatable dihedral angles")
         act_ramachandran.triggered.connect(self._on_open_ramachandran_2d)
-        menu_tools_adv.addAction(act_ramachandran)
+        menu_tools_struct.addAction(act_ramachandran)
 
         act_irc_sweeper = QtGui.QAction("⚛️ Interactive &IRC Reaction Sweeper & Energy Profile (MEP)...", self)
         act_irc_sweeper.setShortcut("Ctrl+Shift+I")
         act_irc_sweeper.setToolTip("Explore, scrub, and analyze Intrinsic Reaction Coordinate (IRC) Minimum Energy Pathways (MEP) with activation barriers, landmark jumps, and live 3D sync (Ctrl+Shift+I)")
         act_irc_sweeper.triggered.connect(self._on_open_irc_sweeper)
-        menu_tools_adv.addAction(act_irc_sweeper)
+        menu_tools_thermo.addAction(act_irc_sweeper)
 
         act_esp_2d = QtGui.QAction("2D Electrostatic &Potential (ESP) Slicer...", self)
         act_esp_2d.setToolTip("Open Molden file and plot 2D ESP slice contour maps on XY, XZ, or YZ planes")
         act_esp_2d.triggered.connect(self._on_open_esp_2d_dialog)
-        menu_tools_adv.addAction(act_esp_2d)
+        menu_tools_elec.addAction(act_esp_2d)
 
         act_nci_plot = QtGui.QAction("📉 Non-Covalent Interactions (NCI / RDG Plot)...", self)
         act_nci_plot.setToolTip("Plot 2D Reduced Density Gradient s(r) vs sign(λ₂)ρ to reveal H-bonds, dispersion, and steric clash")
         act_nci_plot.triggered.connect(self._on_open_nci_plot_dialog)
-        menu_tools_adv.addAction(act_nci_plot)
+        menu_tools_elec.addAction(act_nci_plot)
 
         act_multiwfn = QtGui.QAction("Multiwfn &Wavefunction Suite (Bonds / Fukui / QTAIM / CM5)...", self)
         act_multiwfn.setToolTip("Run Multiwfn Mayer/Wiberg bond orders, Conceptual DFT Fukui indices, QTAIM critical points, and CM5 charges")
         act_multiwfn.triggered.connect(self._on_open_multiwfn_dialog)
-        menu_tools_adv.addAction(act_multiwfn)
+        menu_tools_elec.addAction(act_multiwfn)
 
         act_nbo = QtGui.QAction("🧪 &NBO Donor–Acceptor Interaction Analyzer...", self)
         act_nbo.setShortcut("Ctrl+Shift+N")
         act_nbo.setToolTip("Inspect Natural Bond Orbital (NBO) second-order perturbation donor-acceptor interactions (E(2), n→σ*, hyperconjugation) (Ctrl+Shift+N)")
         act_nbo.triggered.connect(self._on_open_nbo_dialog)
-        menu_tools_adv.addAction(act_nbo)
+        menu_tools_elec.addAction(act_nbo)
 
         act_nbo_net = QtGui.QAction("🕸️ &NBO E(2) Interaction Network Graph...", self)
         act_nbo_net.setToolTip("Visualize donor-acceptor interactions as a topological chord or bipartite graph with edge thicknesses proportional to E(2)")
         act_nbo_net.triggered.connect(self._on_open_nbo_network_dialog)
-        menu_tools.addAction(act_nbo_net)
+        menu_tools_elec.addAction(act_nbo_net)
 
         menu_tools.addSeparator()
+
+        menu_tools_ext = menu_tools.addMenu("🧩 &Plugins && Add-ons...")
 
         act_plugins = QtGui.QAction("🐍 &Python Script & Plugin Runner...", self)
         act_plugins.setShortcut("Ctrl+Shift+Y")
         act_plugins.setToolTip("Run custom Python scripts or load user plugins from ~/.agymolden/plugins/ (Ctrl+Shift+Y)")
         act_plugins.triggered.connect(self._on_open_script_runner)
-        menu_tools.addAction(act_plugins)
+        menu_tools_ext.addAction(act_plugins)
 
         act_addons = QtGui.QAction("🧩 &Add-ons & Scientific Backend Manager...", self)
         act_addons.setToolTip("Inspect and 1-click install optional packages (PySCF, RDKit, ASE, TorchANI, Spglib) directly inside the app")
         act_addons.triggered.connect(self._on_open_addons_manager)
-        menu_tools.addAction(act_addons)
+        menu_tools_ext.addAction(act_addons)
 
         # Surfaces & Electrostatic Potential Menu
         menu_surfaces = menubar.addMenu("&Surfaces")

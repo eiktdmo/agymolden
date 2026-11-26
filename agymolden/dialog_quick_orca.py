@@ -145,7 +145,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         super().__init__(parent if isinstance(parent, QtWidgets.QWidget) else None)
         self.setWindowTitle("🚀 ORCA Quantum Chemistry Studio & Input Generator")
         from .theme import fit_dialog_to_screen
-        fit_dialog_to_screen(self, 720, 660)
+        fit_dialog_to_screen(self, 780, 900, full_height=True)
         self.zatoms = zatoms
         self.coords = coords
         self._syncing_route = False
