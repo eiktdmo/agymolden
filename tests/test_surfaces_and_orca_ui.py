@@ -746,6 +746,44 @@ def test_2d_to_3d_adjust_h_toggle_sync(main_win):
     win._on_toggle_2d_3d_split(False)
 
 
+def test_output_viewer_right_dock_and_ctrl_arrow_resize(main_win):
+    """Ensure Output Viewer docks full-height on the right and Ctrl+Arrow resizes active panes."""
+    from PyQt6 import QtCore
+
+    app, win = main_win
+    win.resize(1280, 800)
+    app.processEvents()
+
+    dock = win.dock_manager.get_or_create_output_viewer()
+    assert win.dockWidgetArea(dock) == QtCore.Qt.DockWidgetArea.RightDockWidgetArea
+
+    # Horizontal splitter resizing (main_splitter)
+    win.main_splitter.setSizes([700, 560])
+    app.processEvents()
+    before_h = win.main_splitter.sizes()
+    assert win._resize_active_pane("left", step=60) is True
+    after_left = win.main_splitter.sizes()
+    assert after_left[0] < before_h[0] and after_left[1] > before_h[1]
+    assert win._resize_active_pane("right", step=60) is True
+    after_right = win.main_splitter.sizes()
+    assert after_right[0] > after_left[0]
+
+    # Vertical splitter resizing (zmat_splitter) when visible
+    win.tabs.setCurrentIndex(0)
+    win.zmat_splitter.setSizes([350, 350])
+    app.processEvents()
+    before_v = win.zmat_splitter.sizes()
+    assert win._resize_active_pane("up", step=50) is True
+    after_up = win.zmat_splitter.sizes()
+    assert after_up[0] < before_v[0] and after_up[1] > before_v[1]
+    assert win._resize_active_pane("down", step=50) is True
+    after_down = win.zmat_splitter.sizes()
+    assert after_down[0] > after_up[0]
+
+    dock.hide()
+
+
+
 
 
 

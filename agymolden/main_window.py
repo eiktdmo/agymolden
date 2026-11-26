@@ -2397,6 +2397,80 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
 
         super().keyPressEvent(event)
 
+    def _resize_active_pane(self, direction: str, step: int = 48) -> bool:
+        """Agemacs-style Ctrl+Arrow pane/dock resizing for active splits and docked panels."""
+        focus_w = QtWidgets.QApplication.focusWidget()
+        docks = [
+            d for d in self.findChildren(QtWidgets.QDockWidget)
+            if d.isVisible() and not d.isFloating()
+        ]
+        right_docks = [d for d in docks if self.dockWidgetArea(d) == QtCore.Qt.DockWidgetArea.RightDockWidgetArea]
+        left_docks = [d for d in docks if self.dockWidgetArea(d) == QtCore.Qt.DockWidgetArea.LeftDockWidgetArea]
+        bottom_docks = [d for d in docks if self.dockWidgetArea(d) == QtCore.Qt.DockWidgetArea.BottomDockWidgetArea]
+
+        def _focused_dock(candidates):
+            if focus_w is None:
+                return None
+            for d in candidates:
+                if d is focus_w or d.isAncestorOf(focus_w):
+                    return d
+            return None
+
+        if direction in ("left", "right"):
+            fdock = _focused_dock(right_docks + left_docks)
+            if fdock is not None:
+                area = self.dockWidgetArea(fdock)
+                grow = (direction == "left") if area == QtCore.Qt.DockWidgetArea.RightDockWidgetArea else (direction == "right")
+                cur_w = max(240, fdock.width())
+                new_w = max(240, min(max(360, int(self.width() * 0.80)), cur_w + (step if grow else -step)))
+                self.resizeDocks([fdock], [new_w], QtCore.Qt.Orientation.Horizontal)
+                return True
+
+            sp = getattr(self, "main_splitter", None)
+            if sp is not None and sp.count() >= 2:
+                right_w = getattr(self, "right_stack", None) or sp.widget(1)
+                if right_w is not None and not right_w.isHidden():
+                    sizes = sp.sizes()
+                    if len(sizes) >= 2 and sum(sizes[:2]) > 0:
+                        total = sizes[0] + sizes[1]
+                        delta = -step if direction == "left" else step
+                        new_left = max(160, min(total - 160, sizes[0] + delta))
+                        sp.setSizes([new_left, total - new_left])
+                        return True
+
+            if right_docks or left_docks:
+                d = (right_docks or left_docks)[0]
+                area = self.dockWidgetArea(d)
+                grow = (direction == "left") if area == QtCore.Qt.DockWidgetArea.RightDockWidgetArea else (direction == "right")
+                cur_w = max(240, d.width())
+                new_w = max(240, min(max(360, int(self.width() * 0.80)), cur_w + (step if grow else -step)))
+                self.resizeDocks([d], [new_w], QtCore.Qt.Orientation.Horizontal)
+                return True
+            return False
+
+        if direction in ("up", "down"):
+            fdock = _focused_dock(bottom_docks)
+            zsp = getattr(self, "zmat_splitter", None)
+            in_zmat = zsp is not None and focus_w is not None and (zsp is focus_w or zsp.isAncestorOf(focus_w))
+            if fdock is not None or (bottom_docks and not in_zmat):
+                d = fdock or bottom_docks[0]
+                grow = direction == "up"
+                cur_h = max(140, d.height())
+                new_h = max(140, min(max(240, int(self.height() * 0.80)), cur_h + (step if grow else -step)))
+                self.resizeDocks([d], [new_h], QtCore.Qt.Orientation.Vertical)
+                return True
+
+            if zsp is not None and zsp.isVisibleTo(self) and zsp.count() >= 2:
+                sizes = zsp.sizes()
+                if len(sizes) >= 2 and sum(sizes[:2]) > 0:
+                    total = sizes[0] + sizes[1]
+                    delta = -step if direction == "up" else step
+                    new_top = max(100, min(total - 100, sizes[0] + delta))
+                    zsp.setSizes([new_top, total - new_top])
+                    return True
+            return False
+        return False
+
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.Type.KeyPress:
             key_event: QtGui.QKeyEvent = event
@@ -2404,10 +2478,28 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             modifiers = key_event.modifiers()
             is_ctrl = bool(modifiers & QtCore.Qt.KeyboardModifier.ControlModifier)
             is_shift = bool(modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier)
+            is_alt = bool(modifiers & QtCore.Qt.KeyboardModifier.AltModifier)
 
             # Do not intercept if user is typing text in an actual text editor / line edit
             focus_w = QtWidgets.QApplication.focusWidget()
             is_typing = isinstance(focus_w, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit))
+            is_editable_typing = is_typing and not focus_w.isReadOnly()
+
+            if is_ctrl and not is_shift and key in (
+                QtCore.Qt.Key.Key_Left,
+                QtCore.Qt.Key.Key_Right,
+                QtCore.Qt.Key.Key_Up,
+                QtCore.Qt.Key.Key_Down,
+            ):
+                if is_alt or not is_editable_typing:
+                    dir_map = {
+                        QtCore.Qt.Key.Key_Left: "left",
+                        QtCore.Qt.Key.Key_Right: "right",
+                        QtCore.Qt.Key.Key_Up: "up",
+                        QtCore.Qt.Key.Key_Down: "down",
+                    }
+                    if self._resize_active_pane(dir_map[key]):
+                        return True
 
             if is_ctrl and not is_typing:
                 if key == QtCore.Qt.Key.Key_Z and not is_shift:

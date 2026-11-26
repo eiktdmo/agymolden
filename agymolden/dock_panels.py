@@ -72,6 +72,7 @@ class QMOutputDock(WorkspaceDockWidget):
 
         self.viewer_dlg = QMOutputViewerDialog(self, file_path=file_path)
         self.viewer_dlg.setWindowFlags(QtCore.Qt.WindowType.Widget)
+        self.setMinimumWidth(340)
         self.setMinimumHeight(200)
         self.setWidget(self.viewer_dlg)
 
@@ -219,9 +220,7 @@ class WorkspaceDockManager:
         created = False
         if "output_viewer" not in self.docks:
             dock = QMOutputDock(self.mw, file_path=file_path)
-            self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-            if "job_monitor" in self.docks:
-                self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
+            self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
             self.docks["output_viewer"] = dock
             created = True
         dock = self.docks["output_viewer"]  # type: ignore
@@ -232,16 +231,14 @@ class WorkspaceDockManager:
             dock.show()
             dock.raise_()
         if created:
-            self.mw.resizeDocks([dock], [max(260, self.mw.height() // 3)], QtCore.Qt.Orientation.Vertical)
+            self.mw.resizeDocks([dock], [max(420, int(self.mw.width() * 0.45))], QtCore.Qt.Orientation.Horizontal)
         return dock  # type: ignore
 
     def get_or_create_console(self) -> PythonConsoleDock:
         if "python_console" not in self.docks:
             dock = PythonConsoleDock(self.mw, main_window=self.mw)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-            if "output_viewer" in self.docks:
-                self.mw.tabifyDockWidget(self.docks["output_viewer"], dock)
-            elif "job_monitor" in self.docks:
+            if "job_monitor" in self.docks:
                 self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
             self.docks["python_console"] = dock
         return self.docks["python_console"] # type: ignore
@@ -252,8 +249,6 @@ class WorkspaceDockManager:
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
             if "job_monitor" in self.docks:
                 self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
-            elif "output_viewer" in self.docks:
-                self.mw.tabifyDockWidget(self.docks["output_viewer"], dock)
             self.docks["hpc_queue"] = dock
         return self.docks["hpc_queue"] # type: ignore
 

@@ -112,7 +112,8 @@ If **Agemacs** is installed alongside AgyMolden:
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo (works in both 2D and 3D) |
 | `Space` | Center & zoom-to-fit 3D view |
 | `Ctrl+R` | Open ORCA Studio |
-| `F2` | Open QM Output Viewer (with Teaching Quick-Jump Bar) |
+| `F2` | Open QM Output Viewer (right-side full-height dock with Teaching Quick-Jump Bar) |
+| `Ctrl+Arrow` / `Ctrl+Alt+Arrow` | Resize active pane, splitter, or docked Output Viewer |
 | `Ctrl+H` | Add hydrogens (selected atoms or whole molecule) |
 | `Ctrl+E` | Export high-DPI PNG image |
 
