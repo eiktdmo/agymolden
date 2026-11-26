@@ -4,26 +4,23 @@ Welcome to your Computational Chemistry laboratory! **AgyMolden** lets you sketc
 
 ---
 
-## 🛠️ Getting Started (Linux / macOS / Windows)
+## 🛠️ Getting Started — 1-Command Install (Linux / macOS / Windows)
 
-1. **Unzip** `AgyMolden_Student_Release.zip` into a folder of your choice.
-2. **Install**:
-   - **Linux / macOS**: Open a terminal inside the unzipped folder and run:
+1. **Unzip** `AgyMolden_Student_Release.zip` into a folder of your choice (no Conda or Anaconda needed).
+2. **Install with one command** inside the unzipped `agymolden/` folder:
+   - **Linux / macOS**:
      ```bash
      ./setup.sh
      ```
-   - **Windows (or manual virtual environment)**:
-     ```bash
-     python -m venv .venv
-     .venv\Scripts\activate      # or: source .venv/bin/activate on Linux/macOS
-     pip install -e .
+   - **Windows** *(PowerShell / Command Prompt, or double-click `setup.bat`)*:
+     ```bat
+     .\setup.bat
      ```
-     *(Optional quantum engine on Linux/macOS: `pip install -e ".[qm]"` to enable built-in PySCF orbitals, 3D density color maps, and ESP surfaces without needing external ORCA.)*
+   *(The installer creates an isolated `.venv`, installs AgyMolden + all required packages, and links a desktop/terminal launcher automatically.)*
 3. **Launch AgyMolden**:
-   ```bash
-   agymolden
-   ```
-   *(Or `python -m agymolden` inside the activated virtual environment.)*
+   - **Linux / macOS**: `./run.py` *(or `agymolden`)*
+   - **Windows**: double-click the **AgyMolden** Desktop shortcut, or run `py -3 run.py`
+   *(Shortcut: running `python3 run.py` on Linux/macOS or `py -3 run.py` on Windows before installing will also auto-run setup and launch AgyMolden!)*
 
 > **Tip:** Prefer a bright classroom/projector theme or dark mode? Use the **Theme** toggle on the top toolbar to switch between **White** and **Dark** themes at any time.
 

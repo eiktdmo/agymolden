@@ -49,7 +49,7 @@ if __name__ == "__main__":
         if os.path.isfile(setup_script):
             print("AgyMolden is not installed yet. Running automatic setup first...")
             if os.name == "nt":
-                subprocess.call([setup_script])
+                subprocess.call(["cmd", "/c", setup_script, "--no-pause"])
             else:
                 subprocess.call(["/bin/bash", setup_script])
             venv = _venv_python()

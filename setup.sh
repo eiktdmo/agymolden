@@ -1,80 +1,108 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AgyMolden Automated Source Installer (Linux / macOS)
+# AgyMolden Automated 1-Command Installer (Linux / macOS — no conda required)
 # ==============================================================================
-set -e
+set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 PROJECT_DIR="$(pwd)"
+
+# Keep installation completely isolated from any active conda / venv session
+unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_EXE VIRTUAL_ENV PYTHONHOME PYTHONPATH || true
 
 echo "=========================================================="
 echo "         AgyMolden Automatic Source Installer             "
 echo "=========================================================="
 echo
 
-# 1. Check for Python 3
+# 1. Discover a clean Python 3.9+ interpreter (preferring system/Homebrew over conda)
 PYTHON_BIN=""
-for cmd in /usr/bin/python3 /usr/local/bin/python3 python3 python; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-        ver=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)
-        major=$("$cmd" -c "import sys; print(sys.version_info.major)" 2>/dev/null || true)
-        minor=$("$cmd" -c "import sys; print(sys.version_info.minor)" 2>/dev/null || true)
-        if [ "$major" = "3" ] && [ "$minor" -ge 9 ]; then
-            PYTHON_BIN="$cmd"
-            echo "✔ Found compatible Python: $cmd (version $ver)"
-            break
-        fi
+CANDIDATES=()
+if [ "$(uname -s)" = "Darwin" ]; then
+    CANDIDATES+=(
+        "/opt/homebrew/bin/python3"
+        "/usr/local/bin/python3"
+        "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
+    )
+else
+    CANDIDATES+=("/usr/bin/python3" "/usr/local/bin/python3")
+fi
+CANDIDATES+=("python3" "python")
+
+for cmd in "${CANDIDATES[@]}"; do
+    resolved="$(command -v "$cmd" 2>/dev/null || true)"
+    [ -n "$resolved" ] || continue
+    case "$resolved" in
+        *conda*|*anaconda*|*miniconda*|*mamba*) continue ;;
+    esac
+    if "$resolved" -c "import sys, venv; assert sys.version_info >= (3, 9)" >/dev/null 2>&1; then
+        ver="$("$resolved" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")"
+        PYTHON_BIN="$resolved"
+        echo "✔ Found Python $ver: $PYTHON_BIN"
+        break
     fi
 done
 
 if [ -z "$PYTHON_BIN" ]; then
-    echo "❌ Error: Python 3.9 or newer is required."
-    echo "Please install Python 3.9+ using your package manager (e.g., sudo apt install python3 python3-venv python3-pip)."
+    echo "❌ Error: Python 3.9+ (with venv support) is required."
+    if [ "$(uname -s)" = "Darwin" ]; then
+        echo "Install via Homebrew:  brew install python"
+        echo "Or download from:      https://www.python.org/downloads/macos/"
+    else
+        echo "Install on Ubuntu/Debian:  sudo apt update && sudo apt install -y python3 python3-venv python3-pip"
+    fi
     exit 1
 fi
 
-# 2. Check & offer to install Linux system libraries if on Debian/Ubuntu
+# 2. Check recommended Linux OpenGL / Qt system libraries (Debian/Ubuntu)
 if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null 2>&1; then
     MISSING_PKGS=""
-    for lib in libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0; do
+    for lib in libgl1 libglx-mesa0 libegl1 libxkbcommon-x11-0 libxcb-cursor0; do
         if ! dpkg -s "$lib" >/dev/null 2>&1; then
             MISSING_PKGS="$MISSING_PKGS $lib"
         fi
     done
     if [ -n "$MISSING_PKGS" ]; then
-        echo "Notice: Missing recommended system OpenGL/Qt packages:$MISSING_PKGS"
-        if [ -t 0 ] && [ "$EUID" -ne 0 ]; then
-            read -p "Would you like to install them with sudo apt? [Y/n] " -n 1 -r
+        echo "Notice: Missing recommended OpenGL/Qt system packages:$MISSING_PKGS"
+        if [ -t 0 ] && [ "${EUID:-$(id -u)}" -ne 0 ]; then
+            read -p "Install them now with sudo apt? [Y/n] " -n 1 -r
             echo
-            if [[ $REPLY =~ ^[Yy]$ ]] || [ -z "$REPLY" ]; then
+            if [[ ${REPLY:-Y} =~ ^[Yy]$ ]] || [ -z "${REPLY:-}" ]; then
                 sudo apt-get update && sudo apt-get install -y $MISSING_PKGS || echo "Continuing without sudo packages..."
             fi
         fi
     fi
 fi
 
-# 3. Create or reuse virtual environment (prefers ultra-fast 'uv' if available)
+# 3. Create or reuse local .venv (never touches global or conda Python)
 echo
-echo "Setting up Python virtual environment in .venv..."
+echo "Setting up isolated virtual environment in .venv..."
 if command -v uv >/dev/null 2>&1; then
-    echo "⚡ Detected 'uv' package manager — using fast installation path!"
-    if [ ! -d ".venv" ]; then
-        uv venv .venv --python "$PYTHON_BIN"
-    fi
-    uv pip install --python .venv/bin/python -e ".[all]" || uv pip install --python .venv/bin/python -e .
+    echo "⚡ Detected 'uv' — using fast installation path!"
+    [ -d ".venv" ] || uv venv .venv --python "$PYTHON_BIN"
+    echo "Installing core AgyMolden dependencies..."
+    uv pip install --python .venv/bin/python -e .
+    echo "Installing optional chemistry extras (best-effort)..."
+    for pkg in basis_set_exchange rdkit spglib ase pyscf; do
+        uv pip install --python .venv/bin/python "$pkg" >/dev/null 2>&1 && echo "  ✔ $pkg" || echo "  • $pkg skipped (optional)"
+    done
 else
     if [ ! -d ".venv" ]; then
         "$PYTHON_BIN" -m venv .venv || {
-            echo "❌ Failed to create .venv. Try: sudo apt install python3-venv"
+            echo "❌ Failed to create .venv. On Ubuntu/Debian run: sudo apt install -y python3-venv"
             exit 1
         }
     fi
-
-    # 4. Install / upgrade pip and package with full source support
-    echo "Installing dependencies..."
     chmod +x .venv/bin/pip .venv/bin/pip3 2>/dev/null || true
-    .venv/bin/python -m pip install --upgrade pip
-    .venv/bin/python -m pip install -e ".[all,qm]" || .venv/bin/python -m pip install -e ".[all]" || .venv/bin/python -m pip install -e .
+    .venv/bin/python -m pip install --upgrade pip >/dev/null 2>&1 || true
+
+    echo "Installing core AgyMolden dependencies..."
+    .venv/bin/python -m pip install -e .
+
+    echo "Installing optional chemistry extras (best-effort)..."
+    for pkg in basis_set_exchange rdkit spglib ase pyscf; do
+        .venv/bin/python -m pip install "$pkg" >/dev/null 2>&1 && echo "  ✔ $pkg" || echo "  • $pkg skipped (optional)"
+    done
 fi
 
 # Optional standalone build flag (--build-standalone)
@@ -85,33 +113,32 @@ if [ "${1:-}" = "--build-standalone" ]; then
     .venv/bin/pyinstaller agymolden.spec --noconfirm --clean
 fi
 
-# 5. Create launcher symlinks and desktop entry if on Linux
-chmod +x run.py
+# 4. Verify installation
+echo
+.venv/bin/python -c "import agymolden, PyQt6, numpy, scipy, matplotlib; print('✔ Verified AgyMolden', agymolden.__version__)"
 
+# 5. Create launcher symlinks and Linux desktop entry
+chmod +x run.py
 mkdir -p "$HOME/.local/bin"
 if [ -x "$PROJECT_DIR/.venv/bin/agymolden" ]; then
     ln -sf "$PROJECT_DIR/.venv/bin/agymolden" "$HOME/.local/bin/agymolden"
-    echo "✔ Linked global command: $HOME/.local/bin/agymolden"
+    echo "✔ Linked command: $HOME/.local/bin/agymolden"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
-        *) echo "  Note: Add '$HOME/.local/bin' to your PATH to run 'agymolden' from anywhere." ;;
+        *) echo "  Note: Add '$HOME/.local/bin' to your PATH to run 'agymolden' from any folder." ;;
     esac
 fi
 
-if [ "$(uname -s)" = "Linux" ]; then
-    if [ -f "./make_desktop_entry.sh" ]; then
-        echo
-        echo "Creating Linux desktop shortcut and application menu entry..."
-        ./make_desktop_entry.sh || true
-    fi
+if [ "$(uname -s)" = "Linux" ] && [ -f "./make_desktop_entry.sh" ]; then
+    echo "Creating Linux desktop/application menu entry..."
+    ./make_desktop_entry.sh || true
 fi
 
 echo
 echo "=========================================================="
 echo "✔ Installation completed successfully!"
 echo
-echo "You can launch AgyMolden at any time with:"
-echo "   ./run.py               (from this directory)"
-echo "or activate the environment:"
-echo "   source .venv/bin/activate && agymolden"
+echo "Launch AgyMolden anytime with:"
+echo "   ./run.py          (from this folder)"
+echo "   agymolden         (from anywhere if ~/.local/bin is in PATH)"
 echo "=========================================================="
