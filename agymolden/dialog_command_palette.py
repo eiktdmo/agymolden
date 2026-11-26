@@ -47,27 +47,28 @@ class CommandPaletteDialog(QtWidgets.QDialog):
     def _init_ui(self):
         container = QtWidgets.QFrame(self)
         container.setObjectName("paletteContainer")
+        # Use the application's palette roles so the overlay follows the light/dark theme.
         container.setStyleSheet("""
             QFrame#paletteContainer {
-                background-color: #1e293b;
-                border: 2px solid #3b82f6;
+                background-color: palette(window);
+                border: 2px solid palette(highlight);
                 border-radius: 8px;
             }
             QLineEdit {
-                background-color: #0f172a;
-                color: #f8fafc;
+                background-color: palette(base);
+                color: palette(text);
                 font-size: 14px;
                 padding: 10px 14px;
-                border: 1px solid #334155;
+                border: 1px solid palette(mid);
                 border-radius: 6px;
             }
             QLineEdit:focus {
-                border: 1px solid #3b82f6;
+                border: 1px solid palette(highlight);
             }
             QListWidget {
                 background-color: transparent;
                 border: none;
-                color: #e2e8f0;
+                color: palette(window-text);
                 font-size: 13px;
             }
             QListWidget::item {
@@ -75,14 +76,14 @@ class CommandPaletteDialog(QtWidgets.QDialog):
                 border-radius: 4px;
             }
             QListWidget::item:selected {
-                background-color: #2563eb;
-                color: #ffffff;
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
             }
             QListWidget::item:hover:!selected {
-                background-color: #334155;
+                background-color: palette(midlight);
             }
             QLabel#hintLabel {
-                color: #94a3b8;
+                color: palette(placeholder-text);
                 font-size: 11px;
             }
         """)

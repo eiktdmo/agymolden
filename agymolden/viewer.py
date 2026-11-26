@@ -2652,7 +2652,8 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             painter.setFont(QtGui.QFont("DejaVu Sans", 9, QtGui.QFont.Weight.Bold))
             b_fm = painter.fontMetrics()
             b_tw = b_fm.horizontalAdvance(brush_text)
-            b_rect = QtCore.QRect(10, 8, b_tw + 18, 24)
+            # Layout: 8px pad | 10px dot | 6px gap | text | 10px pad
+            b_rect = QtCore.QRect(10, 8, 8 + 10 + 6 + b_tw + 10, 24)
             painter.setBrush(QtGui.QColor(248, 250, 252, 240) if is_white_vp else QtGui.QColor(15, 23, 42, 215))
             painter.setPen(QtGui.QPen(QtGui.QColor("#0284c7" if is_white_vp else "#38bdf8"), 1))
             painter.drawRoundedRect(b_rect, 5, 5)
@@ -2660,9 +2661,10 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
             brush_col = get_color(brush_sym, bg_mode="white" if is_white_vp else "dark")
             painter.setBrush(QtGui.QColor(int(brush_col[0]*255), int(brush_col[1]*255), int(brush_col[2]*255)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.drawEllipse(18, 15, 10, 10)
+            painter.drawEllipse(b_rect.left() + 8, b_rect.center().y() - 4, 10, 10)
             painter.setPen(QtGui.QColor("#0f172a" if is_white_vp else "#f1f5f9"))
-            painter.drawText(34, 24, brush_text)
+            text_rect = QtCore.QRect(b_rect.left() + 24, b_rect.top(), b_tw + 10, b_rect.height())
+            painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft, brush_text)
 
             # Left-Click drag visual line (elastic rubberband indicating new atom addition or cross-bond)
             if self.atom_add_drag_active:

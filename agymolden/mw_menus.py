@@ -15,6 +15,11 @@ class MenusMixin:
         act_new.triggered.connect(self._on_new_molecule)
         menu_file.addAction(act_new)
 
+        act_clear = QtGui.QAction("&Clear Molecule", self)
+        act_clear.setStatusTip("Remove all atoms from the current tab (undoable)")
+        act_clear.triggered.connect(self._on_clear_molecule)
+        menu_file.addAction(act_clear)
+
         menu_file.addSeparator()
 
         act_open_any = QtGui.QAction("📂 &Open File (All Formats: QM Log, XYZ, Molden, ZMAT)...", self)

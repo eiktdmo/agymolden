@@ -196,6 +196,15 @@ class FileIOMixin:
                 self.grp_trajectory.setVisible(False)
 
     def _on_new_molecule(self):
+        """File > New: open an empty molecule in a new tab (reuse the current tab if it is already empty)."""
+        if self.zatoms and hasattr(self, "mol_tab_bar") and self.mol_tab_bar is not None:
+            self._on_new_mol_tab()
+            self.statusBar().showMessage("New molecule tab", 3000)
+            return
+        self._on_clear_molecule()
+
+    def _on_clear_molecule(self):
+        """Clear the molecule in the current tab (undoable)."""
         if self.zatoms:
             self._push_undo_state()
         self.variables = {}

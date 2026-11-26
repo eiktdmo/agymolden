@@ -128,7 +128,13 @@ class OrcaRunner(BaseCalcRunner):
             (os.path.abspath(shutil.which(tok)) if (tok.endswith("orca") and not os.path.isabs(tok) and shutil.which(tok)) else tok)
             for tok in route_cmd[1:]
         ]
-        args = extra_args + [self.input_file]
+        # ORCA truncates paths containing spaces (e.g. "Cannot open GBW file: /home/u/My"), so pass
+        # the input relative to the process working directory (just the basename in the default case).
+        try:
+            input_arg = os.path.relpath(self.input_file, self.work_dir)
+        except ValueError:  # different drive on Windows
+            input_arg = self.input_file
+        args = extra_args + [input_arg]
         extra_env = self._resolve_orca_mpi_env()
         self._setup_process(exec_bin, args, self.work_dir, extra_env=extra_env)
         self._set_status(JobStatus.RUNNING, f"Running ORCA on {os.path.basename(input_file)}...")
