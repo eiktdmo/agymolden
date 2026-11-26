@@ -794,12 +794,23 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self._push_undo_state()
             if hasattr(self, "_clear_stale_surfaces_and_qm_state"):
                 self._clear_stale_surfaces_and_qm_state()
+            if hasattr(self.viewer, "bond_orders"):
+                self.viewer.bond_orders = {}
             self.cross_bonds = set()
             self.strict_topology = False
             text = SAMPLE_MOLECULES[name]
             zatoms, vars_dict = parse_zmatrix_text(text)
             self.variables = vars_dict
             self.set_molecule_from_zatoms(zatoms)
+            if len(zatoms) > 0 and hasattr(self.viewer, "bond_orders"):
+                syms = [a.symbol for a in zatoms]
+                detected_bo = detect_bond_orders(syms, self.coords, list(self.viewer.bonds))
+                self.viewer.bond_orders = {
+                    (min(u, v), max(u, v)): o for (u, v), o in detected_bo.items() if o != 1
+                }
+                if hasattr(self.viewer, "_sanitize_bond_orders"):
+                    self.viewer._sanitize_bond_orders()
+                self.viewer.update()
             self.statusBar().showMessage(f"Loaded preset: {name}", 4000)
 
     def _sync_raw_text(self):

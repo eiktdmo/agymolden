@@ -566,11 +566,38 @@ class MoleculeViewer(ViewerInteractionMixin, QOpenGLWidget):
         self.compute_bonds()
         self.update()
 
+    def _sanitize_bond_orders(self):
+        """Remove out-of-range, non-existent, or chemically impossible (e.g. H=C) bond orders."""
+        if not getattr(self, "bond_orders", None):
+            return
+        _MONOVALENT = {
+            "H", "D", "T", "F", "Cl", "Br", "I",
+            "Li", "Na", "K", "Rb", "Cs", "He", "Ne", "Ar", "Kr", "Xe",
+        }
+        n = len(self.symbols)
+        bond_set = {(min(u, v), max(u, v)) for u, v in self.bonds}
+        cleaned: Dict[Tuple[int, int], int] = {}
+        for (u, v), order in list(self.bond_orders.items()):
+            a, b = (u, v) if u <= v else (v, u)
+            try:
+                o_int = int(order)
+            except Exception:
+                continue
+            if o_int <= 1 or a < 0 or b >= n or a == b:
+                continue
+            if (a, b) not in bond_set:
+                continue
+            if self.symbols[a] in _MONOVALENT or self.symbols[b] in _MONOVALENT:
+                continue
+            cleaned[(a, b)] = o_int
+        self.bond_orders = cleaned
+
     def compute_bonds(self):
         """Auto detect covalent bonds based on pairwise covalent radii, strictly honoring user_bonds."""
         from .forcefield import detect_connectivity
         self.bonds = detect_connectivity(self.symbols, self.coords, user_bonds=self.user_bonds,
                                          strict=bool(getattr(self, 'strict_bonds', False)))
+        self._sanitize_bond_orders()
 
     def fit_camera(self):
         """Fit camera zoom and pan to the current coordinates WITHOUT modifying self.coords."""

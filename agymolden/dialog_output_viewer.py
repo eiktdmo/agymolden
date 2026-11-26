@@ -56,6 +56,19 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self.btn_open_file.setToolTip("Open a different QM output or log file (.out, .log, .txt)")
         self.btn_open_file.clicked.connect(self._on_open_file_clicked)
         top_bar.addWidget(self.btn_open_file)
+
+        self.btn_load_in_3d = QtWidgets.QPushButton("🌐 Load in 3D")
+        self.btn_load_in_3d.setStyleSheet("background-color: #059669; color: #ffffff; font-weight: bold; padding: 4px 8px;")
+        self.btn_load_in_3d.setToolTip("Load and visualize this calculation's molecular geometry, trajectory, vibrations, and orbitals in the 3D viewport")
+        self.btn_load_in_3d.setEnabled(bool(self.file_path and os.path.isfile(self.file_path)))
+        self.btn_load_in_3d.clicked.connect(self._on_load_in_3d_clicked)
+        top_bar.addWidget(self.btn_load_in_3d)
+
+        self.chk_auto_load_3d = QtWidgets.QCheckBox("Auto-load 3D")
+        self.chk_auto_load_3d.setChecked(True)
+        self.chk_auto_load_3d.setToolTip("Automatically load the molecule into the 3D viewport when opening a file from this viewer")
+        top_bar.addWidget(self.chk_auto_load_3d)
+
         top_bar.addStretch()
 
         top_bar.addWidget(QtWidgets.QLabel("🔍 Search:"))
@@ -223,6 +236,8 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         if hasattr(self, "lbl_path"):
             self.lbl_path.setText(f"<b>File:</b> {os.path.basename(self.file_path)}")
             self.lbl_path.setToolTip(self.file_path)
+        if hasattr(self, "btn_load_in_3d"):
+            self.btn_load_in_3d.setEnabled(True)
 
         try:
             with open(self.file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -483,13 +498,32 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         else:
             QtWidgets.QMessageBox.information(self, "External Editor", "File path is not available on disk.")
 
+    def _find_main_window(self):
+        p = self.parent()
+        while p is not None:
+            if hasattr(p, "open_path"):
+                return p
+            p = p.parent()
+        for w in QtWidgets.QApplication.topLevelWidgets():
+            if hasattr(w, "open_path"):
+                return w
+        return None
+
+    def _on_load_in_3d_clicked(self):
+        if not self.file_path or not os.path.isfile(self.file_path):
+            QtWidgets.QMessageBox.information(self, "Load in 3D", "No file on disk is currently loaded in the Output Viewer.")
+            return
+        mw = self._find_main_window()
+        if mw is not None:
+            mw.open_path(self.file_path)
+
     def _on_open_file_clicked(self):
         start_dir = os.path.dirname(self.file_path) if self.file_path else ""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Select QM Output / Log File to View",
             start_dir,
-            "QM Output Files (*.out *.log *.txt *.inp *.gjf);;All Files (*)",
+            "QM Files (*.out *.log *.txt *.inp *.gjf *.molden *.xyz *.zmat);;All Files (*)",
         )
         if not path:
             return
@@ -500,6 +534,8 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
                 p.setWindowTitle(f"📄 QM Output – {os.path.basename(path)}")
                 break
             p = p.parent()
+        if getattr(self, "chk_auto_load_3d", None) is not None and self.chk_auto_load_3d.isChecked():
+            self._on_load_in_3d_clicked()
 
     def _on_close_clicked(self):
         p = self.parent()

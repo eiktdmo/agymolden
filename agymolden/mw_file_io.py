@@ -152,6 +152,8 @@ class FileIOMixin:
             self.viewer.clear_surface_hovered = False
             self.viewer.custom_charges = None
             self.viewer.nuclear_forces = None
+            if hasattr(self.viewer, "bond_orders"):
+                self.viewer.bond_orders = {}
             self.viewer.update()
         self._current_rendered_mo_vol = None
         self._semiempirical_qm_props = None

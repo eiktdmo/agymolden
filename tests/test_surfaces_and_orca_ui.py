@@ -783,6 +783,66 @@ def test_output_viewer_right_dock_and_ctrl_arrow_resize(main_win):
     dock.hide()
 
 
+def test_output_viewer_load_in_3d_and_auto_load(main_win, tmp_path, monkeypatch):
+    """Ensure Output Viewer can load/visualize its file in 3D via button or Auto-load 3D."""
+    from PyQt6 import QtWidgets
+
+    app, win = main_win
+    xyz_path = tmp_path / "water_test.xyz"
+    xyz_path.write_text(
+        "3\nWater\n"
+        "O  0.0000  0.0000  0.1173\n"
+        "H  0.0000  0.7572 -0.4692\n"
+        "H  0.0000 -0.7572 -0.4692\n",
+        encoding="utf-8",
+    )
+
+    dock = win.dock_manager.get_or_create_output_viewer()
+    dlg = dock.viewer_dlg
+    assert hasattr(dlg, "btn_load_in_3d")
+    assert hasattr(dlg, "chk_auto_load_3d")
+    assert dlg.chk_auto_load_3d.isChecked() is True
+
+    loaded_paths = []
+    orig_open_path = win.open_path
+    monkeypatch.setattr(win, "open_path", lambda p: loaded_paths.append(p) or orig_open_path(p))
+
+    dlg.load_file(str(xyz_path))
+    assert dlg.btn_load_in_3d.isEnabled() is True
+    dlg.btn_load_in_3d.click()
+    assert loaded_paths[-1] == str(xyz_path)
+    assert len(win.zatoms) == 3
+
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(xyz_path), "All Files (*)")))
+    dlg._on_open_file_clicked()
+    assert len(loaded_paths) == 2
+
+    dock.hide()
+
+
+def test_preset_bond_orders_never_leak_or_double_bond_hydrogen(main_win):
+    """Ensure stale double bonds never leak onto Methane or monovalent atoms when loading presets."""
+    app, win = main_win
+
+    win.load_preset_molecule("Ethylene (C2H4)")
+    assert win.viewer.bond_orders.get((0, 1)) == 2
+
+    win.load_preset_molecule("Methane (CH4)")
+    assert win.viewer.bond_orders == {}
+
+    # Even if a bogus H=C bond order is injected, compute_bonds/_sanitize_bond_orders must strip it
+    win.viewer.bond_orders[(0, 1)] = 2
+    win.viewer.compute_bonds()
+    assert win.viewer.bond_orders == {}
+
+    win.load_preset_molecule("Carbon Dioxide (CO2)")
+    assert len(win.viewer.bond_orders) == 2
+    win.load_preset_molecule("Water (H2O)")
+    assert win.viewer.bond_orders == {}
+
+
+
+
 
 
 
