@@ -869,6 +869,41 @@ def test_organized_menus_and_full_height_qm_dialogs(main_win):
     qm_dlg.close()
 
 
+def test_audit_upgrades_safeguards(main_win):
+    """Verify Auto-Relax feedback, Units toolbar button, Output Viewer live theme & float/dock, and MenusMixin."""
+    from agymolden.mw_menus import MenusMixin
+
+    app, win = main_win
+    assert MenusMixin in type(win).__mro__
+    assert win.btn_auto_relax.receivers(win.btn_auto_relax.toggled) > 0
+    assert hasattr(win, "btn_unit_conv_tb")
+    assert win.btn_unit_conv_tb.receivers(win.btn_unit_conv_tb.clicked) > 0
+
+    dock = win.dock_manager.get_or_create_output_viewer()
+    dlg = dock.viewer_dlg
+    assert hasattr(dlg, "btn_toggle_float")
+    was_floating = dock.isFloating()
+    dlg.btn_toggle_float.click()
+    assert dock.isFloating() is (not was_floating)
+    dlg.btn_toggle_float.click()
+    assert dock.isFloating() is was_floating
+
+    win.set_color_theme("dark")
+    assert "#0f172a" in dlg.txt_viewer.styleSheet()
+    win.set_color_theme("white")
+    assert "#ffffff" in dlg.txt_viewer.styleSheet()
+
+    assert hasattr(win, "btn_status_theme")
+    win.btn_status_theme.click()
+    assert win.viewer.bg_color_mode == "dark"
+    assert "White" in win.btn_status_theme.text()
+    win.btn_status_theme.click()
+    assert win.viewer.bg_color_mode == "white"
+    assert "Dark" in win.btn_status_theme.text()
+    dock.hide()
+
+
+
 
 
 

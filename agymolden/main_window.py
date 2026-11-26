@@ -1965,6 +1965,25 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             self.lbl_mo_status.setStyleSheet(f"color: {'#475569' if is_white else '#64748b'}; font-style: italic; font-size: 11px;")
         if hasattr(self, "mo_ladder_widget"):
             self.mo_ladder_widget.update()
+        if hasattr(self, "dock_manager") and "output_viewer" in getattr(self.dock_manager, "docks", {}):
+            ov_dock = self.dock_manager.docks["output_viewer"]
+            if hasattr(ov_dock, "viewer_dlg") and hasattr(ov_dock.viewer_dlg, "refresh_theme"):
+                ov_dock.viewer_dlg.refresh_theme(is_white)
+        if hasattr(self, "btn_status_theme"):
+            if is_white:
+                self.btn_status_theme.setText("🌙 Dark")
+                self.btn_status_theme.setStyleSheet(
+                    "QPushButton { background-color: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; "
+                    "border-radius: 3px; padding: 1px 8px; font-weight: bold; font-size: 11px; margin-right: 4px; } "
+                    "QPushButton:hover { background-color: #bae6fd; }"
+                )
+            else:
+                self.btn_status_theme.setText("☀️ White")
+                self.btn_status_theme.setStyleSheet(
+                    "QPushButton { background-color: #1e293b; color: #fde68a; border: 1px solid #475569; "
+                    "border-radius: 3px; padding: 1px 8px; font-weight: bold; font-size: 11px; margin-right: 4px; } "
+                    "QPushButton:hover { background-color: #334155; }"
+                )
 
         # Update embedded matplotlib figures if present
         fig_face = "#ffffff" if is_white else "#1e1e24"

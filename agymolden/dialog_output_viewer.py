@@ -69,6 +69,12 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self.chk_auto_load_3d.setToolTip("Automatically load the molecule into the 3D viewport when opening a file from this viewer")
         top_bar.addWidget(self.chk_auto_load_3d)
 
+        self.btn_toggle_float = QtWidgets.QPushButton("◱ Float")
+        self.btn_toggle_float.setToolTip("Pop Output Viewer out into a floating window, or dock it back into the main window")
+        self.btn_toggle_float.setVisible(isinstance(self.parent(), QtWidgets.QDockWidget))
+        self.btn_toggle_float.clicked.connect(self._on_toggle_float_clicked)
+        top_bar.addWidget(self.btn_toggle_float)
+
         top_bar.addStretch()
 
         top_bar.addWidget(QtWidgets.QLabel("🔍 Search:"))
@@ -149,29 +155,7 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self.txt_viewer.setReadOnly(True)
         self.txt_viewer.setFont(QtGui.QFont("Monospace", 9))
         self.txt_viewer.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
-        is_white = self._is_white_theme()
-        if is_white:
-            self.txt_viewer.setStyleSheet(
-                "background-color: #ffffff; color: #0f172a; font-family: monospace; "
-                "selection-background-color: #2563eb; selection-color: #ffffff; border: 1px solid #cbd5e1;"
-            )
-            self.list_sections.setStyleSheet(
-                "QListWidget { background-color: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; font-size: 11px; } "
-                "QListWidget::item { padding: 4px 6px; border-radius: 3px; } "
-                "QListWidget::item:selected { background-color: #2563eb; color: #ffffff; } "
-                "QListWidget::item:hover:!selected { background-color: #f1f5f9; }"
-            )
-        else:
-            self.txt_viewer.setStyleSheet(
-                "background-color: #0f172a; color: #f8fafc; font-family: monospace; "
-                "selection-background-color: #2563eb; selection-color: #ffffff; border: 1px solid #334155;"
-            )
-            self.list_sections.setStyleSheet(
-                "QListWidget { background-color: #1e1e24; color: #f8fafc; border: 1px solid #334155; font-size: 11px; } "
-                "QListWidget::item { padding: 4px 6px; border-radius: 3px; } "
-                "QListWidget::item:selected { background-color: #3b82f6; color: #ffffff; } "
-                "QListWidget::item:hover:!selected { background-color: #2e2e38; }"
-            )
+        self.refresh_theme()
         splitter.addWidget(self.txt_viewer)
 
         splitter.setStretchFactor(0, 1)
@@ -224,6 +208,46 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         from agymolden.session_state import get_settings
         settings = get_settings("AgyMolden")
         return settings.value("color_theme", "white") == "white"
+
+    def refresh_theme(self, is_white: Optional[bool] = None):
+        """Update Output Viewer colors live when Dark/White theme changes."""
+        if is_white is None:
+            is_white = self._is_white_theme()
+        if hasattr(self, "lbl_path"):
+            path_col = "#0284c7" if is_white else "#38bdf8"
+            self.lbl_path.setStyleSheet(f"color: {path_col}; font-size: 12px;")
+        if is_white:
+            self.txt_viewer.setStyleSheet(
+                "background-color: #ffffff; color: #0f172a; font-family: monospace; "
+                "selection-background-color: #2563eb; selection-color: #ffffff; border: 1px solid #cbd5e1;"
+            )
+            self.list_sections.setStyleSheet(
+                "QListWidget { background-color: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; font-size: 11px; } "
+                "QListWidget::item { padding: 4px 6px; border-radius: 3px; } "
+                "QListWidget::item:selected { background-color: #2563eb; color: #ffffff; } "
+                "QListWidget::item:hover:!selected { background-color: #f1f5f9; }"
+            )
+        else:
+            self.txt_viewer.setStyleSheet(
+                "background-color: #0f172a; color: #f8fafc; font-family: monospace; "
+                "selection-background-color: #2563eb; selection-color: #ffffff; border: 1px solid #334155;"
+            )
+            self.list_sections.setStyleSheet(
+                "QListWidget { background-color: #1e1e24; color: #f8fafc; border: 1px solid #334155; font-size: 11px; } "
+                "QListWidget::item { padding: 4px 6px; border-radius: 3px; } "
+                "QListWidget::item:selected { background-color: #3b82f6; color: #ffffff; } "
+                "QListWidget::item:hover:!selected { background-color: #2e2e38; }"
+            )
+
+    def _on_toggle_float_clicked(self):
+        p = self.parent()
+        while p is not None:
+            if isinstance(p, QtWidgets.QDockWidget):
+                p.setFloating(not p.isFloating())
+                if hasattr(self, "btn_toggle_float"):
+                    self.btn_toggle_float.setText("◰ Dock" if p.isFloating() else "◱ Float")
+                return
+            p = p.parent()
 
     def load_file(self, path: str):
         """Read and parse the output file into the text view and index sections."""
