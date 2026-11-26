@@ -903,6 +903,31 @@ def test_audit_upgrades_safeguards(main_win):
     dock.hide()
 
 
+def test_companion_finds_agemacs_appimage(tmp_path, monkeypatch):
+    """Ensure AgyMolden discovers a sibling/downloaded Agemacs AppImage and strips AppImage env vars."""
+    import shutil
+    from agymolden.companion import find_agemacs_command, _clean_subprocess_env
+
+    fake_appimage = tmp_path / "Agemacs-1.0-x86_64.AppImage"
+    fake_appimage.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    monkeypatch.setenv("APPIMAGE", str(tmp_path / "AgyMolden-x86_64.AppImage"))
+    monkeypatch.setenv("APPDIR", "/tmp/.mount_agymolXYZ")
+    monkeypatch.delenv("AGEMACS_BIN", raising=False)
+    monkeypatch.delenv("AGEMACS_APPIMAGE", raising=False)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    found = find_agemacs_command()
+    assert found is not None
+    cmd, cwd = found
+    assert cmd == [str(fake_appimage)]
+    assert cwd == str(tmp_path)
+
+    clean_env = _clean_subprocess_env()
+    assert "APPIMAGE" not in clean_env
+    assert "APPDIR" not in clean_env
+
+
+
 
 
 
