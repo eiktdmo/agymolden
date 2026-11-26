@@ -710,6 +710,43 @@ def test_lower_right_pane_and_spinbox_qss_readability(main_win):
         assert getattr(win, spin_attr).minimumWidth() >= 84
 
 
+def test_2d_to_3d_adjust_h_toggle_sync(main_win):
+    """Ensure left-pane Adjust H syncs bidirectionally with 2D sketcher and controls H addition to 3D."""
+    from agymolden.dialog_2d_sketcher import SketchAtom2D, SketchBond2D
+
+    app, win = main_win
+    win._on_toggle_2d_3d_split(True)
+    pane = win.sketcher_2d_pane
+    assert pane is not None
+
+    # Disable Adjust H from left pane -> 2D toggle follows, C-C stays 2 atoms in 3D
+    win.chk_auto_h.setChecked(False)
+    app.processEvents()
+    assert pane.chk_add_hs.isChecked() is False
+
+    pane.canvas.atoms = [SketchAtom2D(100.0, 100.0, "C"), SketchAtom2D(145.0, 100.0, "C")]
+    pane.canvas.bonds = [SketchBond2D(0, 1, 1)]
+    pane._on_convert_to_3d(close_dialog=False)
+    assert len(win.zatoms) == 2
+
+    # Enable Adjust H from left pane -> 2D toggle follows, C-C becomes C2H6 (8 atoms) in 3D
+    win.chk_auto_h.setChecked(True)
+    app.processEvents()
+    assert pane.chk_add_hs.isChecked() is True
+    pane._on_convert_to_3d(close_dialog=False)
+    assert len(win.zatoms) == 8
+
+    # Reverse sync: toggling 2D pane updates left pane
+    pane.chk_add_hs.setChecked(False)
+    app.processEvents()
+    assert win.chk_auto_h.isChecked() is False
+
+    # Restore clean state
+    win.chk_auto_h.setChecked(True)
+    win._on_toggle_2d_3d_split(False)
+
+
+
 
 
 

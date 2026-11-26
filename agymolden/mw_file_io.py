@@ -389,12 +389,30 @@ class FileIOMixin:
         if self.sketcher_2d_pane.canvas.load_from_3d(syms, coords, bonds, bond_orders=bo):
             self.sketcher_2d_pane._update_live_smiles()
 
+    def _on_auto_h_toggled(self, checked: bool):
+        """Sync the left-pane Adjust H toggle with the 2D sketcher and viewer status."""
+        self._update_viewer_drag_label()
+        pane = getattr(self, "sketcher_2d_pane", None)
+        if pane is not None and hasattr(pane, "chk_add_hs") and pane.chk_add_hs.isChecked() != bool(checked):
+            pane.chk_add_hs.setChecked(bool(checked))
+
+    def _on_2d_add_hs_toggled(self, checked: bool):
+        """Sync the 2D sketcher hydrogen toggle back to the left-pane Adjust H checkbox."""
+        if hasattr(self, "chk_auto_h") and self.chk_auto_h.isChecked() != bool(checked):
+            self.chk_auto_h.blockSignals(True)
+            self.chk_auto_h.setChecked(bool(checked))
+            self.chk_auto_h.blockSignals(False)
+            self._update_viewer_drag_label()
+
     def _on_toggle_2d_3d_split(self, checked: Optional[bool] = None):
         """Toggle MolView-style two-pane 3D (left) + 2D Sketcher (right) view inside the right stack."""
         from .dialog_2d_sketcher import Sketcher2DPane
 
         if not hasattr(self, "sketcher_2d_pane") or self.sketcher_2d_pane is None:
             self.sketcher_2d_pane = Sketcher2DPane(self, embedded=True)
+            if hasattr(self, "chk_auto_h"):
+                self.sketcher_2d_pane.chk_add_hs.setChecked(self.chk_auto_h.isChecked())
+            self.sketcher_2d_pane.chk_add_hs.toggled.connect(self._on_2d_add_hs_toggled)
             self.sketcher_2d_pane.structure_generated.connect(self._apply_2d_sketch_to_3d)
             self.sketcher_2d_pane.sync_from_3d_requested.connect(self._sync_3d_to_2d_pane)
             self.sketcher_2d_pane.switch_to_inspector_requested.connect(lambda: self._on_toggle_2d_3d_split(False))
@@ -663,6 +681,9 @@ class FileIOMixin:
         from .dialog_2d_sketcher import MoleculeSketcher2DDialog
 
         dlg = MoleculeSketcher2DDialog(self)
+        if hasattr(self, "chk_auto_h"):
+            dlg._pane.chk_add_hs.setChecked(self.chk_auto_h.isChecked())
+        dlg._pane.chk_add_hs.toggled.connect(self._on_2d_add_hs_toggled)
         dlg.structure_generated.connect(self._apply_2d_sketch_to_3d)
         dlg.exec()
 

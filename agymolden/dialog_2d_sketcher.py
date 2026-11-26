@@ -1321,9 +1321,9 @@ class Sketcher2DPane(QtWidgets.QWidget):
             self.lbl_info.setVisible(False)
         bottom_bar.addWidget(self.lbl_info, stretch=1)
 
-        self.chk_add_hs = QtWidgets.QCheckBox("Add H" if self._embedded else "Add Implicit Hydrogens")
+        self.chk_add_hs = QtWidgets.QCheckBox("Adjust H" if self._embedded else "Adjust H (Add Implicit Hydrogens)")
         self.chk_add_hs.setChecked(True)
-        self.chk_add_hs.setToolTip("Automatically add valence hydrogens when converting to 3D")
+        self.chk_add_hs.setToolTip("Activate or deactivate automatic hydrogen adjustment when converting 2D → 3D (synced with Adjust H on the 3D pane)")
         self.chk_add_hs.toggled.connect(self._schedule_live_3d)
         bottom_bar.addWidget(self.chk_add_hs)
 
@@ -1453,7 +1453,7 @@ class Sketcher2DPane(QtWidgets.QWidget):
         self._prime_stamp(key)
 
     def _schedule_live_3d(self):
-        if getattr(self, "chk_live_3d", None) is not None and self.chk_live_3d.isChecked():
+        if len(self.canvas.atoms) > 0 and getattr(self, "chk_live_3d", None) is not None and self.chk_live_3d.isChecked():
             self._live_timer.start()
 
     def _update_live_smiles(self):
