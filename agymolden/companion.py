@@ -14,10 +14,28 @@ except ImportError:
 
 
 def _clean_subprocess_env() -> Dict[str, str]:
-    """Return a clean environment stripped of AppImage/PyInstaller wrapper variables."""
+    """Return a clean environment stripped of AppImage/PyInstaller/venv/AgyMolden wrapper variables."""
     env = os.environ.copy()
-    for var in ("APPIMAGE", "APPDIR", "OWD", "ARGV0", "PYTHONHOME", "PYTHONPATH", "_MEIPASS", "_MEIPASS2"):
+    for var in (
+        "APPIMAGE",
+        "APPDIR",
+        "OWD",
+        "ARGV0",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "VIRTUAL_ENV",
+        "QT_QPA_PLATFORM",
+        "_AGYMOLDEN_LIBSTDCPP_CHECKED",
+        "_MEIPASS",
+        "_MEIPASS2",
+    ):
         env.pop(var, None)
+    if "_AGYMOLDEN_ORIG_LD_PRELOAD" in env:
+        orig_preload = env.pop("_AGYMOLDEN_ORIG_LD_PRELOAD")
+        if orig_preload:
+            env["LD_PRELOAD"] = orig_preload
+        else:
+            env.pop("LD_PRELOAD", None)
     if "LD_LIBRARY_PATH_ORIG" in env:
         env["LD_LIBRARY_PATH"] = env.pop("LD_LIBRARY_PATH_ORIG")
     elif "LD_LIBRARY_PATH" in env:
@@ -141,12 +159,14 @@ def find_agemacs_command(extra_dirs: Optional[List[str]] = None) -> Optional[Tup
 
 def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = None) -> bool:
     """Open target files in a running agemacs instance via IPC, or launch agemacs (including AppImage)."""
-    clean_targets = [t for t in targets if t]
+    import logging
+
+    clean_targets = [os.path.abspath(str(t)) for t in targets if t]
     if not clean_targets:
         return False
 
     if QtNetwork is not None:
-        sock = QtNetwork.QLocalSocket(parent)
+        sock = QtNetwork.QLocalSocket()
         sock.connectToServer("agemacs_companion_ipc")
         if sock.waitForConnected(400):
             payload = json.dumps({"action": "open", "files": clean_targets}).encode("utf-8")
@@ -154,13 +174,30 @@ def send_to_agemacs(targets: List[str], parent: Optional[QtWidgets.QWidget] = No
             sock.flush()
             sock.waitForBytesWritten(400)
             sock.disconnectFromServer()
+            if sock.state() != QtNetwork.QLocalSocket.LocalSocketState.UnconnectedState:
+                sock.waitForDisconnected(150)
+            sock.deleteLater()
             return True
+        sock.deleteLater()
 
     found = find_agemacs_command()
     if found is not None:
         cmd, cwd = found
-        subprocess.Popen(cmd + clean_targets, cwd=cwd, env=_clean_subprocess_env())
-        return True
+        popen_kwargs: Dict[str, object] = {
+            "cwd": cwd,
+            "env": _clean_subprocess_env(),
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if os.name != "nt":
+            popen_kwargs["start_new_session"] = True
+        try:
+            subprocess.Popen(cmd + clean_targets, **popen_kwargs)  # type: ignore[arg-type]
+            return True
+        except OSError as exc:
+            logging.getLogger(__name__).warning("Failed to launch agemacs (%s): %s", cmd, exc)
+            return False
 
     return False
 

@@ -168,6 +168,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         hdr_layout.addWidget(info_box, 1)
 
         btn_full_studio = QtWidgets.QPushButton("🎛️ Full Multi-Code QM Studio...")
+        btn_full_studio.setMinimumHeight(28)
         btn_full_studio.setStyleSheet("background-color: #4f46e5; color: white; padding: 5px 10px; font-size: 11px; font-weight: bold;")
         btn_full_studio.setToolTip("Switch to the advanced multi-tab GaussView-style QM generator (Gaussian, ORCA, PySCF, xTB)")
         btn_full_studio.clicked.connect(self._on_switch_to_full_studio)
@@ -315,10 +316,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         init_symbols = [getattr(a, "symbol", "C") for a in self.zatoms]
         n_cpus = detect_cpu_cores()
-        has_mpi = bool(OrcaRunner._resolve_orca_mpi_env()) or bool(os.environ.get("OMPI_COMM_WORLD_SIZE"))
-        if not has_mpi:
-            import shutil
-            has_mpi = bool(shutil.which("mpirun"))
+        has_mpi, mpi_msg = OrcaRunner.check_mpi_health()
 
         row_charge = QtWidgets.QHBoxLayout()
         self.spn_charge = QtWidgets.QSpinBox()
@@ -345,13 +343,20 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         row_hw = QtWidgets.QHBoxLayout()
         self.spn_cores = QtWidgets.QSpinBox()
         self.spn_cores.setRange(1, max(64, n_cpus))
-        self.spn_cores.setValue(min(4, n_cpus) if has_mpi else 1)
+        self.spn_cores.setValue(1)
+        if not has_mpi:
+            self.spn_cores.setToolTip(
+                f"MPI unavailable on this computer ({mpi_msg}). Multi-core jobs will automatically fall back to 1 core."
+            )
+        else:
+            self.spn_cores.setToolTip(f"CPU cores for %pal nprocs ({mpi_msg})")
         row_hw.addWidget(QtWidgets.QLabel("Cores (%pal):"))
         row_hw.addWidget(self.spn_cores)
 
         self.btn_use_all_cores = QtWidgets.QPushButton(f"All ({n_cpus})")
+        self.btn_use_all_cores.setMinimumHeight(28)
         self.btn_use_all_cores.setToolTip(f"Set Cores (%pal) to all {n_cpus} detected CPU cores")
-        self.btn_use_all_cores.setStyleSheet("padding: 2px 6px; font-size: 11px;")
+        self.btn_use_all_cores.setStyleSheet("padding: 4px 8px; font-size: 11px;")
         self.btn_use_all_cores.clicked.connect(lambda: self.spn_cores.setValue(n_cpus))
         row_hw.addWidget(self.btn_use_all_cores)
 
@@ -534,10 +539,99 @@ class QuickOrcaDialog(QtWidgets.QDialog):
 
         layout.addLayout(btn_box)
 
-        # Initial composition
+        # Restore last calculation settings (if any), then compose route & deck
+        self._restore_last_calc_settings()
         self._compose_route_from_controls()
         self._validate_charge_multiplicity()
         self._update_deck_preview()
+
+    def _save_last_calc_settings(self):
+        """Persist the current ORCA calculation setup so the next run recalls it."""
+        try:
+            from agymolden.session_state import get_settings
+
+            s = get_settings("AgyMolden")
+            s.beginGroup("last_orca_calc")
+            s.setValue("job", self.combo_job.currentData() or self.combo_job.currentText())
+            s.setValue("method", self.combo_method.currentData() or self.combo_method.currentText())
+            s.setValue("basis", self.combo_basis.currentText().strip())
+            s.setValue("grid", self.combo_grid.currentData() or self.combo_grid.currentText())
+            s.setValue("solvent", self.combo_solvent.currentText())
+            s.setValue("dispersion", self.combo_dispersion.currentText())
+            s.setValue("chk_molden", self.chk_molden.isChecked())
+            s.setValue("chk_nmr", self.chk_nmr.isChecked())
+            s.setValue("chk_polar", self.chk_polar.isChecked())
+            s.setValue("chk_mo_cubes", self.chk_mo_cubes.isChecked())
+            s.setValue("chk_esp", self.chk_esp.isChecked())
+            s.setValue("chk_print_mos", self.chk_print_mos.isChecked())
+            s.setValue("cores", int(self.spn_cores.value()))
+            s.setValue("mem", int(self.spn_mem.value()))
+            s.setValue("charge", int(self.spn_charge.value()))
+            s.setValue("filename", self.txt_filename.text().strip())
+            s.setValue("work_dir", self.txt_dir.text().strip())
+            s.endGroup()
+        except Exception:
+            pass
+
+    def _restore_last_calc_settings(self):
+        """Restore settings from the previous ORCA calculation if stored."""
+        if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("AGYMOLDEN_TEST_RESTORE_CALC") != "1":
+            return
+        try:
+            from agymolden.session_state import get_settings
+
+            s = get_settings("AgyMolden")
+            s.beginGroup("last_orca_calc")
+            try:
+                if not s.childKeys():
+                    return
+                for combo, key in ((self.combo_job, "job"), (self.combo_method, "method"), (self.combo_grid, "grid")):
+                    val = s.value(key, None)
+                    if val is not None:
+                        idx = combo.findData(val)
+                        if idx < 0:
+                            idx = combo.findText(str(val))
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+                basis_val = s.value("basis", None)
+                if basis_val:
+                    idx = self.combo_basis.findText(str(basis_val))
+                    if idx >= 0:
+                        self.combo_basis.setCurrentIndex(idx)
+                    else:
+                        self.combo_basis.setCurrentText(str(basis_val))
+                for combo, key in ((self.combo_solvent, "solvent"), (self.combo_dispersion, "dispersion")):
+                    val = s.value(key, None)
+                    if val is not None:
+                        idx = combo.findText(str(val))
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+                for chk, key in (
+                    (self.chk_molden, "chk_molden"),
+                    (self.chk_nmr, "chk_nmr"),
+                    (self.chk_polar, "chk_polar"),
+                    (self.chk_mo_cubes, "chk_mo_cubes"),
+                    (self.chk_esp, "chk_esp"),
+                    (self.chk_print_mos, "chk_print_mos"),
+                ):
+                    if s.contains(key):
+                        chk.setChecked(s.value(key, chk.isChecked(), type=bool))
+                if s.contains("cores"):
+                    self.spn_cores.setValue(max(1, int(s.value("cores", 1, type=int))))
+                if s.contains("mem"):
+                    self.spn_mem.setValue(max(500, int(s.value("mem", 2000, type=int))))
+                if s.contains("charge"):
+                    self.spn_charge.setValue(int(s.value("charge", 0, type=int)))
+                fname = s.value("filename", None)
+                if fname:
+                    self.txt_filename.setText(str(fname))
+                wdir = s.value("work_dir", None)
+                if wdir and os.path.isdir(str(wdir)):
+                    self.txt_dir.setText(str(wdir))
+            finally:
+                s.endGroup()
+        except Exception:
+            pass
 
     def _on_switch_to_full_studio(self):
         """Switch to full multi-code QM Calculation Setup dialog."""
@@ -963,6 +1057,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.critical(self, "Save Error", f"Could not write ORCA input file:\n{e}")
             return
 
+        self._save_last_calc_settings()
         self.saved_input_path = target_path
         self.accept()
 
@@ -970,6 +1065,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         """Send the generated ORCA input deck to Agemacs."""
         from .companion import send_text_to_agemacs
 
+        self._save_last_calc_settings()
         fname = (self.txt_filename.text().strip() or "orca_calc.inp")
         if not fname.endswith(".inp"):
             fname += ".inp"
@@ -1008,6 +1104,7 @@ class QuickOrcaDialog(QtWidgets.QDialog):
         self.txt_dir.setText(chosen_dir)
         self.txt_filename.setText(os.path.basename(path))
         self.saved_input_path = path
+        self._save_last_calc_settings()
         try:
             from agymolden.session_state import get_settings
             get_settings("AgyMolden").setValue("orca_last_dir", chosen_dir)

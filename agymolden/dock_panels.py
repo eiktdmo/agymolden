@@ -47,6 +47,7 @@ class JobMonitorDock(WorkspaceDockWidget):
         from .calc_runner.dialog_job_monitor import JobMonitorDialog
 
         self.monitor = JobMonitorDialog(self, runner=runner)
+        self.monitor.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setWidget(self.monitor)
 
     @property
@@ -110,6 +111,7 @@ class DihedralScanDock(WorkspaceDockWidget):
             user_bond_orders=user_bond_orders,
             frozen_indices=frozen_indices,
         )
+        self.scan_dlg.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setWidget(self.scan_dlg)
 
     @property
@@ -145,6 +147,7 @@ class ReactionPathDock(WorkspaceDockWidget):
             initial_symbols=initial_symbols,
             initial_coords=initial_coords,
         )
+        self.path_dlg.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setWidget(self.path_dlg)
 
     @property
@@ -175,6 +178,7 @@ class QCDoctorDock(WorkspaceDockWidget):
         from .dialog_qc_doctor import QCDoctorDialog
 
         self.doctor_dialog = QCDoctorDialog(self, log_text=log_text)
+        self.doctor_dialog.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setWidget(self.doctor_dialog)
 
     def diagnose_log(self, log_text: str):
@@ -182,6 +186,7 @@ class QCDoctorDock(WorkspaceDockWidget):
         from .dialog_qc_doctor import QCDoctorDialog
 
         new_dlg = QCDoctorDialog(self, log_text=log_text)
+        new_dlg.setWindowFlags(QtCore.Qt.WindowType.Widget)
         self.setWidget(new_dlg)
         self.doctor_dialog = new_dlg
 
@@ -204,6 +209,15 @@ class WorkspaceDockManager:
         self.mw.setCorner(QtCore.Qt.Corner.BottomLeftCorner, QtCore.Qt.DockWidgetArea.LeftDockWidgetArea)
         self.mw.setCorner(QtCore.Qt.Corner.BottomRightCorner, QtCore.Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _tabify_in_area(self, area: QtCore.Qt.DockWidgetArea, new_dock: WorkspaceDockWidget) -> None:
+        """Tabify *new_dock* onto an existing non-floating dock in *area* so docks never crush the viewport."""
+        for existing in self.docks.values():
+            if existing is new_dock or existing.isFloating():
+                continue
+            if self.mw.dockWidgetArea(existing) == area:
+                self.mw.tabifyDockWidget(existing, new_dock)
+                return
+
     def get_or_create_job_monitor(self, runner=None) -> JobMonitorDock:
         if "job_monitor" not in self.docks:
             dock = JobMonitorDock(self.mw, runner=runner)
@@ -213,7 +227,10 @@ class WorkspaceDockManager:
             if hasattr(self.mw, "_on_live_calc_completed"):
                 dock.monitor.calculation_completed.connect(self.mw._on_live_calc_completed)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+            self._tabify_in_area(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
             self.docks["job_monitor"] = dock
+            bot_h = max(200, min(280, int(self.mw.height() * 0.32)))
+            self.mw.resizeDocks([dock], [bot_h], QtCore.Qt.Orientation.Vertical)
         return self.docks["job_monitor"] # type: ignore
 
     def get_or_create_output_viewer(self, file_path: str = "") -> QMOutputDock:
@@ -221,6 +238,7 @@ class WorkspaceDockManager:
         if "output_viewer" not in self.docks:
             dock = QMOutputDock(self.mw, file_path=file_path)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+            self._tabify_in_area(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
             self.docks["output_viewer"] = dock
             created = True
         dock = self.docks["output_viewer"]  # type: ignore
@@ -231,15 +249,15 @@ class WorkspaceDockManager:
             dock.show()
             dock.raise_()
         if created:
-            self.mw.resizeDocks([dock], [max(420, int(self.mw.width() * 0.45))], QtCore.Qt.Orientation.Horizontal)
+            right_w = min(max(360, int(self.mw.width() * 0.40)), max(360, self.mw.width() - 420))
+            self.mw.resizeDocks([dock], [right_w], QtCore.Qt.Orientation.Horizontal)
         return dock  # type: ignore
 
     def get_or_create_console(self) -> PythonConsoleDock:
         if "python_console" not in self.docks:
             dock = PythonConsoleDock(self.mw, main_window=self.mw)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-            if "job_monitor" in self.docks:
-                self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
+            self._tabify_in_area(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
             self.docks["python_console"] = dock
         return self.docks["python_console"] # type: ignore
 
@@ -247,8 +265,7 @@ class WorkspaceDockManager:
         if "hpc_queue" not in self.docks:
             dock = HpcQueueDock(self.mw)
             self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-            if "job_monitor" in self.docks:
-                self.mw.tabifyDockWidget(self.docks["job_monitor"], dock)
+            self._tabify_in_area(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
             self.docks["hpc_queue"] = dock
         return self.docks["hpc_queue"] # type: ignore
 
@@ -281,6 +298,7 @@ class WorkspaceDockManager:
             dock.conformer_selected.connect(on_conformer_selected)
 
         self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self._tabify_in_area(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
         dock.show()
         dock.raise_()
         self.docks["dihedral_scan"] = dock
@@ -310,6 +328,7 @@ class WorkspaceDockManager:
             dock.trajectory_preview.connect(on_preview_traj)
 
         self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self._tabify_in_area(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
         dock.show()
         dock.raise_()
         self.docks["reaction_path"] = dock
@@ -327,6 +346,7 @@ class WorkspaceDockManager:
 
         dock = QCDoctorDock(self.mw, log_text=log_text)
         self.mw.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self._tabify_in_area(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
         dock.show()
         dock.raise_()
         self.docks["qc_doctor"] = dock

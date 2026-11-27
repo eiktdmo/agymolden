@@ -75,6 +75,27 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.combo_mouse_mode.addItem("Chemcraft / PyMOL Preset (Left: Rotate, Right: Pan, Shift+Right: Zoom)", "chemcraft")
         v_layout.addRow("Mouse Navigation Style:", self.combo_mouse_mode)
 
+        from .ui_scale import MAX_FONT_PT, MIN_FONT_PT, UI_SCALE_PRESETS
+
+        self.spin_font_size = QtWidgets.QSpinBox()
+        self.spin_font_size.setRange(MIN_FONT_PT, MAX_FONT_PT)
+        self.spin_font_size.setSuffix(" pt")
+        self.spin_font_size.setToolTip("Live UI font size across all menus, buttons, and dialogs (no restart needed)")
+        v_layout.addRow("UI Font Size (Live):", self.spin_font_size)
+
+        self.combo_ui_scale = QtWidgets.QComboBox()
+        for sc in UI_SCALE_PRESETS:
+            pct = int(round(sc * 100))
+            if abs(sc - 1.0) < 1e-3:
+                label = "100% (Default)"
+            elif sc >= 1.5:
+                label = f"{pct}% (High-DPI / Small Screen)"
+            else:
+                label = f"{pct}%"
+            self.combo_ui_scale.addItem(label, sc)
+        self.combo_ui_scale.setToolTip("Global Qt UI scale factor for icons, padding, and layouts (applied on next launch)")
+        v_layout.addRow("Startup UI Scale (Restart):", self.combo_ui_scale)
+
         tabs.addTab(tab_view, "🖥️ 3D Viewport")
 
         # Tab 2: Calculation & Symmetry Defaults
@@ -95,7 +116,7 @@ class PreferencesDialog(QtWidgets.QDialog):
 
         self.spin_cores = QtWidgets.QSpinBox()
         self.spin_cores.setRange(1, 128)
-        self.spin_cores.setValue(4)
+        self.spin_cores.setValue(1)
         c_layout.addRow("Default CPU Cores (%nprocs):", self.spin_cores)
 
         self.spin_mem = QtWidgets.QSpinBox()
@@ -163,9 +184,23 @@ class PreferencesDialog(QtWidgets.QDialog):
         if idx_mouse >= 0:
             self.combo_mouse_mode.setCurrentIndex(idx_mouse)
 
-        self.spin_cores.setValue(self.settings.value("calc/nprocs", 4, type=int))
+        self.spin_cores.setValue(self.settings.value("calc/nprocs", 1, type=int))
         self.spin_mem.setValue(self.settings.value("calc/memory", 4000, type=int))
         self.spin_sym_tol.setValue(self.settings.value("calc/sym_tol", 0.15, type=float))
+
+        from .ui_scale import get_saved_font_size, get_saved_ui_scale
+
+        self.spin_font_size.setValue(get_saved_font_size())
+        saved_scale = get_saved_ui_scale()
+        best_idx = 0
+        best_diff = 999.0
+        for i in range(self.combo_ui_scale.count()):
+            val = float(self.combo_ui_scale.itemData(i))
+            diff = abs(val - saved_scale)
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = i
+        self.combo_ui_scale.setCurrentIndex(best_idx)
 
     def _save_settings(self):
         self.settings.setValue("viewport/background", self.combo_bg.currentData())
@@ -181,6 +216,11 @@ class PreferencesDialog(QtWidgets.QDialog):
         self.settings.setValue("calc/nprocs", self.spin_cores.value())
         self.settings.setValue("calc/memory", self.spin_mem.value())
         self.settings.setValue("calc/sym_tol", self.spin_sym_tol.value())
+
+        from .ui_scale import apply_live_font_size, save_ui_scale
+
+        apply_live_font_size(self.spin_font_size.value(), persist=True)
+        save_ui_scale(float(self.combo_ui_scale.currentData()))
 
         # Apply immediately to parent main window if active
         parent = self.parent()

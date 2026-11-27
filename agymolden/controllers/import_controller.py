@@ -32,12 +32,6 @@ class ImportController:
 
     def import_qm_log(self) -> None:
         """Import quantum chemistry output file (.log, .out) from Gaussian, ORCA, Q-Chem, or xTB."""
-        if not can_parse_with_cclib():
-            QtWidgets.QMessageBox.warning(
-                self.mw, "cclib Required", "cclib is required to parse QM output files. Please install cclib."
-            )
-            return
-
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self.mw,
             "Import QM Log / Output File",
@@ -121,11 +115,19 @@ class ImportController:
                     self.mw.slider_trajectory.setValue(init_step)
                     self.mw.slider_trajectory.blockSignals(False)
                     self.mw.lbl_trajectory_step.setText(f"Step {init_step + 1}/{n_steps}")
-                    if res.trajectory_energies and len(res.trajectory_energies) == n_steps:
-                        e_val = res.trajectory_energies[init_step]
-                        self.mw.lbl_trajectory_energy.setText(f"E = {e_val:.6f} eV")
+                    traj_e = list(res.trajectory_energies) if res.trajectory_energies else []
+                    if traj_e:
+                        if len(traj_e) > n_steps:
+                            traj_e = traj_e[-n_steps:]
+                        elif len(traj_e) < n_steps:
+                            traj_e = traj_e + [traj_e[-1]] * (n_steps - len(traj_e))
+                        self.mw.trajectory_energies = traj_e
+                        e_val = traj_e[init_step]
+                        e_ha = e_val / 27.211386245988
+                        e_diff_kcal = (e_val - traj_e[0]) * 23.0605
+                        self.mw.lbl_trajectory_energy.setText(f"E = {e_ha:.6f} Ha (ΔE: {e_diff_kcal:+.2f} kcal/mol)")
                         if hasattr(self.mw, "sparkline_trajectory"):
-                            self.mw.sparkline_trajectory.set_data(res.trajectory_energies, active_step=init_step)
+                            self.mw.sparkline_trajectory.set_data(traj_e, active_step=init_step)
                     else:
                         self.mw.lbl_trajectory_energy.setText("")
                         if hasattr(self.mw, "sparkline_trajectory"):

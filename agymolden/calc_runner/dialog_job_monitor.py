@@ -35,6 +35,7 @@ class JobMonitorDialog(QtWidgets.QDialog):
         self.resize(960, 680)
 
         self.runner = runner or BrorsenRunner(self)
+        self._open_viewers = []
         self._init_ui()
         self._connect_runner_signals()
         self._load_saved_settings()
@@ -663,6 +664,21 @@ class JobMonitorDialog(QtWidgets.QDialog):
             self.hide()
             self.calculation_completed.emit(self.runner.input_file)
 
+    def _open_viewer_nonmodal(self, file_path: str):
+        from agymolden.dialog_output_viewer import QMOutputViewerDialog
+
+        dlg = QMOutputViewerDialog(None, file_path=file_path)
+        dlg.setWindowFlags(
+            QtCore.Qt.WindowType.Window
+            | QtCore.Qt.WindowType.WindowMinMaxButtonsHint
+            | QtCore.Qt.WindowType.WindowCloseButtonHint
+        )
+        dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+        self._open_viewers.append(dlg)
+        dlg.show()
+        dlg.raise_()
+        return dlg
+
     def _on_open_input_viewer(self):
         inp_path = getattr(self.runner, "input_file", None)
         if not inp_path or not os.path.isfile(inp_path):
@@ -673,9 +689,7 @@ class JobMonitorDialog(QtWidgets.QDialog):
                 "Input Files (*.inp *.in *.gjf *.com *.lowdin *.py);;All Files (*)",
             )
         if inp_path and os.path.isfile(inp_path):
-            from agymolden.dialog_output_viewer import QMOutputViewerDialog
-            dlg = QMOutputViewerDialog(self, file_path=inp_path)
-            dlg.exec()
+            self._open_viewer_nonmodal(inp_path)
 
     def _on_open_in_agemacs(self):
         import shutil
@@ -702,9 +716,7 @@ class JobMonitorDialog(QtWidgets.QDialog):
         # Classroom fallback: if agemacs is not installed on this machine, open file in built-in viewer
         file_targets = [t for t in targets if os.path.isfile(t)]
         if file_targets:
-            from agymolden.dialog_output_viewer import QMOutputViewerDialog
-            dlg = QMOutputViewerDialog(self, file_path=file_targets[0])
-            dlg.exec()
+            self._open_viewer_nonmodal(file_targets[0])
             return
 
         QtWidgets.QMessageBox.information(
@@ -736,9 +748,7 @@ class JobMonitorDialog(QtWidgets.QDialog):
             )
         if log_path and os.path.isfile(log_path):
             self.runner.log_file = log_path
-            from agymolden.dialog_output_viewer import QMOutputViewerDialog
-            dlg = QMOutputViewerDialog(self, file_path=log_path)
-            dlg.exec()
+            self._open_viewer_nonmodal(log_path)
 
     def _on_filter_changed(self, text: str):
         if not text:

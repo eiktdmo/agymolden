@@ -109,7 +109,7 @@ class _FlowLayout(QtWidgets.QLayout):
         return True
 
     def heightForWidth(self, width: int) -> int:
-        return self._do_layout(QtCore.QRect(0, 0, width, 0), test_only=True)
+        return self._do_layout(QtCore.QRect(0, 0, max(width, 480), 0), test_only=True)
 
     def setGeometry(self, rect: QtCore.QRect):
         super().setGeometry(rect)
@@ -150,13 +150,23 @@ class _FlowLayout(QtWidgets.QLayout):
         return y + line_height - rect.y() + m.bottom()
 
 
+class _FlowWidget(QtWidgets.QWidget):
+    """Container for _FlowLayout whose minimumSizeHint stays 1-row tall so MainWindow shrinks cleanly."""
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        lay = self.layout()
+        if lay is not None:
+            return lay.minimumSize()
+        return super().minimumSizeHint()
+
+
 class UIMixin(UIInspectorTabsMixin, MenusMixin):
     def _init_ui(self):
         # Central splitter: Left is 3D Viewport, Right is Control Panel & ZMAT Table
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QtWidgets.QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setContentsMargins(4, 4, 4, 4)
         main_layout.setSpacing(6)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -167,7 +177,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         left_container = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(4)
+        left_layout.setSpacing(3)
 
         mol_tab_row = QtWidgets.QHBoxLayout()
         mol_tab_row.setContentsMargins(0, 0, 0, 0)
@@ -211,9 +221,17 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
             ("🎓 Quick Tour", self._on_open_onboarding_tour),
         ):
             wb_btn = QtWidgets.QPushButton(w_lbl)
+            wb_btn.setMinimumHeight(28)
             wb_btn.clicked.connect(w_slot)
             wb_layout.addWidget(wb_btn)
         wb_layout.addStretch()
+        self.btn_dismiss_welcome = QtWidgets.QToolButton()
+        self.btn_dismiss_welcome.setText("×")
+        self.btn_dismiss_welcome.setMinimumSize(26, 26)
+        self.btn_dismiss_welcome.setToolTip("Dismiss Get Started banner to maximize 3D canvas space")
+        self.btn_dismiss_welcome.setStyleSheet("color: #475569; font-weight: bold; font-size: 14px; border: none;")
+        self.btn_dismiss_welcome.clicked.connect(self.welcome_banner.hide)
+        wb_layout.addWidget(self.btn_dismiss_welcome)
         left_layout.addWidget(self.welcome_banner)
 
         # 3D Viewport
@@ -242,13 +260,14 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         left_layout.addWidget(self.viewer, stretch=1)
 
         # Viewer quick controls ribbon (responsive wrapping layout so buttons never hide when right panel is widened)
-        ribbon_widget = QtWidgets.QWidget()
+        ribbon_widget = _FlowWidget()
         view_ctrls = _FlowLayout(ribbon_widget, margin=0, h_spacing=6, v_spacing=4)
 
         self.btn_mode_toggle = QtWidgets.QPushButton("✏️ Build")
         self.btn_mode_toggle.setCheckable(True)
         self.btn_mode_toggle.setChecked(False)
-        self.btn_mode_toggle.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 2px 8px;")
+        self.btn_mode_toggle.setMinimumHeight(28)
+        self.btn_mode_toggle.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px;")
         self.btn_mode_toggle.setToolTip(
             "Toggle between Build/Draw Mode (✏️) and Inspect/Measure Mode (🔍) (Shortcut: Tab).\n"
             "• ✏️ Build: Dragging from an atom sprouts a new bond/atom; double-clicking mutates/attaches.\n"
@@ -261,12 +280,13 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.btn_ribbon_tweezers = QtWidgets.QPushButton("🧲 Tweezers")
         self.btn_ribbon_tweezers.setCheckable(True)
         self.btn_ribbon_tweezers.setChecked(False)
+        self.btn_ribbon_tweezers.setMinimumHeight(28)
         self.btn_ribbon_tweezers.setStyleSheet("""
             QPushButton {
                 background-color: #dbeafe;
                 color: #1d4ed8;
                 font-weight: bold;
-                padding: 2px 8px;
+                padding: 4px 10px;
                 border: 1px solid #93c5fd;
                 border-radius: 3px;
             }
@@ -283,12 +303,13 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.btn_auto_relax = QtWidgets.QPushButton("⚡ Auto-Relax")
         self.btn_auto_relax.setCheckable(True)
         self.btn_auto_relax.setChecked(False)
+        self.btn_auto_relax.setMinimumHeight(28)
         self.btn_auto_relax.setStyleSheet("""
             QPushButton {
                 background-color: #ede9fe;
                 color: #6d28d9;
                 font-weight: bold;
-                padding: 2px 8px;
+                padding: 4px 10px;
                 border: 1px solid #c4b5fd;
                 border-radius: 3px;
             }
@@ -309,12 +330,13 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.btn_2d_3d_split = QtWidgets.QPushButton("✏️ 2D | 3D")
         self.btn_2d_3d_split.setCheckable(True)
         self.btn_2d_3d_split.setChecked(False)
+        self.btn_2d_3d_split.setMinimumHeight(28)
         self.btn_2d_3d_split.setStyleSheet("""
             QPushButton {
                 background-color: #e0f2fe;
                 color: #0369a1;
                 font-weight: bold;
-                padding: 2px 8px;
+                padding: 4px 10px;
                 border: 1px solid #7dd3fc;
                 border-radius: 3px;
             }
@@ -331,13 +353,14 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.btn_toggle_right_pane = QtWidgets.QPushButton("◧ Z-Mat")
         self.btn_toggle_right_pane.setCheckable(True)
         self.btn_toggle_right_pane.setChecked(True)
+        self.btn_toggle_right_pane.setMinimumHeight(28)
         self.btn_toggle_right_pane.setShortcut("F9")
         self.btn_toggle_right_pane.setStyleSheet("""
             QPushButton {
                 background-color: #ccfbf1;
                 color: #0f766e;
                 font-weight: bold;
-                padding: 2px 8px;
+                padding: 4px 10px;
                 border: 1px solid #5eead4;
                 border-radius: 3px;
             }
@@ -351,7 +374,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.btn_toggle_right_pane.toggled.connect(self._on_toggle_right_pane)
         view_ctrls.addWidget(self.btn_toggle_right_pane)
 
-        # Compact Element Brush Selector (replaces 8 separate element buttons)
+        # Element brush selector kept synced for shortcuts/menus; hidden from ribbon because draw_palette_bar exposes 1-click pills
         self.combo_brush_element = QtWidgets.QComboBox()
         self.combo_brush_element.setFixedWidth(72)
         self.combo_brush_element.setToolTip("Select active drawing & mutation element brush")
@@ -360,14 +383,15 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.combo_brush_element.currentIndexChanged.connect(
             lambda _idx: self._on_select_brush_element(self.combo_brush_element.currentData() or "C")
         )
-        view_ctrls.addWidget(self.combo_brush_element)
+        self.combo_brush_element.setVisible(False)
 
         # Quick Stamp Menu (Benzene, Cyclohexane, Methyl, etc.)
         self.btn_quick_stamp = QtWidgets.QToolButton()
         self.btn_quick_stamp.setText("📌 Stamp ▾")
+        self.btn_quick_stamp.setMinimumHeight(28)
         self.btn_quick_stamp.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_quick_stamp.setToolTip("GaussView / Avogadro style: Stamp functional groups or rings onto selected atom in 1 click")
-        self.btn_quick_stamp.setStyleSheet("background-color: #0d9488; color: white; font-weight: 600; padding: 2px 6px;")
+        self.btn_quick_stamp.setStyleSheet("background-color: #0d9488; color: white; font-weight: 600; padding: 4px 8px;")
         menu_stamp = QtWidgets.QMenu(self)
         for st_name in ["Phenyl (-C6H5)", "Methyl (-CH3)", "Hydroxyl (-OH)", "Amino (-NH2)", "Carbonyl (=O)", "Nitro (-NO2)", "Carboxyl (-COOH)", "Water (H2O)"]:
             act = menu_stamp.addAction(st_name)
@@ -377,16 +401,18 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         btn_h_ribbon = QtWidgets.QToolButton()
         btn_h_ribbon.setText("💧 Add H")
+        btn_h_ribbon.setMinimumHeight(28)
         btn_h_ribbon.setToolTip("Complete valence with hydrogens (Ctrl+H)")
-        btn_h_ribbon.setStyleSheet("background-color: #0284c7; color: white; font-weight: 600; padding: 2px 6px;")
+        btn_h_ribbon.setStyleSheet("background-color: #0284c7; color: white; font-weight: 600; padding: 4px 8px;")
         btn_h_ribbon.clicked.connect(self._on_add_hydrogens)
         view_ctrls.addWidget(btn_h_ribbon)
 
         self.btn_clean_selection = QtWidgets.QPushButton("⚡ Clean")
+        self.btn_clean_selection.setMinimumHeight(28)
         self.btn_clean_selection.setToolTip(
             "Clean / pre-optimize selected atoms with UFF (freezes unselected atoms), or optimize whole molecule if none selected"
         )
-        self.btn_clean_selection.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 2px 8px;")
+        self.btn_clean_selection.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px;")
         self.btn_clean_selection.clicked.connect(self._on_clean_selection)
         view_ctrls.addWidget(self.btn_clean_selection)
 
@@ -420,12 +446,14 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         view_ctrls.addWidget(self.combo_view_sym_group)
 
         self.btn_reset_view = QtWidgets.QPushButton("Reset")
+        self.btn_reset_view.setMinimumHeight(28)
         self.btn_reset_view.setToolTip("Center and fit molecule in 3D viewport (Shortcut: Space)")
         self.btn_reset_view.clicked.connect(self.viewer.auto_center)
         view_ctrls.addWidget(self.btn_reset_view)
 
         btn_planes = QtWidgets.QToolButton()
         btn_planes.setText("📷 Plane ▾")
+        btn_planes.setMinimumHeight(28)
         btn_planes.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         btn_planes.setToolTip("Snap 3D camera to XY, XZ, or YZ Cartesian plane")
         menu_planes = QtWidgets.QMenu(self)
@@ -437,12 +465,14 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         btn_axes = QtWidgets.QPushButton("Axes")
         btn_axes.setMinimumWidth(48)
+        btn_axes.setMinimumHeight(28)
         btn_axes.setToolTip("Align camera view to look along the molecule's Principal Inertial Axes (Chemcraft / VMD)")
         btn_axes.clicked.connect(lambda: self.viewer.align_to_principal_axes())
         view_ctrls.addWidget(btn_axes)
 
         self.btn_orient_sym = QtWidgets.QPushButton("📐 Orient")
-        self.btn_orient_sym.setStyleSheet("font-weight: 600; padding: 2px 6px; background-color: #6366f1; color: #ffffff;")
+        self.btn_orient_sym.setMinimumHeight(28)
+        self.btn_orient_sym.setStyleSheet("font-weight: 600; padding: 4px 8px; background-color: #6366f1; color: #ffffff;")
         self.btn_orient_sym.setToolTip(
             "Universal Symmetry Orientation (Alt+S):\n"
             "Align molecule coordinates to standard Schoenflies/IUPAC convention for ANY point group\n"
@@ -453,6 +483,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         self.btn_camera_proj = QtWidgets.QPushButton("Persp")
         self.btn_camera_proj.setMinimumWidth(54)
+        self.btn_camera_proj.setMinimumHeight(28)
         self.btn_camera_proj.setToolTip("Toggle between Perspective and Orthographic parallel projection (VMD / GaussView style) (F5)")
         self.btn_camera_proj.clicked.connect(self._on_toggle_camera_projection)
         view_ctrls.addWidget(self.btn_camera_proj)
@@ -460,6 +491,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         # Compact popup menu for display styles, theme, and 3D overlays so the main bar never overflows
         self.btn_display_menu = QtWidgets.QToolButton()
         self.btn_display_menu.setText("👁️ Display ▾")
+        self.btn_display_menu.setMinimumHeight(28)
         self.btn_display_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_display_menu.setToolTip("Configure 3D theme, rendering style, atom labels, and property overlays (Dipole, Charges, H-Bonds, Forces, 3D Gizmo)")
         self.menu_display_overlays = QtWidgets.QMenu(self)
@@ -596,6 +628,54 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         ribbon_widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Minimum)
         left_layout.addWidget(ribbon_widget)
+
+        # Compact 1-click Element & Bond-Order Draw Strip (Avogadro style — draw without Z-Matrix)
+        self.draw_palette_bar = _FlowWidget()
+        draw_flow = _FlowLayout(self.draw_palette_bar, margin=0, h_spacing=4, v_spacing=3)
+        self.btn_elem_pills: dict[str, QtWidgets.QPushButton] = {}
+        for sym in ("H", "C", "N", "O", "F", "P", "S", "Cl", "Br"):
+            b = QtWidgets.QPushButton(sym)
+            b.setCheckable(True)
+            b.setChecked(sym == "C")
+            b.setMinimumHeight(28)
+            b.setToolTip(f"Select {sym} drawing brush (1 click adds {sym} on empty canvas or starts bond)")
+            b.setStyleSheet(
+                "QPushButton { padding: 3px 8px; min-width: 28px; font-weight: bold; font-size: 11px; border-radius: 3px; }"
+                "QPushButton:checked { background-color: #0284c7; color: #ffffff; }"
+            )
+            b.clicked.connect(lambda _c=False, s=sym: self._on_quick_element_pill(s))
+            self.btn_elem_pills[sym] = b
+            draw_flow.addWidget(b)
+
+        self.btn_elem_periodic = QtWidgets.QPushButton("…")
+        self.btn_elem_periodic.setMinimumHeight(28)
+        self.btn_elem_periodic.setToolTip("Open Periodic Table to pick any element")
+        self.btn_elem_periodic.setStyleSheet("padding: 3px 8px; min-width: 28px; font-weight: bold; font-size: 11px; border-radius: 3px;")
+        self.btn_elem_periodic.clicked.connect(self._on_add_line)
+        draw_flow.addWidget(self.btn_elem_periodic)
+
+        self.active_draw_bond_order = 1
+        self.btn_bo_1 = QtWidgets.QPushButton("─ 1")
+        self.btn_bo_2 = QtWidgets.QPushButton("═ 2")
+        self.btn_bo_3 = QtWidgets.QPushButton("≡ 3")
+        for order, btn, tip in (
+            (1, self.btn_bo_1, "Single bond order (or apply to selected / diatomic bond)"),
+            (2, self.btn_bo_2, "Double bond order (or apply to selected / diatomic bond)"),
+            (3, self.btn_bo_3, "Triple bond order (or apply to selected / diatomic bond)"),
+        ):
+            btn.setCheckable(True)
+            btn.setChecked(order == 1)
+            btn.setMinimumHeight(28)
+            btn.setToolTip(tip)
+            btn.setStyleSheet(
+                "QPushButton { padding: 3px 8px; font-weight: bold; font-size: 11px; border-radius: 3px; }"
+                "QPushButton:checked { background-color: #0d9488; color: #ffffff; }"
+            )
+            btn.clicked.connect(lambda _c=False, o=order: self._on_quick_bond_order(o))
+            draw_flow.addWidget(btn)
+
+        self.draw_palette_bar.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Minimum)
+        left_layout.addWidget(self.draw_palette_bar)
 
         # Measurement readout + inline live geometry spinbox (GaussView style)
         meas_row = QtWidgets.QHBoxLayout()
@@ -748,6 +828,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         self.slider_trajectory = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider_trajectory.setRange(0, 0)
+        self.slider_trajectory.setMinimumWidth(90)
         self.slider_trajectory.valueChanged.connect(self._on_trajectory_slider_changed)
         row1_layout.addWidget(self.slider_trajectory, stretch=1)
 
@@ -755,13 +836,25 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.lbl_trajectory_step.setStyleSheet("font-weight: bold; color: #38bdf8; min-width: 65px;")
         row1_layout.addWidget(self.lbl_trajectory_step)
 
+        traj_box_layout.addLayout(row1_layout)
+
+        # Interactive Mini Energy Trajectory Profile Curve (Sparkline)
+        from .widget_sparkline import SparklinePlot
+        self.sparkline_trajectory = SparklinePlot(self)
+        self.sparkline_trajectory.step_clicked.connect(lambda s: self.slider_trajectory.setValue(s))
+        traj_box_layout.addWidget(self.sparkline_trajectory)
+
+        # Row 2: Step Energy, Playback Options & Analysis Tools (wrapping flow layout so all buttons stay visible)
+        row2_container = _FlowWidget()
+        row2_layout = _FlowLayout(row2_container, margin=0, h_spacing=6, v_spacing=4)
+
         self.combo_traj_mode = QtWidgets.QComboBox()
         self.combo_traj_mode.addItem("Loop 🔁", "loop")
         self.combo_traj_mode.addItem("Bounce ⮂", "bounce")
         self.combo_traj_mode.addItem("Once ➔", "once")
         self.combo_traj_mode.setToolTip("Trajectory animation repeat behavior (Bounce is ideal for IRC pathways)")
         self.combo_traj_mode.setFixedWidth(92)
-        row1_layout.addWidget(self.combo_traj_mode)
+        row2_layout.addWidget(self.combo_traj_mode)
 
         self.combo_traj_speed = QtWidgets.QComboBox()
         self.combo_traj_speed.addItem("0.5x", 250)
@@ -772,19 +865,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         self.combo_traj_speed.setToolTip("Animation playback speed")
         self.combo_traj_speed.setFixedWidth(64)
         self.combo_traj_speed.currentIndexChanged.connect(self._on_traj_speed_changed)
-        row1_layout.addWidget(self.combo_traj_speed)
-
-        traj_box_layout.addLayout(row1_layout)
-
-        # Interactive Mini Energy Trajectory Profile Curve (Sparkline)
-        from .widget_sparkline import SparklinePlot
-        self.sparkline_trajectory = SparklinePlot(self)
-        self.sparkline_trajectory.step_clicked.connect(lambda s: self.slider_trajectory.setValue(s))
-        traj_box_layout.addWidget(self.sparkline_trajectory)
-
-        # Row 2: Step Energy & Analysis Tools (wrapping flow layout so all buttons stay visible)
-        row2_container = QtWidgets.QWidget()
-        row2_layout = _FlowLayout(row2_container, margin=0, h_spacing=6, v_spacing=4)
+        row2_layout.addWidget(self.combo_traj_speed)
 
         self.lbl_trajectory_energy = QtWidgets.QLabel("")
         self.lbl_trajectory_energy.setStyleSheet("color: #a7f3d0; font-family: monospace; font-size: 11px; white-space: nowrap;")
@@ -1582,6 +1663,27 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         btn_open.clicked.connect(self._on_open_universal_file)
         toolbar.addWidget(btn_open)
 
+        self.btn_agemacs_menu = QtWidgets.QToolButton()
+        self.btn_agemacs_menu.setText("🚀 Agemacs ▾")
+        self.btn_agemacs_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_agemacs_menu.setToolTip("Open or export inputs, outputs, XYZ, Z-Matrix, or any file directly into Agemacs (Alt+Shift+A)")
+        self.btn_agemacs_menu.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
+        menu_agemacs = QtWidgets.QMenu(self)
+        for label, handler in (
+            ("📄 Open Active File / Geometry in Agemacs", self._on_open_in_agemacs),
+            ("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs),
+            ("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs),
+            ("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs),
+        ):
+            menu_agemacs.addAction(label, lambda _checked=False, fn=handler: QtCore.QTimer.singleShot(0, fn))
+        menu_agemacs.addSeparator()
+        menu_agemacs.addAction(
+            "📂 Browse & Open Any File in Agemacs...",
+            lambda _checked=False, fn=self._on_send_any_file_to_agemacs: QtCore.QTimer.singleShot(0, fn),
+        )
+        self.btn_agemacs_menu.setMenu(menu_agemacs)
+        toolbar.addWidget(self.btn_agemacs_menu)
+
         btn_save = QtWidgets.QToolButton()
         btn_save.setText("💾 Save ZMAT")
         btn_save.clicked.connect(self._on_save_zmat)
@@ -1603,21 +1705,6 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         btn_html.setToolTip("Export interactive standalone 3D WebGL HTML webpage (Ctrl+Shift+H)")
         btn_html.clicked.connect(self._on_export_html)
         toolbar.addWidget(btn_html)
-
-        self.btn_agemacs_menu = QtWidgets.QToolButton()
-        self.btn_agemacs_menu.setText("🚀 Agemacs ▾")
-        self.btn_agemacs_menu.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_agemacs_menu.setToolTip("Open or export inputs, outputs, XYZ, Z-Matrix, or any file directly into Agemacs (Alt+Shift+A)")
-        self.btn_agemacs_menu.setStyleSheet("background-color: #0d9488; color: #ffffff; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
-        menu_agemacs = QtWidgets.QMenu(self)
-        menu_agemacs.addAction("📄 Open Active File / Geometry in Agemacs", self._on_open_in_agemacs)
-        menu_agemacs.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
-        menu_agemacs.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
-        menu_agemacs.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
-        menu_agemacs.addSeparator()
-        menu_agemacs.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
-        self.btn_agemacs_menu.setMenu(menu_agemacs)
-        toolbar.addWidget(self.btn_agemacs_menu)
 
         toolbar.addSeparator()
 
@@ -1964,6 +2051,38 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         QtWidgets.QApplication.clipboard().setText(text)
         self.statusBar().showMessage("📋 Methods paragraph copied to clipboard!", 4000)
 
+    def _on_quick_element_pill(self, sym: str):
+        """Sync element pill buttons + combo brush and select *sym* for 3D drawing."""
+        for s_key, btn in getattr(self, "btn_elem_pills", {}).items():
+            btn.blockSignals(True)
+            btn.setChecked(s_key == sym)
+            btn.blockSignals(False)
+        if hasattr(self, "combo_brush_element"):
+            idx = self.combo_brush_element.findData(sym)
+            if idx >= 0:
+                self.combo_brush_element.blockSignals(True)
+                self.combo_brush_element.setCurrentIndex(idx)
+                self.combo_brush_element.blockSignals(False)
+        self._on_select_brush_element(sym)
+
+    def _on_quick_bond_order(self, order: int):
+        """Set active bond order and apply immediately if 2 atoms are selected or molecule is diatomic."""
+        self.active_draw_bond_order = order
+        for o_val, btn in (
+            (1, getattr(self, "btn_bo_1", None)),
+            (2, getattr(self, "btn_bo_2", None)),
+            (3, getattr(self, "btn_bo_3", None)),
+        ):
+            if btn is not None:
+                btn.blockSignals(True)
+                btn.setChecked(o_val == order)
+                btn.blockSignals(False)
+        sel = list(getattr(self.viewer, "selected_atoms", []) or [])
+        if len(sel) == 2 and hasattr(self, "set_bond_order"):
+            self.set_bond_order(sel[0], sel[1], target_bo=order)
+        elif len(getattr(self, "zatoms", []) or []) == 2 and hasattr(self, "set_bond_order"):
+            self.set_bond_order(0, 1, target_bo=order)
+
     def _on_open_lab_exercise(self):
         """Open the self-contained Interactive Lab Exercise (.agylab) dialog."""
         from .dialog_lab_mode import LabExerciseDialog
@@ -1977,13 +2096,15 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
 
         for attr in ("current_file_path", "_last_loaded_qm_log_path", "current_file"):
             cur = getattr(self, attr, None)
-            if cur and os.path.isfile(cur):
-                if not send_to_agemacs([cur], self):
-                    QtWidgets.QMessageBox.information(
-                        self, "Open in agemacs",
-                        f"Could not find 'agemacs' on PATH or in standard project folders.\n\nFile ready to open:\n{cur}",
-                    )
-                return
+            if cur:
+                cur_s = str(cur)
+                if os.path.isfile(cur_s):
+                    if not send_to_agemacs([cur_s], self):
+                        QtWidgets.QMessageBox.information(
+                            self, "Open in agemacs",
+                            f"Could not find 'agemacs' on PATH or in standard project folders.\n\nFile ready to open:\n{cur_s}",
+                        )
+                    return
 
         if getattr(self, "zatoms", None) and getattr(self, "coords", None) is not None and len(self.coords) > 0:
             lines = [f"{len(self.zatoms)}", "Exported from AgyMolden"]
@@ -2040,6 +2161,7 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
         candidates: List[str] = []
         for attr in (
             "_last_loaded_qm_log_path",
+            "_active_molden_path",
             "_loaded_molden_path",
             "current_qm_output_file",
             "current_molden_file",
@@ -2047,8 +2169,10 @@ class UIMixin(UIInspectorTabsMixin, MenusMixin):
             "current_file",
         ):
             p = getattr(self, attr, None)
-            if p and os.path.isfile(p):
-                candidates.append(p)
+            if p:
+                p_s = str(p)
+                if os.path.isfile(p_s):
+                    candidates.append(p_s)
 
         monitors = []
         if hasattr(self, "dock_manager") and "job_monitor" in getattr(self.dock_manager, "docks", {}):

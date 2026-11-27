@@ -26,23 +26,40 @@ class SampleGalleryDialog(QtWidgets.QDialog):
         layout.setSpacing(10)
 
         # Header Info Banner
+        is_white = False
+        parent_w = self.parent()
+        if parent_w is not None and hasattr(parent_w, "viewer") and getattr(parent_w.viewer, "bg_color_mode", None) == "white":
+            is_white = True
+        elif self.palette().window().color().lightness() > 128:
+            is_white = True
+
         header = QtWidgets.QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                padding: 10px;
-            }
-        """)
+        if is_white:
+            header.setStyleSheet("""
+                QFrame {
+                    background-color: #f1f5f9;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+        else:
+            header.setStyleSheet("""
+                QFrame {
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
         h_layout = QtWidgets.QVBoxLayout(header)
         h_title = QtWidgets.QLabel("<b>Curated Benchmark & Tutorial Systems</b>")
-        h_title.setStyleSheet("font-size: 14px; color: #38bdf8;")
+        h_title.setStyleSheet(f"font-size: 14px; color: {'#0369a1' if is_white else '#38bdf8'};")
         h_desc = QtWidgets.QLabel(
             "Select any sample structure below to immediately load it into the 3D viewport, "
             "inspect orbitals, or run calculations without needing to build from scratch."
         )
-        h_desc.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+        h_desc.setStyleSheet(f"color: {'#334155' if is_white else '#cbd5e1'}; font-size: 11px;")
         h_desc.setWordWrap(True)
         h_layout.addWidget(h_title)
         h_layout.addWidget(h_desc)
@@ -52,23 +69,42 @@ class SampleGalleryDialog(QtWidgets.QDialog):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
         self.list_samples = QtWidgets.QListWidget()
-        self.list_samples.setStyleSheet("""
-            QListWidget {
-                background-color: #0f172a;
-                color: #f8fafc;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                font-size: 12px;
-            }
-            QListWidget::item {
-                padding: 8px;
-                border-bottom: 1px solid #1e293b;
-            }
-            QListWidget::item:selected {
-                background-color: #0284c7;
-                color: #ffffff;
-            }
-        """)
+        if is_white:
+            self.list_samples.setStyleSheet("""
+                QListWidget {
+                    background-color: #ffffff;
+                    color: #0f172a;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 6px;
+                    font-size: 12px;
+                }
+                QListWidget::item {
+                    padding: 8px;
+                    border-bottom: 1px solid #e2e8f0;
+                }
+                QListWidget::item:selected {
+                    background-color: #0284c7;
+                    color: #ffffff;
+                }
+            """)
+        else:
+            self.list_samples.setStyleSheet("""
+                QListWidget {
+                    background-color: #0f172a;
+                    color: #f8fafc;
+                    border: 1px solid #334155;
+                    border-radius: 6px;
+                    font-size: 12px;
+                }
+                QListWidget::item {
+                    padding: 8px;
+                    border-bottom: 1px solid #1e293b;
+                }
+                QListWidget::item:selected {
+                    background-color: #0284c7;
+                    color: #ffffff;
+                }
+            """)
         for sample in SAMPLE_CATALOG:
             item = QtWidgets.QListWidgetItem(f"⚛ {sample.title} ({sample.formula})")
             self.list_samples.addItem(item)
@@ -80,15 +116,15 @@ class SampleGalleryDialog(QtWidgets.QDialog):
         r_layout.setContentsMargins(10, 0, 0, 0)
 
         self.lbl_title = QtWidgets.QLabel("Select a sample...")
-        self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #f8fafc;")
+        self.lbl_title.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {'#0f172a' if is_white else '#f8fafc'};")
         r_layout.addWidget(self.lbl_title)
 
         self.lbl_category = QtWidgets.QLabel("")
-        self.lbl_category.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        self.lbl_category.setStyleSheet(f"font-size: 11px; color: {'#475569' if is_white else '#94a3b8'};")
         r_layout.addWidget(self.lbl_category)
 
         self.lbl_description = QtWidgets.QLabel("")
-        self.lbl_description.setStyleSheet("font-size: 12px; color: #e2e8f0; line-height: 1.4;")
+        self.lbl_description.setStyleSheet(f"font-size: 12px; color: {'#1e293b' if is_white else '#e2e8f0'}; line-height: 1.4;")
         self.lbl_description.setWordWrap(True)
         r_layout.addWidget(self.lbl_description)
 

@@ -164,20 +164,26 @@ class MenusMixin:
         menu_export.addSeparator()
         act_open_agemacs = QtGui.QAction("🚀 Open / Export to &agemacs...", self)
         act_open_agemacs.setToolTip("Open the current molecule or file in agemacs (Alt+Shift+A)")
-        act_open_agemacs.triggered.connect(self._on_open_in_agemacs)
+        act_open_agemacs.triggered.connect(lambda _c=False: QtCore.QTimer.singleShot(0, self._on_open_in_agemacs))
         menu_export.addAction(act_open_agemacs)
 
         menu_agemacs_file = menu_file.addMenu("🚀 Send / Export to &Agemacs")
         act_ag_open = QtGui.QAction("📄 Open Active File / Geometry in Agemacs", self)
         act_ag_open.setShortcut("Alt+Shift+A")
         act_ag_open.setToolTip("Open the current file or exported geometry in Agemacs (Alt+Shift+A)")
-        act_ag_open.triggered.connect(self._on_open_in_agemacs)
+        act_ag_open.triggered.connect(lambda _c=False: QtCore.QTimer.singleShot(0, self._on_open_in_agemacs))
         menu_agemacs_file.addAction(act_ag_open)
-        menu_agemacs_file.addAction("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs)
-        menu_agemacs_file.addAction("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs)
-        menu_agemacs_file.addAction("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs)
+        for lbl, fn in (
+            ("📐 Export Cartesian XYZ to Agemacs", self._on_send_xyz_to_agemacs),
+            ("📋 Export Z-Matrix to Agemacs", self._on_send_zmat_to_agemacs),
+            ("📊 Open Active QM Log / Molden in Agemacs", self._on_send_qm_output_to_agemacs),
+        ):
+            menu_agemacs_file.addAction(lbl, lambda _c=False, cb=fn: QtCore.QTimer.singleShot(0, cb))
         menu_agemacs_file.addSeparator()
-        menu_agemacs_file.addAction("📂 Browse & Open Any File in Agemacs...", self._on_send_any_file_to_agemacs)
+        menu_agemacs_file.addAction(
+            "📂 Browse & Open Any File in Agemacs...",
+            lambda _c=False: QtCore.QTimer.singleShot(0, self._on_send_any_file_to_agemacs),
+        )
 
         menu_file.addSeparator()
 
@@ -825,6 +831,98 @@ class MenusMixin:
 
         menu_view.addSeparator()
 
+        from .ui_scale import (
+            DEFAULT_FONT_PT,
+            FONT_SIZE_PRESETS,
+            UI_SCALE_PRESETS,
+            apply_live_font_size,
+            get_current_font_size,
+            get_saved_ui_scale,
+            save_ui_scale,
+            step_live_font_size,
+        )
+
+        menu_scale = menu_view.addMenu("🔎 &Text Size && UI Scale")
+
+        self._font_preset_actions = {}
+
+        def _sync_font_presets(pt: int) -> None:
+            for preset_pt, act in self._font_preset_actions.items():
+                act.setChecked(preset_pt == pt)
+
+        def _set_font_pt(pt: int) -> None:
+            applied = apply_live_font_size(pt, persist=True)
+            _sync_font_presets(applied)
+            if hasattr(self, "statusBar"):
+                self.statusBar().showMessage(f"UI font size set to {applied} pt", 4000)
+
+        def _step_font(delta: int) -> None:
+            applied = step_live_font_size(delta, persist=True)
+            _sync_font_presets(applied)
+            if hasattr(self, "statusBar"):
+                self.statusBar().showMessage(f"UI font size set to {applied} pt", 4000)
+
+        self.act_font_inc = QtGui.QAction("Increase Font Size", self)
+        self.act_font_inc.setShortcuts(["Ctrl+=", "Ctrl++"])
+        self.act_font_inc.triggered.connect(lambda: _step_font(2))
+        menu_scale.addAction(self.act_font_inc)
+
+        self.act_font_dec = QtGui.QAction("Decrease Font Size", self)
+        self.act_font_dec.setShortcut("Ctrl+-")
+        self.act_font_dec.triggered.connect(lambda: _step_font(-2))
+        menu_scale.addAction(self.act_font_dec)
+
+        self.act_font_reset = QtGui.QAction(f"Reset Font Size ({DEFAULT_FONT_PT} pt)", self)
+        self.act_font_reset.setShortcut("Ctrl+0")
+        self.act_font_reset.triggered.connect(lambda: _set_font_pt(DEFAULT_FONT_PT))
+        menu_scale.addAction(self.act_font_reset)
+
+        menu_scale.addSeparator()
+
+        font_preset_group = QtGui.QActionGroup(self)
+        cur_pt = get_current_font_size()
+        _preset_labels = {
+            10: "10 pt (Default)",
+            12: "12 pt (Medium)",
+            14: "14 pt (Large)",
+            16: "16 pt (Extra Large)",
+            18: "18 pt (Presentation)",
+        }
+        for preset_pt in FONT_SIZE_PRESETS:
+            act_p = QtGui.QAction(_preset_labels.get(preset_pt, f"{preset_pt} pt"), self)
+            act_p.setCheckable(True)
+            act_p.setChecked(preset_pt == cur_pt)
+            act_p.triggered.connect(lambda _chk=False, p=preset_pt: _set_font_pt(p))
+            font_preset_group.addAction(act_p)
+            menu_scale.addAction(act_p)
+            self._font_preset_actions[preset_pt] = act_p
+
+        menu_scale.addSeparator()
+
+        menu_dpi_scale = menu_scale.addMenu("Startup UI Scale (Icons && Layout — Restart)")
+        scale_group = QtGui.QActionGroup(self)
+        saved_scale = get_saved_ui_scale()
+        for sc in UI_SCALE_PRESETS:
+            pct = int(round(sc * 100))
+            label = f"{pct}% (Default)" if abs(sc - 1.0) < 1e-3 else f"{pct}%"
+            act_s = QtGui.QAction(label, self)
+            act_s.setCheckable(True)
+            act_s.setChecked(abs(saved_scale - sc) < 0.02)
+
+            def _on_select_scale(_chk=False, val=sc):
+                saved = save_ui_scale(val)
+                if hasattr(self, "statusBar"):
+                    self.statusBar().showMessage(
+                        f"Startup UI scale saved as {int(round(saved * 100))}% — restart AgyMolden to apply.",
+                        6000,
+                    )
+
+            act_s.triggered.connect(_on_select_scale)
+            scale_group.addAction(act_s)
+            menu_dpi_scale.addAction(act_s)
+
+        menu_view.addSeparator()
+
         act_toggle_measure = QtGui.QAction("📏 Show 3D &Measurement Overlays", self)
         act_toggle_measure.setCheckable(True)
         act_toggle_measure.setChecked(True)
@@ -1045,7 +1143,7 @@ class MenusMixin:
         act_reset_layout.triggered.connect(lambda: getattr(self, "dock_manager", None) and self.dock_manager.reset_layout())
         menu_docks.addAction(act_reset_layout)
 
-        # Help Menu
+        # Help Menu (organized into concise top-level items + 2 submenus so 720p screens never overflow)
         menu_help = menubar.addMenu("&Help")
 
         self.act_command_palette = QtGui.QAction("🚀 Quick &Command Palette...", self)
@@ -1056,21 +1154,6 @@ class MenusMixin:
         self.act_command_palette.setToolTip("Instant searchable command palette for all 60+ AgyMolden tools and actions (Ctrl+K / Ctrl+Shift+P)")
         self.act_command_palette.triggered.connect(self._on_open_command_palette)
         menu_help.addAction(self.act_command_palette)
-
-        act_test_setup = QtGui.QAction("🩺 &Test My Setup (ORCA / xTB)...", self)
-        act_test_setup.setToolTip("Check whether ORCA and xTB are detected and ready to run")
-        act_test_setup.triggered.connect(self._on_test_qm_setup)
-        menu_help.addAction(act_test_setup)
-
-        act_copy_methods = QtGui.QAction("📋 Copy &Methods / Citation Paragraph", self)
-        act_copy_methods.setToolTip("Copy a ready-to-paste computational methods sentence to clipboard")
-        act_copy_methods.triggered.connect(self._on_copy_methods_paragraph)
-        menu_help.addAction(act_copy_methods)
-
-        act_lab_mode = QtGui.QAction("🎓 Interactive &Lab Exercise (.agylab)...", self)
-        act_lab_mode.setToolTip("Open a guided classroom lab exercise with checklist and ORCA preset")
-        act_lab_mode.triggered.connect(self._on_open_lab_exercise)
-        menu_help.addAction(act_lab_mode)
 
         act_examples = QtGui.QAction("🧪 &Example Molecule && Calculation Gallery...", self)
         act_examples.setShortcut("Ctrl+Shift+G")
@@ -1084,20 +1167,10 @@ class MenusMixin:
         menu_help.addAction(act_tour)
 
         act_manual = QtGui.QAction("📖 &User Manual...", self)
-        act_manual.setToolTip("Open the built-in AgyMolden User Manual")
+        act_manual.setShortcut("Shift+F1")
+        act_manual.setToolTip("Open the built-in AgyMolden User Manual (Shift+F1)")
         act_manual.triggered.connect(self._on_open_user_manual)
         menu_help.addAction(act_manual)
-
-        self.act_simple_mode = QtGui.QAction("🎓 &Simple Mode (Hide Advanced Panels)", self)
-        self.act_simple_mode.setCheckable(True)
-        self.act_simple_mode.setToolTip("Hide specialist QM toolbars and advanced ribbon controls for a cleaner workspace")
-        self.act_simple_mode.toggled.connect(self._on_toggle_simple_mode)
-        menu_help.addAction(self.act_simple_mode)
-        menu_help.addSeparator()
-
-        act_about = QtGui.QAction("&About AgyMolden", self)
-        act_about.triggered.connect(self._on_about)
-        menu_help.addAction(act_about)
 
         act_shortcuts = QtGui.QAction("⌨️ &Keyboard && Mouse Shortcuts", self)
         act_shortcuts.setShortcut("F1")
@@ -1105,29 +1178,54 @@ class MenusMixin:
         act_shortcuts.triggered.connect(self._on_show_shortcuts)
         menu_help.addAction(act_shortcuts)
 
+        self.act_simple_mode = QtGui.QAction("🎓 &Simple Mode (Hide Advanced Panels)", self)
+        self.act_simple_mode.setCheckable(True)
+        self.act_simple_mode.setToolTip("Hide specialist QM toolbars and advanced ribbon controls for a cleaner workspace")
+        self.act_simple_mode.toggled.connect(self._on_toggle_simple_mode)
+        menu_help.addAction(self.act_simple_mode)
+
+        menu_help.addSeparator()
+
+        menu_diag = menu_help.addMenu("🩺 &Diagnostics && Setup")
+        act_test_setup = QtGui.QAction("🩺 &Test My Setup (ORCA / xTB)...", self)
+        act_test_setup.setToolTip("Check whether ORCA and xTB are detected and ready to run")
+        act_test_setup.triggered.connect(self._on_test_qm_setup)
+        menu_diag.addAction(act_test_setup)
+
         act_view_log = QtGui.QAction("📋 View Diagnostic &Log (agymolden.log)...", self)
         act_view_log.setShortcut("F3")
         act_view_log.setToolTip("Inspect internal session log file for troubleshooting and error reporting (F3)")
         act_view_log.triggered.connect(self._on_view_diagnostic_log)
-        menu_help.addAction(act_view_log)
+        menu_diag.addAction(act_view_log)
 
         act_diag_bundle = QtGui.QAction("📦 Export Diagnostic &Bundle (.zip)...", self)
         act_diag_bundle.setToolTip("Export sanitized environment info, QM detection status, and agymolden.log as a zip for support")
         act_diag_bundle.triggered.connect(self._on_export_diagnostic_bundle)
-        menu_help.addAction(act_diag_bundle)
-
-        act_manual = QtGui.QAction("📖 Open Full User &Manual...", self)
-        act_manual.setShortcut("Shift+F1")
-        act_manual.triggered.connect(self._on_open_manual)
-        menu_help.addAction(act_manual)
-
-        menu_help.addSeparator()
-        act_citations = QtGui.QAction("📜 &Cite Used Tools && Methods...", self)
-        act_citations.setToolTip("Generate BibTeX and computational methods text acknowledging AgyMolden, UFF, PySCF, IDPP, and Spglib")
-        act_citations.triggered.connect(self._on_open_citations_dialog)
-        menu_help.addAction(act_citations)
+        menu_diag.addAction(act_diag_bundle)
 
         act_desktop_icon = QtGui.QAction("🖥️ Create &Desktop / App Shortcut...", self)
         act_desktop_icon.setToolTip("Create a convenient 1-click desktop icon for launching AgyMolden on your operating system.")
         act_desktop_icon.triggered.connect(self._on_create_desktop_shortcut)
-        menu_help.addAction(act_desktop_icon)
+        menu_diag.addAction(act_desktop_icon)
+
+        menu_classroom = menu_help.addMenu("🎓 &Classroom && Citations")
+        act_lab_mode = QtGui.QAction("🎓 Interactive &Lab Exercise (.agylab)...", self)
+        act_lab_mode.setToolTip("Open a guided classroom lab exercise with checklist and ORCA preset")
+        act_lab_mode.triggered.connect(self._on_open_lab_exercise)
+        menu_classroom.addAction(act_lab_mode)
+
+        act_copy_methods = QtGui.QAction("📋 Copy &Methods / Citation Paragraph", self)
+        act_copy_methods.setToolTip("Copy a ready-to-paste computational methods sentence to clipboard")
+        act_copy_methods.triggered.connect(self._on_copy_methods_paragraph)
+        menu_classroom.addAction(act_copy_methods)
+
+        act_citations = QtGui.QAction("📜 &Cite Used Tools && Methods...", self)
+        act_citations.setToolTip("Generate BibTeX and computational methods text acknowledging AgyMolden, UFF, PySCF, IDPP, and Spglib")
+        act_citations.triggered.connect(self._on_open_citations_dialog)
+        menu_classroom.addAction(act_citations)
+
+        menu_help.addSeparator()
+
+        act_about = QtGui.QAction("&About AgyMolden", self)
+        act_about.triggered.connect(self._on_about)
+        menu_help.addAction(act_about)

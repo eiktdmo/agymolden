@@ -23,6 +23,7 @@ dist/
 # Large calculation output files & scratch
 *.cube
 *.out
+!examples/*.out
 *.chk
 *.zip
 !AgyMolden_Student_Release.zip
@@ -40,7 +41,9 @@ scratch_calculations/
 *.hess
 *.engrad
 *.molden
-*.molden.input
+!examples/*.molden
+*.molden
+!examples/*.molden.input
 *_trj.xyz
 *.inp
 *_property*.txt

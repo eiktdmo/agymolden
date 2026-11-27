@@ -175,7 +175,7 @@ def parse_brorsen_logfile(path: str) -> Optional[QMLogParseResult]:
         return None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+            text = f.read().replace("\r\n", "\n").replace("\r", "\n")
     except Exception:
         return None
 
@@ -578,7 +578,7 @@ def _parse_openlowdin_logfile(path: str) -> Optional[QMLogParseResult]:
         return None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+            text = f.read().replace("\r\n", "\n").replace("\r", "\n")
     except Exception:
         return None
 
@@ -665,7 +665,7 @@ def _parse_psi4_logfile_native(path: str) -> Optional[QMLogParseResult]:
         return None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+            text = f.read().replace("\r\n", "\n").replace("\r", "\n")
     except Exception:
         return None
 
@@ -779,7 +779,7 @@ def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
     """Robust native fallback parser for ORCA log/out files when cclib fails."""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+            text = f.read().replace("\r\n", "\n").replace("\r", "\n")
     except Exception:
         return None
 
@@ -788,7 +788,7 @@ def _parse_orca_logfile_fallback(path: str) -> Optional[QMLogParseResult]:
 
     # 1. Parse Cartesian coordinate steps
     coord_blocks = re.findall(
-        r'CARTESIAN COORDINATES \(ANGSTROEM\)\s*\n-+\s*\n((?:\s*[A-Za-z-]{1,2}\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s+[-+]?\d+\.\d+\s*\n)+)',
+        r'CARTESIAN COORDINATES \(ANGSTROEM\)\s*\n-+\s*\n((?:\s*[A-Za-z-]{1,2}\s+[-+]?\d+\.\d+(?:[EeDd][+-]?\d+)?\s+[-+]?\d+\.\d+(?:[EeDd][+-]?\d+)?\s+[-+]?\d+\.\d+(?:[EeDd][+-]?\d+)?\s*\n)+)',
         text
     )
     if not coord_blocks:
@@ -1170,6 +1170,14 @@ def parse_qm_logfile(path: str) -> QMLogParseResult:
     # Extract energies (scfenergies in eV)
     scfenergies = getattr(data, "scfenergies", [])
     trajectory_energies = list(scfenergies) if scfenergies is not None else []
+
+    # Guard against cclib versions that return only 1 frame for multi-step ORCA optimizations
+    if "orca" in program_name.lower() and len(trajectory_coords) <= 1:
+        orca_fb_traj = _parse_orca_logfile_fallback(path)
+        if orca_fb_traj is not None and len(orca_fb_traj.trajectory_coords) > len(trajectory_coords):
+            trajectory_coords = orca_fb_traj.trajectory_coords
+            if orca_fb_traj.trajectory_energies:
+                trajectory_energies = orca_fb_traj.trajectory_energies
 
     # Final geometry is the last optimization step
     final_coords = trajectory_coords[-1]

@@ -210,7 +210,7 @@ class IRSpectrumWidget(QtWidgets.QWidget):
         ctrl_layout.addWidget(self.btn_nist_scale)
 
         self.lbl_scale_info = QtWidgets.QLabel("")
-        self.lbl_scale_info.setStyleSheet("color: #38bdf8; font-size: 10px;")
+        self.lbl_scale_info.setStyleSheet("color: #38bdf8; font-size: 11px;")
         ctrl_layout.addWidget(self.lbl_scale_info)
 
         self.btn_export_csv = QtWidgets.QPushButton("💾 CSV")

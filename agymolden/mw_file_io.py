@@ -481,11 +481,22 @@ class FileIOMixin:
             return
 
         show = target.isHidden() if checked is None else bool(checked)
+        if show and hasattr(self, "dock_manager"):
+            for dock in getattr(self.dock_manager, "docks", {}).values():
+                if not dock.isFloating() and self.dockWidgetArea(dock) == QtCore.Qt.DockWidgetArea.RightDockWidgetArea:
+                    dock.hide()
         target.setVisible(show)
         if hasattr(self, "btn_toggle_right_pane") and self.btn_toggle_right_pane.isChecked() != show:
             self.btn_toggle_right_pane.blockSignals(True)
             self.btn_toggle_right_pane.setChecked(show)
             self.btn_toggle_right_pane.blockSignals(False)
+        if not os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("AGYMOLDEN_TEST_PERSIST_UI") == "1":
+            try:
+                from .session_state import get_settings
+
+                get_settings("Preferences").setValue("ui/show_right_pane", bool(show))
+            except Exception:
+                pass
 
     def _on_copy_camera_view(self):
         """Copy the current 3D camera orientation, zoom, and pan as JSON to clipboard."""
@@ -541,7 +552,10 @@ class FileIOMixin:
         btn_close = QtWidgets.QPushButton("Close")
         btn_close.clicked.connect(dlg.accept)
         layout.addWidget(btn_close, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
-        dlg.exec()
+        dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+        self._user_manual_dlg = dlg
+        dlg.show()
+        dlg.raise_()
 
     def _on_toggle_simple_mode(self, checked: Optional[bool] = None):
         """Toggle Simple Mode to hide advanced QM toolbars and specialist ribbon controls."""
@@ -593,6 +607,11 @@ class FileIOMixin:
             "strict_topology": bool(getattr(self, "strict_topology", False)),
             "bond_orders": dict(getattr(self.viewer, "bond_orders", {})),
             "file_path": getattr(self, "current_file_path", None),
+            "last_qm_log_path": getattr(self, "_last_loaded_qm_log_path", None),
+            "trajectory_coords": [np.array(c, copy=True) for c in (getattr(self, "trajectory_coords", None) or [])],
+            "trajectory_energies": list(getattr(self, "trajectory_energies", None) or []),
+            "trajectory_symbols": list(getattr(self, "trajectory_symbols", None) or []),
+            "trajectory_step": self.slider_trajectory.value() if hasattr(self, "slider_trajectory") else 0,
             "camera": cam,
         }
 
@@ -605,6 +624,7 @@ class FileIOMixin:
         self.cross_bonds = set(snap.get("cross_bonds", set()))
         self.strict_topology = bool(snap.get("strict_topology", False))
         self.current_file_path = snap.get("file_path")
+        self._last_loaded_qm_log_path = snap.get("last_qm_log_path")
 
         if zatoms:
             self.set_molecule_from_zatoms(zatoms, exact_coords=coords if coords is not None and len(coords) == len(zatoms) else None)
@@ -618,6 +638,26 @@ class FileIOMixin:
                 self.table_widget.load_zatoms([])
             self._sync_raw_text()
             self._update_chemical_summary()
+
+        traj_coords = snap.get("trajectory_coords") or []
+        traj_energies = snap.get("trajectory_energies") or []
+        traj_symbols = snap.get("trajectory_symbols") or []
+        if len(traj_coords) > 1 and hasattr(self, "grp_trajectory") and hasattr(self, "slider_trajectory"):
+            self.trajectory_coords = [np.array(c, copy=True) for c in traj_coords]
+            self.trajectory_energies = list(traj_energies)
+            self.trajectory_symbols = list(traj_symbols)
+            n_steps = len(self.trajectory_coords)
+            step = max(0, min(n_steps - 1, int(snap.get("trajectory_step", n_steps - 1))))
+            self.grp_trajectory.setVisible(True)
+            self.slider_trajectory.blockSignals(True)
+            self.slider_trajectory.setRange(0, n_steps - 1)
+            self.slider_trajectory.setValue(step)
+            self.slider_trajectory.blockSignals(False)
+            if hasattr(self, "lbl_trajectory_step"):
+                self.lbl_trajectory_step.setText(f"Step {step + 1}/{n_steps}")
+            if hasattr(self, "sparkline_trajectory"):
+                self.sparkline_trajectory.set_data(self.trajectory_energies, active_step=step)
+            self._on_trajectory_slider_changed(step)
 
         cam = snap.get("camera")
         if cam and hasattr(self.viewer, "set_camera_state"):
@@ -734,7 +774,10 @@ class FileIOMixin:
 
         try:
             dlg = ESP2DContourDialog(self, molden_path)
-            dlg.exec()
+            dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+            self._esp_2d_dlg = dlg
+            dlg.show()
+            dlg.raise_()
         except Exception as e:
             log.exception("Error launching 2D ESP Contour Dialog")
             QtWidgets.QMessageBox.critical(self, "2D ESP Error", f"Failed to compute 2D ESP slice:\n{e}")
@@ -761,7 +804,10 @@ class FileIOMixin:
                         break
 
         dlg = MultiwfnAnalysisDialog(self, molden_path=molden_path, viewer=self.viewer)
-        dlg.exec()
+        dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+        self._multiwfn_dlg = dlg
+        dlg.show()
+        dlg.raise_()
 
     def _on_open_volumetric_dialog(self, target_tab: Optional[str] = None):
         """Open Volumetric Grid & Isosurface Controller Dialog."""
@@ -793,6 +839,13 @@ class FileIOMixin:
             dlg.surface_updated.connect(on_surface_updated)
             dlg.load_molecule_requested.connect(on_load_mol)
 
+        dlg.setModal(False)
+        dlg.setWindowFlags(
+            dlg.windowFlags()
+            | QtCore.Qt.WindowType.Window
+            | QtCore.Qt.WindowType.WindowMinimizeButtonHint
+            | QtCore.Qt.WindowType.WindowMaximizeButtonHint
+        )
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
@@ -1327,17 +1380,27 @@ class FileIOMixin:
                 return
 
         self._last_loaded_qm_log_path = path
-        if hasattr(self, "dock_manager"):
-            dock = self.dock_manager.get_or_create_output_viewer(path)
-            dock.viewer_dlg.show()
-            dock.show()
-            dock.raise_()
-            if dock.isFloating():
-                dock.activateWindow()
+        from .dialog_output_viewer import QMOutputViewerDialog
+
+        win = getattr(self, "_output_viewer_win", None)
+        if win is None:
+            win = QMOutputViewerDialog(None, file_path=path)
+            win._main_window_ref = self
+            win.setModal(False)
+            win.setWindowFlags(
+                win.windowFlags()
+                | QtCore.Qt.WindowType.Window
+                | QtCore.Qt.WindowType.WindowMinimizeButtonHint
+                | QtCore.Qt.WindowType.WindowMaximizeButtonHint
+            )
+            self._output_viewer_win = win
         else:
-            from .dialog_output_viewer import QMOutputViewerDialog
-            dlg = QMOutputViewerDialog(self, file_path=path)
-            dlg.exec()
+            win._main_window_ref = self
+            win.load_file(path)
+        win.refresh_theme()
+        win.show()
+        win.raise_()
+        win.activateWindow()
 
     def _check_and_prompt_companion_files(self, base_file_path: str):
         """
@@ -1672,7 +1735,7 @@ class FileIOMixin:
 
         current_step = self.slider_trajectory.value()
         progress = QtWidgets.QProgressDialog("Rendering trajectory movie frames...", "Cancel", 0, len(self.trajectory_coords), self)
-        progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        progress.setWindowModality(QtCore.Qt.WindowModality.NonModal)
 
         frames_rgb = []
         try:

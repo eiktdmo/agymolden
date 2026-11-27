@@ -40,17 +40,18 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         layout.setSpacing(8)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # 1. Top control banner (Path, Search bar, Match counter)
+        # 1. Top control banner (Row 1: Path & Actions, Row 2: Search bar)
         top_bar = QtWidgets.QHBoxLayout()
-        top_bar.setSpacing(8)
+        top_bar.setSpacing(6)
 
         self.lbl_path = QtWidgets.QLabel(f"<b>File:</b> {os.path.basename(self.file_path)}" if self.file_path else "<b>File:</b> None")
+        self.lbl_path.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
         is_white = self._is_white_theme()
         path_col = "#0284c7" if is_white else "#38bdf8"
         self.lbl_path.setStyleSheet(f"color: {path_col}; font-size: 12px;")
         if self.file_path:
             self.lbl_path.setToolTip(self.file_path)
-        top_bar.addWidget(self.lbl_path)
+        top_bar.addWidget(self.lbl_path, stretch=1)
 
         self.btn_open_file = QtWidgets.QPushButton("📂 Open...")
         self.btn_open_file.setToolTip("Open a different QM output or log file (.out, .log, .txt)")
@@ -75,34 +76,36 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         self.btn_toggle_float.clicked.connect(self._on_toggle_float_clicked)
         top_bar.addWidget(self.btn_toggle_float)
 
-        top_bar.addStretch()
+        layout.addLayout(top_bar)
 
-        top_bar.addWidget(QtWidgets.QLabel("🔍 Search:"))
+        search_bar = QtWidgets.QHBoxLayout()
+        search_bar.setSpacing(6)
+        search_bar.addWidget(QtWidgets.QLabel("🔍 Search:"))
         self.txt_search = QtWidgets.QLineEdit()
         self.txt_search.setPlaceholderText("Find text in log...")
         self.txt_search.setClearButtonEnabled(True)
-        self.txt_search.setFixedWidth(220)
+        self.txt_search.setMinimumWidth(120)
         self.txt_search.textChanged.connect(self._on_search_changed)
         self.txt_search.returnPressed.connect(self._find_next)
-        top_bar.addWidget(self.txt_search)
+        search_bar.addWidget(self.txt_search, stretch=1)
 
         btn_find_prev = QtWidgets.QPushButton("▲")
         btn_find_prev.setFixedWidth(28)
         btn_find_prev.setToolTip("Previous match (Shift+F3)")
         btn_find_prev.clicked.connect(self._find_prev)
-        top_bar.addWidget(btn_find_prev)
+        search_bar.addWidget(btn_find_prev)
 
         btn_find_next = QtWidgets.QPushButton("▼")
         btn_find_next.setFixedWidth(28)
         btn_find_next.setToolTip("Next match (F3)")
         btn_find_next.clicked.connect(self._find_next)
-        top_bar.addWidget(btn_find_next)
+        search_bar.addWidget(btn_find_next)
 
         self.lbl_match_count = QtWidgets.QLabel("")
         self.lbl_match_count.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        top_bar.addWidget(self.lbl_match_count)
+        search_bar.addWidget(self.lbl_match_count)
 
-        layout.addLayout(top_bar)
+        layout.addLayout(search_bar)
 
         # 2. Main Horizontal Splitter (Sections Tree on left, Log Text on right)
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -146,6 +149,10 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
         self.list_sections = QtWidgets.QListWidget()
         self.list_sections.itemClicked.connect(self._on_section_clicked)
+        self.list_sections.itemActivated.connect(self._on_section_clicked)
+        self.list_sections.currentItemChanged.connect(
+            lambda cur, _prev: self._on_section_clicked(cur) if cur is not None else None
+        )
         left_layout.addWidget(self.list_sections)
 
         splitter.addWidget(left_widget)
@@ -196,6 +203,9 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
     def _is_white_theme(self) -> bool:
         """Check if application or viewer is currently using white theme."""
+        mw_ref = getattr(self, "_main_window_ref", None)
+        if mw_ref is not None and hasattr(mw_ref, "viewer") and getattr(mw_ref.viewer, "bg_color_mode", ""):
+            return mw_ref.viewer.bg_color_mode == "white"
         p = self.parent()
         while p is not None:
             if hasattr(p, "viewer") and getattr(p.viewer, "bg_color_mode", ""):
@@ -286,13 +296,13 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
             s = line.strip()
             s_l = s.lower()
 
-            # Match optimization steps (ORCA: GEOMETRY OPTIMIZATION CYCLE 1, Gaussian: Cycle 1, Step 1)
+            # Match optimization steps (ORCA: GEOMETRY OPTIMIZATION CYCLE 1, Gaussian: Step number 1 / Cycle 1)
             m_cycle = re.search(
-                r"(?:GEOMETRY\s+OPTIMIZATION\s+CYCLE|Geometry\s+optimization\s+cycle|^Cycle\s+|^Step\s+)\s*(\d+)",
+                r"(?:GEOMETRY\s+OPTIMIZATION\s+CYCLE|Geometry\s+optimization\s+cycle|Step\s+number\s+|^Cycle\s+|^Step\s+)\s*(\d+)",
                 s,
                 re.IGNORECASE,
             )
-            if m_cycle and len(s) < 80 and not re.search(r"(?:RMS|MAX|step\s+\d+\.\d+)", s, re.IGNORECASE):
+            if m_cycle and len(s) < 80 and not re.search(r"(?:\bRMS\b|\bMAX\b|step\s+\d+\.\d+)", s, re.IGNORECASE):
                 c_num = m_cycle.group(1)
                 self._add_section_item(f"🔄 Optimization Step {c_num}", idx)
                 continue
@@ -425,11 +435,26 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
     def _jump_to_line(self, line_no: int):
         doc = self.txt_viewer.document()
-        block = doc.findBlockByLineNumber(line_no)
+        block = doc.findBlockByNumber(line_no)
+        if not block.isValid():
+            block = doc.findBlockByLineNumber(line_no)
         if block.isValid():
             cursor = QtGui.QTextCursor(block)
             self.txt_viewer.setTextCursor(cursor)
+            vbar = self.txt_viewer.verticalScrollBar()
+            if vbar is not None:
+                vbar.setValue(max(vbar.minimum(), min(vbar.maximum(), line_no - 6)))
+            hbar = self.txt_viewer.horizontalScrollBar()
+            if hbar is not None:
+                hbar.setValue(0)
             self.txt_viewer.centerCursor()
+            self.txt_viewer.ensureCursorVisible()
+            sel = QtWidgets.QTextEdit.ExtraSelection()
+            sel.cursor = cursor
+            sel.cursor.select(QtGui.QTextCursor.SelectionType.LineUnderCursor)
+            sel.format.setBackground(QtGui.QColor(56, 189, 248, 55))
+            sel.format.setProperty(QtGui.QTextFormat.Property.FullWidthSelection, True)
+            self.txt_viewer.setExtraSelections([sel])
 
     def _on_search_changed(self, text: str):
         if not text:
@@ -490,17 +515,23 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         QtWidgets.QApplication.clipboard().setText(self.txt_viewer.toPlainText())
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied entire output log to clipboard!", self)
 
+    def _dialog_parent(self) -> QtWidgets.QWidget:
+        """Return the top-level window for child dialogs/message boxes so docked widgets never parent native portals."""
+        win = self.window()
+        return win if isinstance(win, QtWidgets.QWidget) else self
+
     def _on_qc_doctor_clicked(self):
         """Analyze the current output file with QC Doctor."""
         from agymolden.calc_runner.diagnostics import diagnose_qm_error
         raw_text = self.txt_viewer.toPlainText()
+        parent_w = self._dialog_parent()
         if not raw_text.strip():
-            QtWidgets.QMessageBox.information(self, "QC Doctor", "No log output is loaded to analyze.")
+            QtWidgets.QMessageBox.information(parent_w, "QC Doctor", "No log output is loaded to analyze.")
             return
 
         diag = diagnose_qm_error(raw_text)
         if diag:
-            msg_box = QtWidgets.QMessageBox(self)
+            msg_box = QtWidgets.QMessageBox(parent_w)
             msg_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
             msg_box.setWindowTitle(f"QC Doctor: {diag.title}")
             msg_box.setText(f"<b>🩺 QC Doctor Diagnosis:</b><br><h3>{diag.title}</h3><p>{diag.summary}</p>")
@@ -509,7 +540,7 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
             msg_box.exec()
         else:
             QtWidgets.QMessageBox.information(
-                self,
+                parent_w,
                 "QC Doctor",
                 "<b>🩺 QC Doctor Diagnosis:</b><br><br>"
                 "No critical convergence failures, allocation crashes, or fatal syntax errors detected.<br>"
@@ -520,9 +551,12 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
         if self.file_path and os.path.isfile(self.file_path):
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.file_path))
         else:
-            QtWidgets.QMessageBox.information(self, "External Editor", "File path is not available on disk.")
+            QtWidgets.QMessageBox.information(self._dialog_parent(), "External Editor", "File path is not available on disk.")
 
     def _find_main_window(self):
+        mw_ref = getattr(self, "_main_window_ref", None)
+        if mw_ref is not None and hasattr(mw_ref, "open_path"):
+            return mw_ref
         p = self.parent()
         while p is not None:
             if hasattr(p, "open_path"):
@@ -535,7 +569,7 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
 
     def _on_load_in_3d_clicked(self):
         if not self.file_path or not os.path.isfile(self.file_path):
-            QtWidgets.QMessageBox.information(self, "Load in 3D", "No file on disk is currently loaded in the Output Viewer.")
+            QtWidgets.QMessageBox.information(self._dialog_parent(), "Load in 3D", "No file on disk is currently loaded in the Output Viewer.")
             return
         mw = self._find_main_window()
         if mw is not None:
@@ -544,7 +578,7 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
     def _on_open_file_clicked(self):
         start_dir = os.path.dirname(self.file_path) if self.file_path else ""
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
+            self._dialog_parent(),
             "Select QM Output / Log File to View",
             start_dir,
             "QM Files (*.out *.log *.txt *.inp *.gjf *.molden *.xyz *.zmat);;All Files (*)",
@@ -573,9 +607,10 @@ class QMOutputViewerDialog(QtWidgets.QDialog):
     def _on_open_in_agemacs(self):
         from .companion import send_to_agemacs, send_text_to_agemacs
 
+        parent_w = self._dialog_parent()
         if self.file_path and os.path.isfile(self.file_path):
-            ok = send_to_agemacs([self.file_path], self)
+            ok = send_to_agemacs([self.file_path], parent_w)
         else:
-            ok = send_text_to_agemacs("agymolden_output.log", self.txt_viewer.toPlainText(), self)
+            ok = send_text_to_agemacs("agymolden_output.log", self.txt_viewer.toPlainText(), parent_w)
         if not ok:
-            QtWidgets.QMessageBox.information(self, "Open in Agemacs", "Could not launch 'agemacs'.")
+            QtWidgets.QMessageBox.information(parent_w, "Open in Agemacs", "Could not launch 'agemacs'.")

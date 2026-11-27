@@ -312,7 +312,7 @@ class SmartBasisDialog(QtWidgets.QDialog):
         <p><b>Molecule Coverage:</b> {coverage_html}</p>
         <p><b>Description:</b><br>{desc}</p>
         <p><b>Total Elements Supported ({len(covered_els)}):</b><br>
-        <span style='color: #94a3b8; font-size: 10px;'>{', '.join([bse.lut.element_symbol_from_Z(int(z)) for z in covered_els if int(z) <= 118]) if _HAS_BSE else ''}</span></p>
+        <span style='color: #94a3b8; font-size: 11px;'>{', '.join([bse.lut.element_symbol_from_Z(int(z)) for z in covered_els if int(z) <= 118]) if _HAS_BSE else ''}</span></p>
         """
         self.txt_details.setHtml(info_html)
 

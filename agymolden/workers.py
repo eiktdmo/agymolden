@@ -58,15 +58,24 @@ def run_in_background(
     widget_parent = parent if isinstance(parent, QtWidgets.QWidget) else None
     dlg = QtWidgets.QProgressDialog(message, "Cancel", 0, 0, widget_parent)
     dlg.setWindowTitle(title)
-    dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal if widget_parent else QtCore.Qt.WindowModality.ApplicationModal)
-    dlg.setMinimumDuration(300)  # no flicker for fast jobs
+    dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+    dlg.setMinimumDuration(350)
     dlg.setAutoClose(False)
     dlg.setAutoReset(False)
 
-    worker = _Worker(fn, parent if isinstance(parent, QtCore.QObject) else None)
+    worker = _Worker(fn, None)
     state = {"cancelled": False, "finished": False}
 
+    if parent is not None:
+        try:
+            if not hasattr(parent, "_active_workers"):
+                parent._active_workers = set()
+            parent._active_workers.add(worker)
+        except Exception:
+            pass
+
     def close_dialog():
+        dlg.hide()
         dlg.reset()
         dlg.close()
         dlg.deleteLater()
@@ -84,12 +93,22 @@ def run_in_background(
             state["cancelled"] = True
             finish(lambda _: None, None)
 
+    def cleanup_worker(w=worker):
+        _ACTIVE_WORKERS.discard(w)
+        if parent is not None:
+            try:
+                active = getattr(parent, "_active_workers", None)
+                if active is not None:
+                    active.discard(w)
+            except RuntimeError:
+                pass
+
     worker.succeeded.connect(lambda r: finish(on_done, r))
     worker.failed.connect(lambda e: finish(on_error, e))
     dlg.canceled.connect(cancel)
     # Keep the QThread alive until it truly ends, then free it
     _ACTIVE_WORKERS.add(worker)
-    worker.finished.connect(lambda w=worker: _ACTIVE_WORKERS.discard(w))
+    worker.finished.connect(cleanup_worker)
     worker.finished.connect(worker.deleteLater)
     worker.start()
-    dlg.show()
+    QtCore.QTimer.singleShot(350, lambda: dlg.show() if not state["finished"] else None)

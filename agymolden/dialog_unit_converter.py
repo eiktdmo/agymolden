@@ -143,7 +143,7 @@ class UnitConverterDialog(QtWidgets.QDialog):
             ("1 Hartree", 1.0)
         ]:
             btn = QtWidgets.QPushButton(lbl)
-            btn.setStyleSheet("padding: 2px 6px; font-size: 10px;")
+            btn.setStyleSheet("padding: 4px 8px; min-height: 26px; font-size: 11px;")
             btn.clicked.connect(lambda _c=False, v=val: self.set_from_hartree(v))
             presets.addWidget(btn)
         presets.addStretch()
@@ -228,7 +228,7 @@ class UnitConverterDialog(QtWidgets.QDialog):
             ("C-H bond (1.09 Å)", 1.09 / BOHR_TO_ANGSTROM),
         ]:
             btn = QtWidgets.QPushButton(lbl)
-            btn.setStyleSheet("padding: 2px 6px; font-size: 10px;")
+            btn.setStyleSheet("padding: 4px 8px; min-height: 26px; font-size: 11px;")
             btn.clicked.connect(lambda _c=False, v=val_bohr: self.set_from_bohr(v))
             presets.addWidget(btn)
         presets.addStretch()
@@ -305,7 +305,7 @@ class UnitConverterDialog(QtWidgets.QDialog):
             ("HF (1.82 D)", 1.826),
         ]:
             btn = QtWidgets.QPushButton(lbl)
-            btn.setStyleSheet("padding: 2px 6px; font-size: 10px;")
+            btn.setStyleSheet("padding: 4px 8px; min-height: 26px; font-size: 11px;")
             btn.clicked.connect(lambda _c=False, v=val_d: self.set_from_debye(v))
             presets.addWidget(btn)
         presets.addStretch()
@@ -378,7 +378,7 @@ class UnitConverterDialog(QtWidgets.QDialog):
             ("Benzene α_iso (70.4 a.u.)", 70.4),
         ]:
             btn = QtWidgets.QPushButton(lbl)
-            btn.setStyleSheet("padding: 2px 6px; font-size: 10px;")
+            btn.setStyleSheet("padding: 4px 8px; min-height: 26px; font-size: 11px;")
             btn.clicked.connect(lambda _c=False, v=val_b3: self.set_from_bohr3(v))
             presets.addWidget(btn)
         presets.addStretch()

@@ -901,7 +901,7 @@ class BrorsenInputBuilderDialog(QtWidgets.QDialog):
 
         self.spin_cores = QtWidgets.QSpinBox()
         self.spin_cores.setRange(1, 128)
-        self.spin_cores.setValue(4)
+        self.spin_cores.setValue(1)
         self.spin_cores.valueChanged.connect(self._on_field_changed)
         form.addRow("Threads / Cores (%nprocs):", self.spin_cores)
 

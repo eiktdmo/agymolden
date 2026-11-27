@@ -148,12 +148,9 @@ class QMCalculationDialog(QtWidgets.QDialog):
         from .calc_runner.orca_runner import OrcaRunner
         init_symbols = [getattr(a, "symbol", "C") for a in self.zatoms] if self.zatoms else []
         n_cpus = detect_cpu_cores()
-        has_orca_mpi = bool(OrcaRunner._resolve_orca_mpi_env())
-        if not has_orca_mpi:
-            import shutil
-            has_orca_mpi = bool(shutil.which("mpirun"))
+        has_orca_mpi, _ = OrcaRunner.check_mpi_health()
         self._detected_cpus = n_cpus
-        self._default_orca_procs = min(4, n_cpus) if has_orca_mpi else 1
+        self._default_orca_procs = 1
 
         self._init_ui()
         # Initialize default preview and labels for the first selected QM code
@@ -170,6 +167,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
                     self.combo_dispersion.setCurrentText("D3BJ")
         if init_symbols:
             self.spin_mult.setValue(predict_default_multiplicity(init_symbols, self.spin_charge.value()))
+        self._restore_last_calc_settings()
         self._update_route_ui()
         self._update_preview()
 
@@ -343,7 +341,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
         proc_row = QtWidgets.QHBoxLayout()
         self.spin_procs = QtWidgets.QSpinBox()
         self.spin_procs.setRange(1, max(128, n_cpus))
-        self.spin_procs.setValue(min(8, n_cpus))
+        self.spin_procs.setValue(1)
         self.spin_procs.valueChanged.connect(self._update_preview)
         proc_row.addWidget(self.spin_procs)
         btn_all_procs = QtWidgets.QPushButton(f"Use All ({n_cpus} detected)")
@@ -423,56 +421,75 @@ class QMCalculationDialog(QtWidgets.QDialog):
         prev_layout.addWidget(self.text_preview)
         layout.addWidget(grp_preview, stretch=1)
 
-        # Buttons
-        btn_layout = QtWidgets.QHBoxLayout()
+        # Buttons (2 balanced rows so dialog fits <= 820px width and all buttons stay >= 28px tall)
+        btn_rows = QtWidgets.QVBoxLayout()
+        btn_rows.setSpacing(6)
+
+        btn_row1 = QtWidgets.QHBoxLayout()
+        btn_row1.setSpacing(6)
         btn_copy = QtWidgets.QPushButton("📋 Copy to Clipboard")
+        btn_copy.setMinimumHeight(28)
         btn_copy.clicked.connect(self._on_copy_clipboard)
-        btn_layout.addWidget(btn_copy)
+        btn_row1.addWidget(btn_copy)
 
         btn_save = QtWidgets.QPushButton("💾 Save Input File...")
-        btn_save.setStyleSheet("background-color: #2563eb; font-weight: bold;")
+        btn_save.setMinimumHeight(28)
+        btn_save.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 4px 10px;")
         btn_save.clicked.connect(self._on_save_file)
-        btn_layout.addWidget(btn_save)
+        btn_row1.addWidget(btn_save)
 
         self.btn_open_agemacs = QtWidgets.QPushButton("🚀 Open in Agemacs")
+        self.btn_open_agemacs.setMinimumHeight(28)
         self.btn_open_agemacs.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 10px;")
         self.btn_open_agemacs.setToolTip("Send this generated QM input file directly to Agemacs")
         self.btn_open_agemacs.clicked.connect(self._on_open_in_agemacs)
-        btn_layout.addWidget(self.btn_open_agemacs)
-
-        btn_cluster = QtWidgets.QPushButton("🖥️ Cluster / HPC Script...")
-        btn_cluster.setStyleSheet("background-color: #4338ca; color: white; font-weight: bold; padding: 4px 10px;")
-        btn_cluster.setToolTip("Generate production-grade HPC batch script (SLURM / PBS / LSF / SGE) for cluster execution")
-        btn_cluster.clicked.connect(self._on_generate_cluster_script)
-        btn_layout.addWidget(btn_cluster)
+        btn_row1.addWidget(self.btn_open_agemacs)
 
         btn_run = QtWidgets.QPushButton("▶ Run Calculation...")
+        btn_run.setMinimumHeight(28)
         btn_run.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 4px 10px;")
         btn_run.setToolTip("Run this calculation and monitor output live")
         btn_run.clicked.connect(self._on_run_calculation)
-        btn_layout.addWidget(btn_run)
+        btn_row1.addWidget(btn_run)
+
+        btn_row1.addStretch()
+
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.setMinimumHeight(28)
+        btn_close.clicked.connect(self.accept)
+        btn_row1.addWidget(btn_close)
+        btn_rows.addLayout(btn_row1)
+
+        btn_row2 = QtWidgets.QHBoxLayout()
+        btn_row2.setSpacing(6)
+        btn_cluster = QtWidgets.QPushButton("🖥️ Cluster / HPC Script...")
+        btn_cluster.setMinimumHeight(28)
+        btn_cluster.setStyleSheet("background-color: #4338ca; color: white; font-weight: bold; padding: 4px 10px;")
+        btn_cluster.setToolTip("Generate production-grade HPC batch script (SLURM / PBS / LSF / SGE) for cluster execution")
+        btn_cluster.clicked.connect(self._on_generate_cluster_script)
+        btn_row2.addWidget(btn_cluster)
 
         btn_pipeline = QtWidgets.QPushButton("⚡ Workflow Pipeline...")
+        btn_pipeline.setMinimumHeight(28)
         btn_pipeline.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 4px 10px;")
         btn_pipeline.setToolTip("Launch chained multi-stage QM recipe (e.g., Opt → Freq True Minimum, TS → IRC, Opt → TD-DFT)")
         btn_pipeline.clicked.connect(self._on_launch_workflow_pipeline)
-        btn_layout.addWidget(btn_pipeline)
+        btn_row2.addWidget(btn_pipeline)
 
         # Multi-Package Pipeline Stage Chaining (Option A)
         self.btn_chain_stage = QtWidgets.QPushButton("🔗 + Chain Stage (newBRORSEN)...")
+        self.btn_chain_stage.setMinimumHeight(28)
         self.btn_chain_stage.setStyleSheet("background-color: #0d9488; color: white; font-weight: bold; padding: 4px 10px;")
         self.btn_chain_stage.setToolTip(
             "Multi-Package Calculation Pipeline: Save this calculation (Stage 1) and immediately\n"
             "chain into a Stage 2 newBRORSEN NEO / Positron calculation on the resulting geometry!"
         )
         self.btn_chain_stage.clicked.connect(self._on_chain_brorsen_stage)
-        btn_layout.addWidget(self.btn_chain_stage)
+        btn_row2.addWidget(self.btn_chain_stage)
+        btn_row2.addStretch()
+        btn_rows.addLayout(btn_row2)
 
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_close.clicked.connect(self.accept)
-        btn_layout.addWidget(btn_close)
-
-        layout.addLayout(btn_layout)
+        layout.addLayout(btn_rows)
 
     def _on_generate_cluster_script(self):
         """Open HPC cluster batch submission script dialog for current calculation."""
@@ -819,6 +836,79 @@ class QMCalculationDialog(QtWidgets.QDialog):
         QtWidgets.QApplication.clipboard().setText(self.text_preview.toPlainText())
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), "Copied to clipboard!", self)
 
+    def _save_last_calc_settings(self):
+        """Persist the current QM calculation setup so the next session recalls it."""
+        try:
+            from agymolden.session_state import get_settings
+
+            s = get_settings("AgyMolden")
+            s.beginGroup("last_qm_calc")
+            s.setValue("qm_code", self.combo_qm_code.currentText())
+            s.setValue("job_type", self.combo_job_type.currentText())
+            s.setValue("method", self.combo_method.currentText().strip())
+            s.setValue("basis", self.combo_basis.currentText().strip())
+            s.setValue("dispersion", self.combo_dispersion.currentText())
+            s.setValue("solvent", self.combo_solvent.currentText())
+            s.setValue("cores", int(self.spin_procs.value()))
+            s.setValue("mem", int(self.spin_mem.value()))
+            s.setValue("charge", int(self.spin_charge.value()))
+            s.setValue("title", self.txt_title.text().strip())
+            s.setValue("use_zmatrix", self.chk_zmatrix.isChecked())
+            s.endGroup()
+        except Exception:
+            pass
+
+    def _restore_last_calc_settings(self):
+        """Restore settings from the previous QM calculation if stored."""
+        if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("AGYMOLDEN_TEST_RESTORE_CALC") != "1":
+            return
+        try:
+            from agymolden.session_state import get_settings
+
+            s = get_settings("AgyMolden")
+            s.beginGroup("last_qm_calc")
+            try:
+                if not s.childKeys():
+                    return
+                qm_code = s.value("qm_code", None)
+                if qm_code:
+                    idx = self.combo_qm_code.findText(str(qm_code))
+                    if idx >= 0:
+                        self.combo_qm_code.setCurrentIndex(idx)
+                for combo, key in (
+                    (self.combo_job_type, "job_type"),
+                    (self.combo_dispersion, "dispersion"),
+                    (self.combo_solvent, "solvent"),
+                ):
+                    val = s.value(key, None)
+                    if val is not None:
+                        idx = combo.findText(str(val))
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+                for combo, key in ((self.combo_method, "method"), (self.combo_basis, "basis")):
+                    val = s.value(key, None)
+                    if val:
+                        idx = combo.findText(str(val))
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+                        else:
+                            combo.setCurrentText(str(val))
+                if s.contains("cores"):
+                    self.spin_procs.setValue(max(1, int(s.value("cores", 1, type=int))))
+                if s.contains("mem"):
+                    self.spin_mem.setValue(max(1, int(s.value("mem", 4, type=int))))
+                if s.contains("charge"):
+                    self.spin_charge.setValue(int(s.value("charge", 0, type=int)))
+                title_val = s.value("title", None)
+                if title_val:
+                    self.txt_title.setText(str(title_val))
+                if s.contains("use_zmatrix") and self.chk_zmatrix.isEnabled():
+                    self.chk_zmatrix.setChecked(s.value("use_zmatrix", False, type=bool))
+            finally:
+                s.endGroup()
+        except Exception:
+            pass
+
     def _on_save_file(self):
         qm_name = self.combo_qm_code.currentText()
         gen_cls = QM_GENERATORS.get(qm_name, GaussianGenerator)
@@ -828,6 +918,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
         if path:
             with open(path, "w") as f:
                 f.write(self.text_preview.toPlainText())
+            self._save_last_calc_settings()
             QtWidgets.QMessageBox.information(self, "File Saved", f"Successfully saved input to:\n{path}")
             return path
         return None
@@ -906,6 +997,8 @@ class QMCalculationDialog(QtWidgets.QDialog):
         if not saved_path:
             return
 
+        self._save_last_calc_settings()
+
         if hasattr(main_win, "_remember_file"):
             main_win._remember_file(saved_path)
 
@@ -960,6 +1053,7 @@ class QMCalculationDialog(QtWidgets.QDialog):
         """Send the generated QM input text to Agemacs."""
         from .companion import send_text_to_agemacs
 
+        self._save_last_calc_settings()
         ext = self.lbl_ext.text().strip() or ".inp"
         if not ext.startswith("."):
             ext = "." + ext

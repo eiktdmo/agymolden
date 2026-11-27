@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 logger = logging.getLogger(__name__)
 
@@ -86,13 +86,14 @@ def clamp_window_to_screen(
         widget.resize(target_w, target_h)
         changed = True
 
-    # 4. Keep window position inside the available screen area.
-    pos = widget.pos()
-    new_x = max(avail.left(), min(pos.x(), avail.right() - widget.width() + 1))
-    new_y = max(avail.top(), min(pos.y(), avail.bottom() - widget.height() + 1))
-    if new_x != pos.x() or new_y != pos.y():
-        widget.move(new_x, new_y)
-        changed = True
+    # 4. Keep window position inside the available screen area (skip on Wayland where move() is a no-op/unsafe).
+    if not QtGui.QGuiApplication.platformName().startswith("wayland"):
+        pos = widget.pos()
+        new_x = max(avail.left(), min(pos.x(), avail.right() - widget.width() + 1))
+        new_y = max(avail.top(), min(pos.y(), avail.bottom() - widget.height() + 1))
+        if new_x != pos.x() or new_y != pos.y():
+            widget.move(new_x, new_y)
+            changed = True
 
     return changed
 
@@ -102,6 +103,8 @@ class LowResolutionSafeguardFilter(QtCore.QObject):
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.Type.Show:
+            if isinstance(obj, (QtWidgets.QMessageBox, QtWidgets.QFileDialog)):
+                return super().eventFilter(obj, event)
             if isinstance(obj, (QtWidgets.QDialog, QtWidgets.QMainWindow)) and obj.isWindow():
                 if not obj.property("_ui_safeguard_active"):
                     obj.setProperty("_ui_safeguard_active", True)

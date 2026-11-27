@@ -159,6 +159,8 @@ def main(argv=None):
     parser.add_argument("--height", type=int, default=1080, help="image render height in pixels (default: 1080)")
     parser.add_argument("--background", dest="background", choices=["dark", "white", "transparent"], default="dark", help="render image background color: dark, white, or transparent (default: dark)")
     parser.add_argument("--transparent", action="store_true", help="render image with transparent background (shorthand for --background transparent)")
+    parser.add_argument("--scale", type=float, default=None, help="global UI scale factor, e.g. 1.25 or 1.5")
+    parser.add_argument("--font-size", dest="font_size", type=int, default=None, help="base UI font size in points (8-22)")
     parser.add_argument("--debug", action="store_true", help="verbose logging to the console")
     parser.add_argument("--version", action="version", version=f"AgyMolden {__version__}")
     args, qt_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
@@ -198,8 +200,28 @@ def main(argv=None):
     ):
         os.environ["XKB_CONFIG_ROOT"] = "/usr/share/X11/xkb"
 
+    # Prefer XWayland (xcb) on Linux Wayland sessions when DISPLAY is available to avoid
+    # Qt6-Wayland seat-grab/popup freezes with QOpenGLWidget + QDockWidget + QMenu + QDialog.
+    if (
+        sys.platform.startswith("linux")
+        and not os.environ.get("QT_QPA_PLATFORM")
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("AGYMOLDEN_ALLOW_WAYLAND") != "1"
+        and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        and os.environ.get("DISPLAY")
+    ):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+
     from PyQt6 import QtWidgets, QtGui, QtCore
     from .main_window import MainWindow
+    from .ui_scale import (
+        apply_live_font_size,
+        apply_startup_scale_env,
+        get_saved_font_size,
+        install_ui_scale_filter,
+    )
+
+    apply_startup_scale_env(args.scale)
 
     # Suppress noisy benign Qt Wayland textinput focus warnings on Linux desktops
     existing_rules = os.environ.get("QT_LOGGING_RULES", "").strip()
@@ -239,10 +261,10 @@ def main(argv=None):
     app.setApplicationVersion(__version__)
     _install_excepthook(QtWidgets)
 
-    # Standard application font, using system font cleanly across platforms
-    font = QtGui.QFont(app.font())
-    font.setPointSize(10)
-    app.setFont(font)
+    # Standard application font + live font-size scaling across stylesheets
+    install_ui_scale_filter(app)
+    init_pt = args.font_size if args.font_size is not None else get_saved_font_size()
+    apply_live_font_size(init_pt, app=app, persist=(args.font_size is not None))
 
     window = MainWindow()
 

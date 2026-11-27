@@ -458,11 +458,11 @@ class WorkbenchHubDialog(QtWidgets.QDialog):
         title_row.addWidget(title_lbl)
 
         badge_color = "#0284c7" if tool.badge == "Built-in" else "#8b5cf6" if tool.badge == "PySCF" else "#64748b"
-        badge_lbl = QtWidgets.QLabel(f"<span style='background-color: {badge_color}; color: white; font-size: 10px; font-weight: bold; border-radius: 3px; padding: 1px 6px;'>{tool.badge}</span>")
+        badge_lbl = QtWidgets.QLabel(f"<span style='background-color: {badge_color}; color: white; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px 6px;'>{tool.badge}</span>")
         title_row.addWidget(badge_lbl)
 
         if tool.shortcut:
-            sc_lbl = QtWidgets.QLabel(f"<span style='color: #94a3b8; font-size: 10px; background-color: #27272a; border-radius: 3px; padding: 1px 5px;'>{tool.shortcut}</span>")
+            sc_lbl = QtWidgets.QLabel(f"<span style='color: #94a3b8; font-size: 11px; background-color: #27272a; border-radius: 3px; padding: 1px 5px;'>{tool.shortcut}</span>")
             title_row.addWidget(sc_lbl)
 
         title_row.addStretch()

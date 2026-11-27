@@ -42,6 +42,9 @@ def detect_conda_environments(force_refresh: bool = False) -> List[Tuple[str, st
         if not path:
             return
         abs_p = os.path.abspath(path)
+        low_segs = [s for s in abs_p.replace("\\", "/").lower().split("/") if s]
+        if any(k in seg for seg in low_segs for k in ("conda", "anaconda", "miniconda", "mambaforge", "miniforge")):
+            return
         if abs_p not in seen_paths and os.path.isfile(abs_p) and os.access(abs_p, os.X_OK):
             seen_paths.add(abs_p)
             envs.append((label, abs_p))
@@ -50,16 +53,11 @@ def detect_conda_environments(force_refresh: bool = False) -> List[Tuple[str, st
     curr_py = sys.executable
     add_env("Current Python Interpreter", curr_py)
 
-    # 2. Check active VIRTUAL_ENV or CONDA_PREFIX environment variables
+    # 2. Check active VIRTUAL_ENV environment variable (no Conda/Anaconda)
     env_venv = os.environ.get("VIRTUAL_ENV")
     if env_venv:
         v_py = os.path.join(env_venv, "Scripts", "python.exe") if os.name == "nt" else os.path.join(env_venv, "bin", "python")
         add_env(f"Active Virtualenv ({os.path.basename(env_venv)})", v_py)
-
-    env_conda = os.environ.get("CONDA_PREFIX")
-    if env_conda:
-        c_py = os.path.join(env_conda, "Scripts", "python.exe") if os.name == "nt" else os.path.join(env_conda, "bin", "python")
-        add_env(f"Active Conda ({os.path.basename(env_conda)})", c_py)
 
     home = os.path.expanduser("~")
 
@@ -85,25 +83,6 @@ def detect_conda_environments(force_refresh: bool = False) -> List[Tuple[str, st
             else:
                 env_title = os.path.basename(os.path.dirname(os.path.dirname(py_path)))
             add_env(f"venv: {env_title}", py_path)
-
-    # 4. Common Conda root environments
-    candidates = [
-        os.path.join(home, "miniconda3"),
-        os.path.join(home, "anaconda3"),
-        os.path.join(home, ".conda"),
-        "/opt/conda",
-        "/opt/miniconda3",
-    ]
-
-    for root in candidates:
-        envs_dir = os.path.join(root, "envs")
-        if os.path.isdir(envs_dir):
-            try:
-                for name in sorted(os.listdir(envs_dir)):
-                    py_path = os.path.join(envs_dir, name, "Scripts", "python.exe") if os.name == "nt" else os.path.join(envs_dir, name, "bin", "python")
-                    add_env(f"conda: {name}", py_path)
-            except (OSError, PermissionError):
-                logging.getLogger(__name__).debug("Ignored exception", exc_info=True)
 
     _ENV_CACHE = envs
     return list(envs)

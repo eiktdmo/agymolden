@@ -111,12 +111,18 @@ class ExampleGalleryDialog(QtWidgets.QDialog):
         }
 
         for row, (title, rel_path, ex_type, desc) in enumerate(EXAMPLES):
-            it_title = QtWidgets.QTableWidgetItem(f"<b>{title}</b>")
+            resolved = find_resource(rel_path)
+            exists = bool(resolved and os.path.isfile(resolved))
+            display_title = title if exists else f"{title} [Not bundled locally]"
+            it_title = QtWidgets.QTableWidgetItem(display_title)
             it_type = QtWidgets.QTableWidgetItem(ex_type)
-            color = type_colors.get(ex_type, "#374151")
+            color = type_colors.get(ex_type, "#374151") if exists else "#94a3b8"
             it_type.setForeground(QtGui.QBrush(QtGui.QColor(color)))
 
             it_desc = QtWidgets.QTableWidgetItem(desc)
+            if not exists:
+                it_title.setForeground(QtGui.QBrush(QtGui.QColor("#94a3b8")))
+                it_desc.setForeground(QtGui.QBrush(QtGui.QColor("#94a3b8")))
 
             # Store the relative path in UserRole
             it_title.setData(QtCore.Qt.ItemDataRole.UserRole, rel_path)

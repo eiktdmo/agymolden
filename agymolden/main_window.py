@@ -299,6 +299,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
         saved_theme = settings.value("color_theme", "white")
         if saved_theme in ("dark", "white"):
             self.set_color_theme(str(saved_theme))
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                from .session_state import get_settings
+
+                show_right = get_settings("Preferences").value("ui/show_right_pane", False, type=bool)
+                self._on_toggle_right_pane(bool(show_right))
+            except Exception:
+                pass
 
     def closeEvent(self, event: QtGui.QCloseEvent):
         settings = self._settings()
@@ -1969,6 +1977,9 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
             ov_dock = self.dock_manager.docks["output_viewer"]
             if hasattr(ov_dock, "viewer_dlg") and hasattr(ov_dock.viewer_dlg, "refresh_theme"):
                 ov_dock.viewer_dlg.refresh_theme(is_white)
+        ov_win = getattr(self, "_output_viewer_win", None)
+        if ov_win is not None and hasattr(ov_win, "refresh_theme"):
+            ov_win.refresh_theme(is_white)
         if hasattr(self, "btn_status_theme"):
             if is_white:
                 self.btn_status_theme.setText("🌙 Dark")
@@ -2540,14 +2551,14 @@ class MainWindow(UIMixin, EditingMixin, CalculationsMixin, FileIOMixin, ReorderM
                     return True
                 elif key == QtCore.Qt.Key.Key_C and not is_shift:
                     self._copy_selected_fragment()
-                    return
+                    return True
                 elif key == QtCore.Qt.Key.Key_C and is_shift:
                     # Ctrl+Shift+C: Copy publication-quality image to clipboard
                     self.copy_image_to_clipboard(transparent=True, scale=2, clean_only=True)
                     return True
                 elif key == QtCore.Qt.Key.Key_V and not is_shift:
                     self._on_paste()
-                    return
+                    return True
                 elif key == QtCore.Qt.Key.Key_V and is_shift:
                     # Ctrl+Shift+V: Direct load XYZ coordinates from clipboard into program
                     self._on_paste_as_new_molecule()

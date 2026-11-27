@@ -305,7 +305,10 @@ class OrbitalController:
             self.mw._on_open_volumetric_dialog()
             return
         dlg = ESP2DContourDialog(self.mw, molden_path=molden_path, vol_data=vol, initial_property="RHO")
-        dlg.exec()
+        dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+        self.mw._esp_2d_dlg = dlg
+        dlg.show()
+        dlg.raise_()
 
     def quick_view_spin_density(self) -> None:
         """1-Click Open-Shell Spin Density (rho_alpha - rho_beta) evaluation and 3D rendering."""
@@ -772,4 +775,7 @@ class OrbitalController:
 
         from ..dialog_orbital_gallery import OrbitalSnapshotDialog
         dlg = OrbitalSnapshotDialog(self.mw, molden_path, molden_data.orbitals, homo_idx=homo_idx)
-        dlg.exec()
+        dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+        self.mw._orbital_gallery_dlg = dlg
+        dlg.show()
+        dlg.raise_()

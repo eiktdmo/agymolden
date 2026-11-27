@@ -27,7 +27,7 @@ class BrorsenStage:
         # Physical settings
         self.charge: int = 0
         self.mult: int = 1
-        self.nprocs: int = 4
+        self.nprocs: int = 1
         self.memory: int = 4000
         
         # General options

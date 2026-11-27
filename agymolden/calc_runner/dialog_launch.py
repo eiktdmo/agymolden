@@ -50,10 +50,10 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         form.setSpacing(10)
 
-        # 1. Python Environment (venv / conda / custom)
+        # 1. Python Environment (venv / custom)
         conda_layout = QtWidgets.QHBoxLayout()
         self.combo_conda = QtWidgets.QComboBox()
-        self.combo_conda.setToolTip("Select Python interpreter, Virtualenv, or Conda environment")
+        self.combo_conda.setToolTip("Select Python interpreter or Virtualenv")
         self._populate_conda_envs()
         conda_layout.addWidget(self.combo_conda, stretch=1)
 
@@ -150,7 +150,7 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
         r_form.addRow("Remote Workdir:", self.txt_remote_workdir)
 
         self.txt_remote_py = QtWidgets.QLineEdit("python3")
-        self.txt_remote_py.setPlaceholderText("e.g. python3 or ~/miniconda3/envs/MCCC/bin/python")
+        self.txt_remote_py.setPlaceholderText("e.g. python3 or ~/venvs/brorsen/bin/python")
         r_form.addRow("Remote Python:", self.txt_remote_py)
 
         self.txt_remote_wrap = QtWidgets.QLineEdit("newBRORSEN.v04.09.py")
@@ -820,8 +820,8 @@ class BrorsenLaunchDialog(QtWidgets.QDialog):
                     self,
                     "Remote Package Missing",
                     "<br>".join(msg) + "<br><br>"
-                    "<b>Note:</b> newBRORSEN calculations require the <code>pyscf_neo_cc</code> branch installed in your remote conda environment (e.g. <code>conda activate MCCC</code>).<br>"
-                    "Update 'Remote Python' with the full path to that conda env's python binary (e.g. <code>~/miniconda3/envs/MCCC/bin/python</code>)."
+                    "<b>Note:</b> newBRORSEN calculations require the <code>pyscf_neo_cc</code> branch installed in your remote Python virtual environment.<br>"
+                    "Update 'Remote Python' with the full path to that environment's python binary (e.g. <code>~/venvs/brorsen/bin/python</code>)."
                 )
 
         def _on_err(e):

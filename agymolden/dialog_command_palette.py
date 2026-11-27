@@ -37,9 +37,10 @@ class CommandPaletteDialog(QtWidgets.QDialog):
         self.setMaximumWidth(700)
         self.setMinimumHeight(400)
 
-        # Frameless styling or clean modern overlay
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.Dialog)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # Use standard Dialog frame on Wayland so the palette cannot trap focus without a title bar
+        if not QtGui.QGuiApplication.platformName().startswith("wayland"):
+            self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.Dialog)
+            self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self._init_ui()
         self._filter_commands("")
