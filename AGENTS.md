@@ -62,6 +62,12 @@
     - `agymol` already covers a wide feature set—avoid adding disconnected features; instead polish and strengthen existing workflows, benchmarking against top web/standalone tools and checking GitHub/reference ecosystems.
 15. **Ample, Sufficient User Guides**:
     - Keep `README.md`, `USER_MANUAL.md`, and `STUDENT_GUIDE.md` thorough, clear, and updated whenever user-facing behavior changes.
+16. **Cost-Effective Model & Token-Saving Guidance (Pro Plan)**:
+    - Proactively recommend the most cost-effective model tier when a task is over- or under-powered for the user's current setup (Orchestrator Gemini 4 Neon Medium + Hydrogen Medium):
+      - **Fast / Low-Cost (Flash / Flash-Lite)**: `git pull`/`push`, running tests, doc/typo edits, log checks, simple Q&A, single-file tweaks.
+      - **Balanced (Medium orchestrator)**: everyday multi-file features, bug fixes + regression tests, UI/theme polish, `agymol` ↔ `agemacs` updates.
+      - **High / Deep (or `/boost`)**: only for complex architectural refactors, hard Qt/OpenGL/IPC/QM math bugs, or full 7-pillar audits.
+    - Keep token usage low: batch tool calls, use `flash`/`flash_lite` for trivial subagent lookups, suggest `/compact` on long threads, and suggest a fresh chat when switching topics (`AGENTS.md` + `.agents/skills/` preserve project memory).
 
 ## 4. Verification Commands
 
