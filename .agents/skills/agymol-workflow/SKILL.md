@@ -45,3 +45,9 @@ Anticipate common student/user environment failures and surface **actionable in-
   QT_QPA_PLATFORM=offscreen .venv/bin/pytest tests/test_surfaces_and_orca_ui.py tests/test_ui_usability_fixes.py
   .venv/bin/ruff check agymolden tests
   ```
+
+## 5. Quality, Anti-Clutter & Full Audits
+- **Regression tests**: Always add an isolated regression test (using temporary `QSettings` / temp dirs) whenever fixing a bug.
+- **Refactor early**: Keep mixins, controllers, and dialogs modular and extensible—do not wait to refactor when code becomes entangled.
+- **Anti-clutter & depth over bloat**: Optimize for small/laptop screens, keep menus intuitive and user-configurable, strengthen existing workflows against top web/standalone tools rather than adding disconnected features, and keep `README.md`, `USER_MANUAL.md`, and `STUDENT_GUIDE.md` ample and up to date.
+- **Full audits**: Load `agy-full-audit` when asked to "run a full audit on agymol".

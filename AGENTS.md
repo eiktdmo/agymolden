@@ -77,3 +77,9 @@ QT_QPA_PLATFORM=offscreen .venv/bin/pytest tests/test_surfaces_and_orca_ui.py te
 # Lint (if ruff is installed in .venv)
 .venv/bin/ruff check agymolden tests
 ```
+
+## 5. Repo Skills (`.agents/skills/`)
+
+- `agymol-workflow`: Maintainer runbook, launchers, themes, ORCA/PySCF, self-service notices, and on-request `.zip` checklist.
+- `agy-companion-ecosystem`: `agymol` ↔ `agemacs` compatibility contract and uninstalled QM code reference-verification protocol.
+- `agy-full-audit`: 7-pillar audit runbook (say *"run a full audit on agymol"* to activate).
