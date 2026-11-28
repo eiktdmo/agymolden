@@ -123,6 +123,31 @@ def _install_excepthook(QtWidgets) -> None:
     sys.excepthook = hook
 
 
+def _configure_linux_display_platform(force_in_pytest: bool = False) -> None:
+    """Configure Qt and PyOpenGL display backends consistently on Linux Wayland/XWayland.
+
+    Must run before importing OpenGL so PyOpenGL selects GLX rather than EGL
+    when Qt uses XWayland (``xcb``) while ``WAYLAND_DISPLAY`` is present.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+
+    if (
+        not os.environ.get("QT_QPA_PLATFORM")
+        and (force_in_pytest or not os.environ.get("PYTEST_CURRENT_TEST"))
+        and os.environ.get("AGYMOLDEN_ALLOW_WAYLAND") != "1"
+        and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        and os.environ.get("DISPLAY")
+    ):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+    if (
+        os.environ.get("QT_QPA_PLATFORM", "").lower() == "xcb"
+        and not os.environ.get("PYOPENGL_PLATFORM")
+    ):
+        os.environ["PYOPENGL_PLATFORM"] = "glx"
+
+
 def main(argv=None):
     raw_args = sys.argv[1:] if argv is None else argv
     if raw_args and raw_args[0] in ("parse", "gen", "check", "convert", "bundle", "doctor", "install-desktop", "mcp", "--mcp"):
@@ -188,6 +213,7 @@ def main(argv=None):
                     os.execv(sys.executable, [sys.executable, "-m", "agymolden"] + sys.argv[1:])
                 break
 
+    _configure_linux_display_platform()
     _setup_logging(args.debug)
     _check_dependencies()
     _log_startup_environment()
@@ -199,18 +225,6 @@ def main(argv=None):
         and os.path.isdir("/usr/share/X11/xkb")
     ):
         os.environ["XKB_CONFIG_ROOT"] = "/usr/share/X11/xkb"
-
-    # Prefer XWayland (xcb) on Linux Wayland sessions when DISPLAY is available to avoid
-    # Qt6-Wayland seat-grab/popup freezes with QOpenGLWidget + QDockWidget + QMenu + QDialog.
-    if (
-        sys.platform.startswith("linux")
-        and not os.environ.get("QT_QPA_PLATFORM")
-        and not os.environ.get("PYTEST_CURRENT_TEST")
-        and os.environ.get("AGYMOLDEN_ALLOW_WAYLAND") != "1"
-        and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
-        and os.environ.get("DISPLAY")
-    ):
-        os.environ["QT_QPA_PLATFORM"] = "xcb"
 
     from PyQt6 import QtWidgets, QtGui, QtCore
     from .main_window import MainWindow

@@ -404,3 +404,38 @@ def test_output_viewer_section_scroll_and_nonmodal_workers_and_companion_env(qap
     assert "LD_PRELOAD" not in clean
 
 
+def test_wayland_xcb_sets_pyopengl_glx(monkeypatch):
+    """Qt xcb on Wayland must pair with PYOPENGL_PLATFORM=glx to avoid EGL/GLX context mismatch."""
+    import os
+    import sys
+    from agymolden import _configure_linux_display_platform
+
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    # Case 1: Wayland session with DISPLAY -> xcb + glx
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
+    monkeypatch.delenv("AGYMOLDEN_ALLOW_WAYLAND", raising=False)
+    monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setenv("DISPLAY", ":0")
+    _configure_linux_display_platform(force_in_pytest=True)
+    assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
+    assert os.environ.get("PYOPENGL_PLATFORM") == "glx"
+
+    # Case 2: AGYMOLDEN_ALLOW_WAYLAND=1 leaves both unset
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
+    monkeypatch.setenv("AGYMOLDEN_ALLOW_WAYLAND", "1")
+    _configure_linux_display_platform(force_in_pytest=True)
+    assert os.environ.get("QT_QPA_PLATFORM") is None
+    assert os.environ.get("PYOPENGL_PLATFORM") is None
+
+    # Case 3: Explicit QT_QPA_PLATFORM=xcb forces PYOPENGL_PLATFORM=glx
+    monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
+    monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
+    _configure_linux_display_platform(force_in_pytest=True)
+    assert os.environ.get("PYOPENGL_PLATFORM") == "glx"
+
+
+
