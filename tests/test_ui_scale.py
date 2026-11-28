@@ -21,7 +21,13 @@ from agymolden.ui_scale import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_font_state(qapp):
+def _isolate_settings_and_font(qapp, tmp_path, monkeypatch):
+    import agymolden.session_state as session_state
+
+    def _tmp_settings(app: str = "AgyMolden"):
+        return QtCore.QSettings(str(tmp_path / f"{app}.ini"), QtCore.QSettings.Format.IniFormat)
+
+    monkeypatch.setattr(session_state, "get_settings", _tmp_settings)
     yield
     apply_live_font_size(DEFAULT_FONT_PT, app=qapp, persist=False)
 
