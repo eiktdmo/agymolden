@@ -51,6 +51,17 @@
     - Store all project rules (`AGENTS.md`) and skills (`.agents/skills/*/SKILL.md`) inside the Git repo so `git pull` / `git push` synchronizes them across all machines.
     - Keep GitHub activity clean and low-usage (lightweight/manual-only CI, no unnecessary binary churn).
     - Only generate, update, or upload distribution `.zip` files to GitHub when the user explicitly requests it.
+11. **Stringent Testing & Regression Discipline**:
+    - Always run stringent tests before declaring work complete. Whenever a bug or issue is found and fixed, **add a targeted regression test** (with isolated state/`QSettings`) so it never recurs.
+12. **Clean, Extensible Architecture (Refactor Early)**:
+    - Keep code modular and easily extensible; do not wait to refactor when files, mixins, or dialogs become entangled.
+13. **Anti-Clutter, Small-Screen & Intuitive Menu Policy**:
+    - Proactively prevent UI clutter—especially on small/laptop screens (predict responsive layouts, collapsible panes, clean spacing, UI scaling/font controls).
+    - Keep menus intuitive and user-configurable so each user can tailor how the app looks and persist preferences cleanly.
+14. **Depth Over Bloat & Top-Tier Benchmarking**:
+    - `agymol` already covers a wide feature set—avoid adding disconnected features; instead polish and strengthen existing workflows, benchmarking against top web/standalone tools and checking GitHub/reference ecosystems.
+15. **Ample, Sufficient User Guides**:
+    - Keep `README.md`, `USER_MANUAL.md`, and `STUDENT_GUIDE.md` thorough, clear, and updated whenever user-facing behavior changes.
 
 ## 4. Verification Commands
 
